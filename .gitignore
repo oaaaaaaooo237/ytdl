@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Local environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Build and packaging outputs
+build/
+dist/
+*.tmp
+*.bak
+
+# Local runtime state and logs
+logs/
+*.log
+config.json
+history.json
+ytdlp-update-state.json
+
+# Sensitive browser/session data
+cookies.txt
+*.cookies.txt
+*cookies*.txt
+
+# Superpowers / git worktree isolation
+.worktrees/
+worktrees/
+
+# Download helper temporary files
+tools/yt-dlp.tmp.exe
