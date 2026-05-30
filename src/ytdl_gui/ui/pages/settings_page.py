@@ -1,0 +1,49 @@
+from PySide6.QtWidgets import QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
+
+from ytdl_gui.ui.widgets import PageHeader
+
+
+class SettingsPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.default_folder = QLineEdit()
+        self.default_folder.setPlaceholderText("选择默认保存位置")
+        self.cookies_path = QLineEdit()
+        self.cookies_path.setPlaceholderText("选择 cookies.txt 文件路径")
+        self.ffmpeg_path = QLineEdit()
+        self.ffmpeg_path.setPlaceholderText("选择 ffmpeg.exe 文件路径")
+        self.concurrency = QSpinBox()
+        self.concurrency.setRange(1, 5)
+        self.concurrency.setValue(2)
+        self.update_on_start = QCheckBox("启动后后台检查 yt-dlp 更新")
+        self.update_on_start.setChecked(True)
+        self.find_ffmpeg_button = QPushButton("搜索 ffmpeg")
+        self.choose_ffmpeg_button = QPushButton("选择 ffmpeg.exe")
+        self.ffmpeg_download_button = QPushButton("打开 ffmpeg 官网下载页")
+        self.cookies_help_button = QPushButton("如何获取 cookies.txt")
+
+        paths_group = QGroupBox("路径")
+        paths = QFormLayout(paths_group)
+        paths.addRow("默认保存位置", self.default_folder)
+        paths.addRow("cookies.txt", self.cookies_path)
+        paths.addRow("", self.cookies_help_button)
+        paths.addRow("ffmpeg.exe", self.ffmpeg_path)
+
+        ffmpeg_actions = QHBoxLayout()
+        ffmpeg_actions.addWidget(self.find_ffmpeg_button)
+        ffmpeg_actions.addWidget(self.choose_ffmpeg_button)
+        ffmpeg_actions.addWidget(self.ffmpeg_download_button)
+        paths.addRow("", ffmpeg_actions)
+
+        behavior_group = QGroupBox("行为")
+        behavior = QFormLayout(behavior_group)
+        behavior.addRow("并发下载数", self.concurrency)
+        behavior.addRow("", self.update_on_start)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(12)
+        layout.addWidget(PageHeader("设置", "配置保存位置、cookies、ffmpeg 与启动检查。"))
+        layout.addWidget(paths_group)
+        layout.addWidget(behavior_group)
+        layout.addStretch()
