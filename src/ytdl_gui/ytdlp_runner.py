@@ -1,4 +1,68 @@
 from enum import Enum
+from pathlib import Path
+
+
+class YtdlpCommandBuilder:
+    def __init__(self, executable: Path):
+        self.executable = executable
+
+    def analysis_command(self, url: str, cookies_path: Path | None = None) -> list[str]:
+        command = [
+            str(self.executable),
+            "--dump-single-json",
+            "--no-warnings",
+            "--no-playlist",
+        ]
+        self._append_cookies(command, cookies_path)
+        command.append(url)
+        return command
+
+    def playlist_probe_command(self, url: str, cookies_path: Path | None = None) -> list[str]:
+        command = [
+            str(self.executable),
+            "--dump-single-json",
+            "--flat-playlist",
+        ]
+        self._append_cookies(command, cookies_path)
+        command.append(url)
+        return command
+
+    def download_command(
+        self,
+        url: str,
+        output_template: Path,
+        format_id: str,
+        cookies_path: Path | None = None,
+    ) -> list[str]:
+        command = [
+            str(self.executable),
+            "--newline",
+            "-f",
+            format_id,
+            "-o",
+            str(output_template),
+        ]
+        self._append_cookies(command, cookies_path)
+        command.append(url)
+        return command
+
+    def preview_url_command(
+        self,
+        url: str,
+        format_id: str | None = None,
+        cookies_path: Path | None = None,
+    ) -> list[str]:
+        command = [str(self.executable), "-g"]
+        if format_id:
+            command.extend(["-f", format_id])
+        self._append_cookies(command, cookies_path)
+        command.append(url)
+        return command
+
+    @staticmethod
+    def _append_cookies(command: list[str], cookies_path: Path | None) -> None:
+        if cookies_path:
+            command.extend(["--cookies", str(cookies_path)])
 
 
 PLAYLIST_EXPANSION_LIMIT = 50
