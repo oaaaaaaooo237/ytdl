@@ -9,10 +9,12 @@ from ytdl_gui.ui.pages.settings_page import SettingsPage
 
 
 class MainWindow(QWidget):
-    def __init__(self):
+    def __init__(self, config_store=None, history_store=None):
         super().__init__()
         self.setWindowTitle("视频地址提取器")
         self.resize(1120, 720)
+        self.config_store = config_store
+        self.history_store = history_store
 
         self.nav = QListWidget()
         self.nav.setFixedWidth(168)
@@ -45,3 +47,8 @@ class MainWindow(QWidget):
         layout.setSpacing(0)
         layout.addWidget(self.nav)
         layout.addWidget(self.stack, 1)
+
+        if self.config_store:
+            self.settings_page.load_config(self.config_store.load())
+        if self.history_store:
+            self.history_page.load_records(self.history_store.list())

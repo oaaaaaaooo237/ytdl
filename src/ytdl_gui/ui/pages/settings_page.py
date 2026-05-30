@@ -47,3 +47,10 @@ class SettingsPage(QWidget):
         layout.addWidget(paths_group)
         layout.addWidget(behavior_group)
         layout.addStretch()
+
+    def load_config(self, config) -> None:
+        self.default_folder.setText(config.default_save_dir)
+        self.cookies_path.setText(config.cookies_path)
+        self.ffmpeg_path.setText(config.ffmpeg_path)
+        self.concurrency.setValue(config.max_concurrency)
+        self.update_on_start.setChecked(config.check_ytdlp_updates_on_startup)

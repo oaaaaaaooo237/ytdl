@@ -1,4 +1,13 @@
-from PySide6.QtWidgets import QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ytdl_gui.ui.widgets import PageHeader
 
@@ -26,3 +35,19 @@ class HistoryPage(QWidget):
         layout.addWidget(self.search)
         layout.addLayout(actions)
         layout.addWidget(self.table, 1)
+
+    def load_records(self, records) -> None:
+        self.table.setRowCount(0)
+        for record in records:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            values = [
+                record.title,
+                record.download_type,
+                record.format_summary,
+                record.status,
+                record.created_at,
+                "打开",
+            ]
+            for column, value in enumerate(values):
+                self.table.setItem(row, column, QTableWidgetItem(str(value)))

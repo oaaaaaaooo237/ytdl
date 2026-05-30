@@ -21,3 +21,13 @@ class AboutPage(QWidget):
         layout.addWidget(self.ffmpeg_label)
         layout.addWidget(self.legal_button)
         layout.addStretch()
+
+    def load_status(self, ytdlp_status: str = "待检测", ffmpeg_status: str = "待检测") -> None:
+        self.set_ytdlp_status(ytdlp_status)
+        self.set_ffmpeg_status(ffmpeg_status)
+
+    def set_ytdlp_status(self, status: str) -> None:
+        self.ytdlp_label.setText(f"yt-dlp 状态：{status}")
+
+    def set_ffmpeg_status(self, status: str) -> None:
+        self.ffmpeg_label.setText(f"ffmpeg 状态：{status}")
