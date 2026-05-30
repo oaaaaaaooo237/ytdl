@@ -25,6 +25,7 @@ dist/
 # Local runtime state and logs
 logs/
 *.log
+.gh-auth-login.*.log
 config.json
 history.json
 ytdlp-update-state.json
