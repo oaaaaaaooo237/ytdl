@@ -26,6 +26,8 @@ dist/
 logs/
 *.log
 .gh-auth-login.*.log
+.qa-data/
+.qa-real-smoke/
 config.json
 history.json
 ytdlp-update-state.json

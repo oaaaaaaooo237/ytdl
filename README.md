@@ -50,4 +50,10 @@ Run packaged smoke checks:
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke_packaged.ps1
 ```
 
+Run the real URL smoke check with the bundled `yt-dlp.exe`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\real_url_smoke.ps1 "https://www.youtube.com/watch?v=KYDPpt3eqaQ"
+```
+
 The package includes `licenses\THIRD_PARTY_NOTICES.txt`. ffmpeg is user-provided and is not bundled.
