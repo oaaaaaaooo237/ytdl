@@ -21,6 +21,10 @@ class SettingsPage(QWidget):
         self.choose_ffmpeg_button = QPushButton("选择 ffmpeg.exe")
         self.ffmpeg_download_button = QPushButton("打开 ffmpeg 官网下载页")
         self.cookies_help_button = QPushButton("如何获取 cookies.txt")
+        self.find_ffmpeg_button.setToolTip("手动搜索本机 PATH 和常见目录中的 ffmpeg.exe")
+        self.choose_ffmpeg_button.setToolTip("选择已经下载到本机的 ffmpeg.exe")
+        self.ffmpeg_download_button.setToolTip("打开 ffmpeg 官方下载页面")
+        self.cookies_help_button.setToolTip("查看导出 Netscape 格式 cookies.txt 的说明")
 
         paths_group = QGroupBox("路径")
         paths = QFormLayout(paths_group)
@@ -54,3 +58,6 @@ class SettingsPage(QWidget):
         self.ffmpeg_path.setText(config.ffmpeg_path)
         self.concurrency.setValue(config.max_concurrency)
         self.update_on_start.setChecked(config.check_ytdlp_updates_on_startup)
+
+    def set_ffmpeg_path(self, path: str) -> None:
+        self.ffmpeg_path.setText(path)

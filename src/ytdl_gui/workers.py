@@ -7,6 +7,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from ytdl_gui.ffmpeg import FfmpegStatus, find_ffmpeg
 from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error
 
 
@@ -87,3 +88,18 @@ class AnalysisWorker(QObject):
         if not isinstance(payload, dict):
             return None
         return payload
+
+
+FfmpegFinder = Callable[[], FfmpegStatus]
+
+
+class FfmpegSearchWorker(QObject):
+    finished = Signal(object)
+
+    def __init__(self, finder: FfmpegFinder = find_ffmpeg):
+        super().__init__()
+        self._finder = finder
+
+    @Slot()
+    def run(self) -> None:
+        self.finished.emit(self._finder())

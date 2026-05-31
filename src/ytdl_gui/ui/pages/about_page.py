@@ -31,3 +31,9 @@ class AboutPage(QWidget):
 
     def set_ffmpeg_status(self, status: str) -> None:
         self.ffmpeg_label.setText(f"ffmpeg 状态：{status}")
+
+    def show_ffmpeg_found(self, status: str) -> None:
+        self.set_ffmpeg_status(status)
+
+    def show_ffmpeg_missing_baseline(self) -> None:
+        self.set_ffmpeg_status("未找到，基础下载功能仍可使用")
