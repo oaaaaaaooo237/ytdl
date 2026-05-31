@@ -319,10 +319,10 @@ class MainWindow(QWidget):
         return output_dir / "%(title)s.%(ext)s"
 
     def _download_mode(self) -> str:
-        text = self.download_page.mode_combo.currentText()
-        if text == "仅音频":
+        index = self.download_page.mode_combo.currentIndex()
+        if index == 1:
             return "audio_only"
-        if text == "仅视频":
+        if index == 2:
             return "video_only"
         return "audio_video"
 
