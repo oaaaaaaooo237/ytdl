@@ -1,0 +1,21 @@
+YTDL GUI third-party notices
+
+This distribution includes or is designed to bundle the following third-party components:
+
+Python runtime
+License: Python Software Foundation License
+Source: https://www.python.org/
+
+PySide6 and Qt
+License: LGPL/commercial terms depending on distribution package
+Source: https://doc.qt.io/qtforpython-6/
+
+PyInstaller bootloader/runtime
+License: GPL with bootloader exception
+Source: https://pyinstaller.org/
+
+yt-dlp executable
+License: Unlicense
+Source: https://github.com/yt-dlp/yt-dlp
+
+ffmpeg is not bundled in the first version. If users configure a local ffmpeg.exe, that binary remains user-provided.
