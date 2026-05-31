@@ -3,7 +3,7 @@
 ## 全真验收证据
 
 - `scripts/real_full_smoke.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频、提取预览 stream URL、执行真实下载、写入真实历史记录。下载文件保留在本次运行目录，不自动删除。
-- `scripts/real_url_smoke.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频并执行真实下载，但不覆盖预览 stream。
+- `scripts/real_url_smoke.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频并执行真实下载，但不覆盖预览 stream。每次运行写入独立目录，不自动删除下载文件。
 - `scripts/package_win.ps1` 与 `scripts/smoke_packaged.ps1`：真实打包与打包产物存在性/ bundled `yt-dlp.exe --version` smoke。
 
 ## 非验收单元测试中的 mock/fake

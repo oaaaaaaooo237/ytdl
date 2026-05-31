@@ -3,7 +3,8 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 $Ytdlp = Join-Path $Root "tools\yt-dlp.exe"
-$DataDir = Join-Path $Root ".qa-real-smoke"
+$RunId = Get-Date -Format "yyyyMMdd-HHmmss"
+$DataDir = Join-Path $Root ".qa-real-smoke\basic\$RunId"
 $DownloadDir = Join-Path $DataDir "downloads"
 $Url = if ($args.Count -gt 0) { $args[0] } else { "https://www.youtube.com/watch?v=KYDPpt3eqaQ" }
 
@@ -33,10 +34,6 @@ root = Path(os.environ["YTDL_GUI_ROOT"])
 data_dir = Path(os.environ["YTDL_GUI_SMOKE_DATA"])
 download_dir = Path(os.environ["YTDL_GUI_SMOKE_DOWNLOADS"])
 url = os.environ["YTDL_GUI_SMOKE_URL"]
-
-for path in download_dir.glob("*"):
-    if path.is_file():
-        path.unlink()
 
 config = ConfigStore(data_dir)
 config.save(
@@ -71,6 +68,7 @@ print(f"queue_status={window.queue_page.table.item(0, 1).text()}")
 print(f"history_count={len(records)}")
 print(f"downloaded_files={len(files)}")
 print(f"downloaded_bytes={sum(path.stat().st_size for path in files)}")
+print(f"download_dir={download_dir}")
 
 if window.queue_page.table.item(0, 1).text() != "\u5df2\u5b8c\u6210":
     raise SystemExit("queue did not finish")
