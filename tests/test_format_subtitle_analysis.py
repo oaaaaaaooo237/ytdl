@@ -150,6 +150,32 @@ def test_choose_format_reports_chinese_error_when_no_single_file_format():
     assert "�" not in message
 
 
+def test_choose_format_can_select_audio_only():
+    formats = [
+        {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30},
+        {"format_id": "139", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.5", "abr": 49},
+        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129},
+    ]
+
+    result = choose_format(formats, FormatPreference(download_mode="audio_only"))
+
+    assert result.format_id == "140"
+    assert result.actual_summary == "音频 m4a mp4a.40.2 129kbps"
+
+
+def test_choose_format_can_select_video_only():
+    formats = [
+        {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30},
+        {"format_id": "160", "height": 144, "ext": "mp4", "vcodec": "avc1.4d400c", "acodec": "none", "fps": 30},
+        {"format_id": "134", "height": 360, "ext": "mp4", "vcodec": "avc1.4d401e", "acodec": "none", "fps": 30},
+    ]
+
+    result = choose_format(formats, FormatPreference(download_mode="video_only"))
+
+    assert result.format_id == "134"
+    assert result.actual_summary == "360p mp4 avc1.4d401e/无音频 30fps"
+
+
 def test_choose_format_rejects_formats_missing_codec_metadata():
     formats = [
         {"format_id": "missing-video", "height": 720, "ext": "mp4", "acodec": "mp4a", "fps": 30},

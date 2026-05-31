@@ -195,7 +195,7 @@ class MainWindow(QWidget):
         self.analyzed_metadata = metadata
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
         try:
-            choice = choose_format(formats, FormatPreference())
+            choice = choose_format(formats, FormatPreference(download_mode=self._download_mode()))
         except ValueError as exc:
             self.selected_format_id = ""
             self.selected_format_summary = ""
@@ -317,6 +317,14 @@ class MainWindow(QWidget):
             folder = self.config_store.load().default_save_dir.strip()
         output_dir = Path(folder) if folder else Path.home() / "Downloads"
         return output_dir / "%(title)s.%(ext)s"
+
+    def _download_mode(self) -> str:
+        text = self.download_page.mode_combo.currentText()
+        if text == "仅音频":
+            return "audio_only"
+        if text == "仅视频":
+            return "video_only"
+        return "audio_video"
 
     def _run_worker_in_thread(self, worker: object) -> None:
         thread = QThread(self)
