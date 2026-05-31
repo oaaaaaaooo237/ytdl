@@ -105,6 +105,21 @@ def apply_light_theme(app) -> None:
             border: 1px solid #dfe7ec;
             border-radius: 8px;
         }}
+        #formatSection {{
+            background: {SURFACE};
+            border: 1px solid #dfe7ec;
+            border-radius: 8px;
+        }}
+        #segmentButton {{
+            min-height: 46px;
+            border-radius: 7px;
+            font-weight: 600;
+        }}
+        #segmentButton:checked {{
+            background: {TEAL_SOFT};
+            border-color: {TEAL};
+            color: #064e4b;
+        }}
         #thumbnailPlaceholder {{
             background: #e8eff5;
             border-radius: 6px;
