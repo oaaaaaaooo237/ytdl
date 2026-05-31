@@ -129,6 +129,48 @@ def apply_light_theme(app) -> None:
             margin-top: 8px;
             padding-top: 8px;
         }}
+        #queueScroll {{
+            border: 0;
+            background: transparent;
+        }}
+        #queueScroll QWidget {{
+            background: transparent;
+        }}
+        #queueCard {{
+            background: {SURFACE};
+            border: 1px solid #e2e8ee;
+            border-radius: 8px;
+        }}
+        #queueThumb {{
+            background: #dfeaf2;
+            border-radius: 6px;
+            color: {MUTED_TEXT};
+            font-weight: 600;
+        }}
+        #queueTitle {{
+            font-size: 13px;
+            font-weight: 700;
+            background: transparent;
+        }}
+        #toolbarButton {{
+            min-width: 88px;
+        }}
+        #iconButton {{
+            min-width: 44px;
+            max-width: 54px;
+            padding: 6px;
+        }}
+        QProgressBar {{
+            border: 0;
+            border-radius: 3px;
+            background: #ecf0f3;
+            height: 7px;
+            text-align: center;
+        }}
+        QProgressBar::chunk {{
+            background: {TEAL};
+            border-radius: 3px;
+        }}
         QGroupBox {{
             border: 1px solid #dde3e7;
             border-radius: 8px;
