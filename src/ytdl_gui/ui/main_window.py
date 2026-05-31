@@ -20,7 +20,7 @@ from ytdl_gui.ui.pages.formats_page import FormatsPage
 from ytdl_gui.ui.pages.history_page import HistoryPage
 from ytdl_gui.ui.pages.queue_page import QueuePage
 from ytdl_gui.ui.pages.settings_page import SettingsPage
-from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, DownloadRequest, DownloadWorker
+from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, DownloadRequest, DownloadWorker, PreviewUrlRequest, PreviewUrlWorker
 from ytdl_gui.ytdlp_runner import ProgressEvent
 
 
@@ -37,6 +37,7 @@ class MainWindow(QWidget):
         cookies_file_picker: Callable[[], str] | None = None,
         analysis_runner=None,
         download_popen_factory=None,
+        preview_runner=None,
         worker_runner: Callable[[object], object] | None = None,
         save_folder_picker: Callable[[], str] | None = None,
         ):
@@ -64,6 +65,7 @@ class MainWindow(QWidget):
         self._cookies_file_picker = cookies_file_picker or self._pick_cookies_file
         self._analysis_runner = analysis_runner
         self._download_popen_factory = download_popen_factory
+        self._preview_runner = preview_runner
         self._worker_runner = worker_runner or self._run_worker_in_thread
         self._save_folder_picker = save_folder_picker
         self._network_manager = QNetworkAccessManager(self)
@@ -326,7 +328,24 @@ class MainWindow(QWidget):
             cookies_path=self._cookies_path(),
         )
         self._download_requests_by_task[task_id] = request
+        if self.download_page.preview_checkbox.isChecked():
+            self.start_preview()
         self._start_download_worker(task_id, request, "下载已开始，进度见队列。")
+
+    def start_preview(self) -> None:
+        request = PreviewUrlRequest(
+            url=self.analyzed_url,
+            ytdlp_path=self._active_ytdlp_path(),
+            format_id=self.selected_format_id,
+            cookies_path=self._cookies_path(),
+        )
+        if self._preview_runner is None:
+            worker = PreviewUrlWorker(request)
+        else:
+            worker = PreviewUrlWorker(request, runner=self._preview_runner)
+        worker.finished.connect(self.download_page.preview_player.load_url)
+        worker.failed.connect(lambda _message: self.download_page.preview_player.show_unavailable())
+        self._worker_runner(worker)
 
     def _start_download_worker(self, task_id: str, request: DownloadRequest, status_text: str) -> None:
         self._download_task_states[task_id] = "running"

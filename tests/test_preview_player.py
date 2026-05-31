@@ -1,7 +1,11 @@
 import os
+import subprocess
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from ytdl_gui.config_store import AppConfig, ConfigStore
+from ytdl_gui.history_store import HistoryStore
 from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.ui.player import PreviewPlayer, PreviewState, preview_failure_message
 
@@ -52,3 +56,64 @@ def test_preview_failure_does_not_clear_download_readiness(qtbot):
     assert window.download_page.status_label.text() == "分析完成，可以开始下载。"
     assert "预览不可用" in window.download_page.preview_player.status.text()
     assert "下载仍可继续" in window.download_page.preview_player.status.text()
+
+
+def _preview_window(qtbot, app_data_dir: Path, preview_runner):
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(default_save_dir=str(app_data_dir / "downloads"), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    window = MainWindow(
+        config_store=store,
+        history_store=HistoryStore(app_data_dir),
+        preview_runner=preview_runner,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "formats": [
+                {
+                    "format_id": "18",
+                    "height": 360,
+                    "ext": "mp4",
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                    "fps": 30,
+                }
+            ],
+        },
+    )
+    window.download_page.preview_checkbox.setChecked(True)
+    return window
+
+
+def test_start_preview_extracts_stream_url(qtbot, app_data_dir: Path):
+    calls: list[list[str]] = []
+
+    def preview_runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="https://media.example/preview.mp4\n", stderr="")
+
+    window = _preview_window(qtbot, app_data_dir, preview_runner)
+
+    window.start_preview()
+
+    assert calls
+    assert window.download_page.preview_player.state == PreviewState.LOADING
+    assert window.download_page.preview_player.status.text() == "正在加载预览..."
+
+
+def test_preview_stream_failure_does_not_clear_download_readiness(qtbot, app_data_dir: Path):
+    def preview_runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="preview unavailable")
+
+    window = _preview_window(qtbot, app_data_dir, preview_runner)
+
+    window.start_preview()
+
+    assert window.selected_format_id == "18"
+    assert window.download_page.start_button.isEnabled()
+    assert window.download_page.status_label.text() == "分析完成，可以开始下载。"
+    assert window.download_page.preview_player.state == PreviewState.UNAVAILABLE
+    assert "预览不可用" in window.download_page.preview_player.status.text()

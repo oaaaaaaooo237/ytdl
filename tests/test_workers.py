@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 
 from ytdl_gui.ytdlp_runner import AnalysisFailureKind
-from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, make_analysis_command
+from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, PreviewUrlRequest, PreviewUrlWorker, make_analysis_command
 
 
 def make_request(tmp_path: Path, cookies_path: Path | None = None) -> AnalysisRequest:
@@ -19,6 +19,13 @@ def collect_worker_signals(worker: AnalysisWorker) -> dict[str, list[object]]:
     worker.finished.connect(lambda payload: events["finished"].append(payload))
     worker.failed.connect(lambda message: events["failed"].append(message))
     worker.canceled.connect(lambda: events["canceled"].append(True))
+    return events
+
+
+def collect_preview_signals(worker: PreviewUrlWorker) -> dict[str, list[str]]:
+    events: dict[str, list[str]] = {"finished": [], "failed": []}
+    worker.finished.connect(lambda url: events["finished"].append(url))
+    worker.failed.connect(lambda message: events["failed"].append(message))
     return events
 
 
@@ -160,3 +167,48 @@ def test_analysis_worker_invalid_json_emits_unknown_failure(tmp_path: Path):
     assert events["failed"] == [AnalysisFailureKind.UNKNOWN_YTDLP_FAILURE.value]
     assert events["finished"] == []
     assert events["canceled"] == []
+
+
+def test_preview_url_worker_emits_first_stream_url_and_passes_cookie_path(tmp_path: Path):
+    calls: list[list[str]] = []
+    cookies_path = tmp_path / "cookies.txt"
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="https://media.example/stream.mp4\n", stderr="")
+
+    request = PreviewUrlRequest(
+        url="https://www.youtube.com/watch?v=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        format_id="18",
+        cookies_path=cookies_path,
+    )
+    worker = PreviewUrlWorker(request, runner=runner)
+    events = collect_preview_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == ["https://media.example/stream.mp4"]
+    assert events["failed"] == []
+    assert "-g" in calls[0]
+    assert calls[0][calls[0].index("-f") + 1] == "18"
+    assert str(cookies_path) in calls[0]
+
+
+def test_preview_url_worker_reports_unavailable_without_sensitive_details(tmp_path: Path):
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="D:/secret/cookies.txt failed")
+
+    request = PreviewUrlRequest(
+        url="https://www.youtube.com/watch?v=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        format_id="18",
+        cookies_path=tmp_path / "secret" / "cookies.txt",
+    )
+    worker = PreviewUrlWorker(request, runner=runner)
+    events = collect_preview_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == []
+    assert events["failed"] == ["预览不可用"]

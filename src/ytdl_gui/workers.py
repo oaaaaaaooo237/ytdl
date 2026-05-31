@@ -100,6 +100,15 @@ class DownloadRequest:
     cookies_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class PreviewUrlRequest:
+    url: str
+    ytdlp_path: Path
+    format_id: str | None = None
+    cookies_path: Path | None = None
+    timeout_seconds: int = 30
+
+
 class DownloadWorker(QObject):
     progress = Signal(object)
     finished = Signal()
@@ -153,6 +162,45 @@ class DownloadWorker(QObject):
             self.finished.emit()
         else:
             self.failed.emit(f"yt-dlp 下载失败，退出码 {return_code}")
+
+
+class PreviewUrlWorker(QObject):
+    finished = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, request: PreviewUrlRequest, runner: AnalysisRunner = subprocess.run):
+        super().__init__()
+        self.request = request
+        self._runner = runner
+
+    @Slot()
+    def run(self) -> None:
+        command = YtdlpCommandBuilder(self.request.ytdlp_path).preview_url_command(
+            self.request.url,
+            self.request.format_id,
+            self.request.cookies_path,
+        )
+        try:
+            result = self._runner(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=self.request.timeout_seconds,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+            self.failed.emit("预览不可用")
+            return
+
+        if result.returncode != 0:
+            self.failed.emit("预览不可用")
+            return
+
+        preview_url = (result.stdout or "").splitlines()[0].strip() if result.stdout else ""
+        if preview_url:
+            self.finished.emit(preview_url)
+        else:
+            self.failed.emit("预览不可用")
 
 
 FfmpegFinder = Callable[[], FfmpegStatus]

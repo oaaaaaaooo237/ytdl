@@ -14,5 +14,5 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Visual diff | Strict pixel comparison with reference crops | `scripts/visual_compare.py`, `docs/qa/visual-diff.json` | Not pass |
 | Cookies settings | Select and validate cookies.txt from GUI | `tests/test_settings_actions.py` covers choose/validate/clear and path-only storage | Pass |
 | History actions | Search/open folder/clear from GUI | `tests/test_ui_service_wiring.py` covers search/open/clear; history write covered by real smoke | Pass |
-| Preview | Play-while-downloading obtains stream and failure does not block download | Preview failure covered; stream integration missing | Not complete |
+| Preview | Play-while-downloading obtains stream and failure does not block download | `scripts/real_full_smoke.ps1` with test URL loaded a real preview URL (`preview_state=loading`, `preview_url_loaded=yes`) while real download completed | Pass |
 | Queue controls | Pause/resume/cancel/retry from GUI | `tests/test_queue_controls_gui.py` covers task action buttons, cancel, and retry restart; core queue manager covers pause/resume states | Pass |
