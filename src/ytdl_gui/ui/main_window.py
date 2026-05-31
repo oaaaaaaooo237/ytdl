@@ -9,7 +9,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QListWidget, QMessageBox, QStackedWidget, QWidget
 
 from ytdl_gui.config_store import AppConfig
-from ytdl_gui.cookies import cookie_help_text
+from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
 from ytdl_gui.format_selector import FormatPreference, choose_format
 from ytdl_gui.history_store import HistoryRecord
@@ -33,6 +33,8 @@ class MainWindow(QWidget):
         external_url_opener: Callable[[str], object] | None = None,
         information_dialog: Callable[[QWidget, str, str], object] | None = None,
         ffmpeg_file_picker: Callable[[], str] | None = None,
+        default_folder_picker: Callable[[], str] | None = None,
+        cookies_file_picker: Callable[[], str] | None = None,
         analysis_runner=None,
         download_popen_factory=None,
         worker_runner: Callable[[object], object] | None = None,
@@ -55,6 +57,8 @@ class MainWindow(QWidget):
         self._external_url_opener = external_url_opener or self._open_external_url
         self._information_dialog = information_dialog or QMessageBox.information
         self._ffmpeg_file_picker = ffmpeg_file_picker or self._pick_ffmpeg_file
+        self._default_folder_picker = default_folder_picker or self._pick_default_folder
+        self._cookies_file_picker = cookies_file_picker or self._pick_cookies_file
         self._analysis_runner = analysis_runner
         self._download_popen_factory = download_popen_factory
         self._worker_runner = worker_runner or self._run_worker_in_thread
@@ -100,8 +104,12 @@ class MainWindow(QWidget):
 
         self.connect_settings_actions()
         self.connect_download_actions()
+        self.connect_history_actions()
 
     def connect_settings_actions(self) -> None:
+        self.settings_page.choose_default_folder_button.clicked.connect(self.choose_default_folder)
+        self.settings_page.choose_cookies_button.clicked.connect(self.choose_cookies_file)
+        self.settings_page.clear_cookies_button.clicked.connect(self.clear_cookies_file)
         self.settings_page.cookies_help_button.clicked.connect(self.show_cookies_help)
         self.settings_page.find_ffmpeg_button.clicked.connect(self.search_ffmpeg)
         self.settings_page.choose_ffmpeg_button.clicked.connect(self.choose_ffmpeg)
@@ -167,10 +175,49 @@ class MainWindow(QWidget):
         )
         return path
 
+    def _pick_default_folder(self) -> str:
+        return QFileDialog.getExistingDirectory(self, "选择默认保存位置")
+
+    def _pick_cookies_file(self) -> str:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "选择 cookies.txt",
+            "",
+            "cookies.txt (cookies.txt);;文本文件 (*.txt)",
+        )
+        return path
+
+    def choose_default_folder(self) -> None:
+        selected_path = self._default_folder_picker()
+        if not selected_path:
+            return
+        self.settings_page.set_default_folder(selected_path)
+        self._save_settings_config()
+
+    def choose_cookies_file(self) -> None:
+        selected_path = self._cookies_file_picker()
+        if not selected_path:
+            return
+        result = validate_netscape_cookies(Path(selected_path))
+        if not result.ok:
+            self._information_dialog(self, "cookies.txt 无效", result.message)
+            return
+        self.settings_page.set_cookies_path(selected_path)
+        self._save_settings_config()
+        self._information_dialog(self, "cookies.txt 已设置", "已保存 cookies.txt 文件路径。")
+
+    def clear_cookies_file(self) -> None:
+        self.settings_page.set_cookies_path("")
+        self._save_settings_config()
+
     def connect_download_actions(self) -> None:
         self.download_page.analyze_button.clicked.connect(self.start_analysis)
         self.download_page.save_folder_button.clicked.connect(self.choose_save_folder)
         self.download_page.start_button.clicked.connect(self.start_download)
+
+    def connect_history_actions(self) -> None:
+        self.history_page.clear_button.clicked.connect(self.clear_history)
+        self.history_page.open_folder_button.clicked.connect(self.open_download_folder)
 
     def start_analysis(self) -> None:
         url = self._first_url()
@@ -234,6 +281,22 @@ class MainWindow(QWidget):
             return
         self.save_folder_path = selected
         self.download_page.set_save_folder(selected)
+
+    def clear_history(self) -> None:
+        if not self.history_store:
+            self.history_page.load_records([])
+            return
+        self.history_store.clear()
+        self.history_page.load_records([])
+
+    def open_download_folder(self) -> None:
+        folder = self.settings_page.default_folder.text().strip()
+        if not folder and self.config_store:
+            folder = self.config_store.load().default_save_dir.strip()
+        if folder:
+            self._external_url_opener(QUrl.fromLocalFile(folder).toString())
+        else:
+            self._information_dialog(self, "未设置保存位置", "请先在设置中选择默认保存位置。")
 
     def start_download(self) -> None:
         if not self.analyzed_url or not self.selected_format_id:

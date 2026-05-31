@@ -20,6 +20,9 @@ def test_settings_buttons_expose_help_actions(qtbot):
     qtbot.addWidget(window)
 
     assert window.settings_page.cookies_help_button.text() == "如何获取 cookies.txt"
+    assert window.settings_page.choose_default_folder_button.text() == "选择默认保存位置"
+    assert window.settings_page.choose_cookies_button.text() == "选择 cookies.txt"
+    assert window.settings_page.clear_cookies_button.text() == "清除 cookies"
     assert window.settings_page.find_ffmpeg_button.text() == "搜索 ffmpeg"
     assert window.settings_page.choose_ffmpeg_button.text() == "选择 ffmpeg.exe"
     assert window.settings_page.ffmpeg_download_button.text() == "打开 ffmpeg 官网下载页"
@@ -57,6 +60,71 @@ def test_choose_ffmpeg_action_updates_settings_about_and_config(qtbot, app_data_
     assert window.settings_page.ffmpeg_path.text() == str(exe)
     assert window.about_page.ffmpeg_label.text() == f"ffmpeg 状态：已选择：{exe}"
     assert store.load().ffmpeg_path == str(exe)
+
+
+def test_choose_default_folder_updates_config(qtbot, app_data_dir: Path, tmp_path: Path):
+    store = ConfigStore(app_data_dir)
+    folder = tmp_path / "downloads"
+    folder.mkdir()
+    window = MainWindow(config_store=store, default_folder_picker=lambda: str(folder))
+    qtbot.addWidget(window)
+
+    window.choose_default_folder()
+
+    assert window.settings_page.default_folder.text() == str(folder)
+    assert store.load().default_save_dir == str(folder)
+
+
+def test_choose_valid_cookies_path_updates_config_without_content(qtbot, app_data_dir: Path, tmp_path: Path):
+    store = ConfigStore(app_data_dir)
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tSECRET\n", encoding="utf-8")
+    messages: list[tuple[str, str]] = []
+    window = MainWindow(
+        config_store=store,
+        cookies_file_picker=lambda: str(cookie_file),
+        information_dialog=lambda _parent, title, text: messages.append((title, text)),
+    )
+    qtbot.addWidget(window)
+
+    window.choose_cookies_file()
+
+    assert window.settings_page.cookies_path.text() == str(cookie_file)
+    assert store.load().cookies_path == str(cookie_file)
+    assert "SECRET" not in store.path.read_text(encoding="utf-8")
+    assert messages == [("cookies.txt 已设置", "已保存 cookies.txt 文件路径。")]
+
+
+def test_choose_invalid_cookies_path_does_not_update_config(qtbot, app_data_dir: Path, tmp_path: Path):
+    store = ConfigStore(app_data_dir)
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text("not cookies", encoding="utf-8")
+    messages: list[tuple[str, str]] = []
+    window = MainWindow(
+        config_store=store,
+        cookies_file_picker=lambda: str(cookie_file),
+        information_dialog=lambda _parent, title, text: messages.append((title, text)),
+    )
+    qtbot.addWidget(window)
+
+    window.choose_cookies_file()
+
+    assert window.settings_page.cookies_path.text() == ""
+    assert store.load().cookies_path == ""
+    assert messages
+    assert messages[0][0] == "cookies.txt 无效"
+
+
+def test_clear_cookies_path_updates_config(qtbot, app_data_dir: Path):
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(cookies_path="D:/secret/cookies.txt"))
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    window.clear_cookies_file()
+
+    assert window.settings_page.cookies_path.text() == ""
+    assert store.load().cookies_path == ""
 
 
 def test_ffmpeg_search_is_user_triggered_and_updates_status(qtbot):

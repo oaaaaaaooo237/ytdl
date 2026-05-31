@@ -74,6 +74,43 @@ def test_history_page_load_records_clears_existing_rows(qtbot):
     assert window.history_page.table.item(0, 0).text() == "New"
 
 
+def test_history_search_filters_visible_records(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    first = HistoryRecord("Subaru review", "url", "D:/car.m4a", "audio", "m4a", "none", "finished", "2026-05-30T20:00:00")
+    second = HistoryRecord("Music video", "url", "D:/music.mp4", "video", "720p", "none", "finished", "2026-05-30T21:00:00")
+
+    window.history_page.load_records([first, second])
+    window.history_page.search.setText("subaru")
+
+    assert window.history_page.table.rowCount() == 1
+    assert window.history_page.table.item(0, 0).text() == "Subaru review"
+
+
+def test_clear_history_action_updates_store_and_table(qtbot, app_data_dir: Path):
+    history = HistoryStore(app_data_dir)
+    history.add(HistoryRecord("Title", "url", "D:/file.mp4", "video", "720p", "none", "finished", "2026-05-30T20:00:00"))
+    window = MainWindow(config_store=ConfigStore(app_data_dir), history_store=history)
+    qtbot.addWidget(window)
+
+    window.clear_history()
+
+    assert history.list() == []
+    assert window.history_page.table.rowCount() == 0
+
+
+def test_open_download_folder_uses_configured_folder(qtbot, app_data_dir: Path):
+    opened: list[str] = []
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(default_save_dir="D:/Downloads"))
+    window = MainWindow(config_store=store, external_url_opener=opened.append)
+    qtbot.addWidget(window)
+
+    window.open_download_folder()
+
+    assert opened == ["file:///D:/Downloads"]
+
+
 def test_main_window_can_construct_without_stores(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)

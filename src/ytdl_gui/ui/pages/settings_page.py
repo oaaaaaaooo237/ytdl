@@ -8,8 +8,11 @@ class SettingsPage(QWidget):
         super().__init__()
         self.default_folder = QLineEdit()
         self.default_folder.setPlaceholderText("选择默认保存位置")
+        self.choose_default_folder_button = QPushButton("选择默认保存位置")
         self.cookies_path = QLineEdit()
         self.cookies_path.setPlaceholderText("选择 cookies.txt 文件路径")
+        self.choose_cookies_button = QPushButton("选择 cookies.txt")
+        self.clear_cookies_button = QPushButton("清除 cookies")
         self.ffmpeg_path = QLineEdit()
         self.ffmpeg_path.setPlaceholderText("选择 ffmpeg.exe 文件路径")
         self.concurrency = QSpinBox()
@@ -25,12 +28,20 @@ class SettingsPage(QWidget):
         self.choose_ffmpeg_button.setToolTip("选择已经下载到本机的 ffmpeg.exe")
         self.ffmpeg_download_button.setToolTip("打开 ffmpeg 官方下载页面")
         self.cookies_help_button.setToolTip("查看导出 Netscape 格式 cookies.txt 的说明")
+        self.choose_default_folder_button.setToolTip("选择默认下载保存目录")
+        self.choose_cookies_button.setToolTip("选择 Netscape 格式 cookies.txt 文件")
+        self.clear_cookies_button.setToolTip("清除 cookies.txt 路径设置")
 
         paths_group = QGroupBox("路径")
         paths = QFormLayout(paths_group)
         paths.addRow("默认保存位置", self.default_folder)
+        paths.addRow("", self.choose_default_folder_button)
         paths.addRow("cookies.txt", self.cookies_path)
-        paths.addRow("", self.cookies_help_button)
+        cookie_actions = QHBoxLayout()
+        cookie_actions.addWidget(self.choose_cookies_button)
+        cookie_actions.addWidget(self.clear_cookies_button)
+        cookie_actions.addWidget(self.cookies_help_button)
+        paths.addRow("", cookie_actions)
         paths.addRow("ffmpeg.exe", self.ffmpeg_path)
 
         ffmpeg_actions = QHBoxLayout()
@@ -61,3 +72,9 @@ class SettingsPage(QWidget):
 
     def set_ffmpeg_path(self, path: str) -> None:
         self.ffmpeg_path.setText(path)
+
+    def set_default_folder(self, path: str) -> None:
+        self.default_folder.setText(path)
+
+    def set_cookies_path(self, path: str) -> None:
+        self.cookies_path.setText(path)
