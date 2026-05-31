@@ -1,5 +1,48 @@
 from enum import Enum
 from pathlib import Path
+import re
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    percent: float | None
+    speed: str = ""
+    eta: str = ""
+    raw: str = ""
+
+
+PROGRESS_PATTERN = re.compile(r"\[download\]\s+(?P<percent>\d+(?:\.\d+)?)%.*? at (?P<speed>\S+) ETA (?P<eta>\S+)")
+
+
+def parse_progress_line(line: str) -> ProgressEvent:
+    match = PROGRESS_PATTERN.search(line)
+    if not match:
+        return ProgressEvent(percent=None, raw=line)
+    return ProgressEvent(
+        percent=float(match.group("percent")),
+        speed=match.group("speed"),
+        eta=match.group("eta"),
+        raw=line,
+    )
+
+
+def safe_command_summary(command: list[str]) -> str:
+    safe: list[str] = []
+    skip_next = False
+    for part in command:
+        if skip_next:
+            skip_next = False
+            continue
+        if part == "--cookies":
+            safe.append("--cookies <redacted>")
+            skip_next = True
+            continue
+        if part.startswith("--cookies="):
+            safe.append("--cookies=<redacted>")
+            continue
+        safe.append(part)
+    return " ".join(safe)
 
 
 class YtdlpCommandBuilder:

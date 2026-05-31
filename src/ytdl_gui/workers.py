@@ -8,7 +8,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal, Slot
 
 from ytdl_gui.ffmpeg import FfmpegStatus, find_ffmpeg
-from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error
+from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error, parse_progress_line
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class AnalysisRequest:
 
 
 AnalysisRunner = Callable[..., subprocess.CompletedProcess[str]]
+PopenFactory = Callable[..., subprocess.Popen]
 
 
 def make_analysis_command(request: AnalysisRequest) -> list[str]:
@@ -88,6 +89,70 @@ class AnalysisWorker(QObject):
         if not isinstance(payload, dict):
             return None
         return payload
+
+
+@dataclass(frozen=True)
+class DownloadRequest:
+    url: str
+    ytdlp_path: Path
+    output_template: Path
+    format_id: str
+    cookies_path: Path | None = None
+
+
+class DownloadWorker(QObject):
+    progress = Signal(object)
+    finished = Signal()
+    failed = Signal(str)
+
+    def __init__(self, request: DownloadRequest, popen_factory: PopenFactory | None = None):
+        super().__init__()
+        self.request = request
+        self._popen_factory = popen_factory or subprocess.Popen
+        self._process = None
+        self._canceled = False
+
+    def cancel(self) -> None:
+        self._canceled = True
+        if self._process and self._process.poll() is None:
+            self._process.terminate()
+
+    @Slot()
+    def run(self) -> None:
+        command = YtdlpCommandBuilder(self.request.ytdlp_path).download_command(
+            self.request.url,
+            self.request.output_template,
+            self.request.format_id,
+            self.request.cookies_path,
+        )
+        try:
+            self._process = self._popen_factory(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except OSError:
+            self.failed.emit("启动 yt-dlp 下载失败，请检查 yt-dlp 路径。")
+            return
+        except subprocess.SubprocessError:
+            self.failed.emit("启动 yt-dlp 下载失败，请稍后重试。")
+            return
+
+        stdout = getattr(self._process, "stdout", None)
+        if stdout is not None:
+            for line in stdout:
+                if self._canceled:
+                    break
+                self.progress.emit(parse_progress_line(line.strip()))
+
+        return_code = self._process.wait()
+        if self._canceled:
+            self.failed.emit("下载已取消。")
+        elif return_code == 0:
+            self.finished.emit()
+        else:
+            self.failed.emit(f"yt-dlp 下载失败，退出码 {return_code}")
 
 
 FfmpegFinder = Callable[[], FfmpegStatus]

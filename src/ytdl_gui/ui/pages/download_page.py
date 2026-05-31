@@ -24,6 +24,11 @@ class DownloadPage(QWidget):
         self.save_folder_button = QPushButton("选择保存位置")
         self.start_button = QPushButton("开始下载")
         self.start_button.setObjectName("primaryButton")
+        self.status_label = QLabel("等待输入视频地址。")
+        self.title_label = QLabel("标题：未分析")
+        self.duration_label = QLabel("时长：未分析")
+        self.format_summary_label = QLabel("格式：未选择")
+        self.save_folder_label = QLabel("保存位置：未选择")
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["音频+视频", "仅音频", "仅视频"])
         self.preview_checkbox = QCheckBox("下载时同步预览播放")
@@ -50,8 +55,23 @@ class DownloadPage(QWidget):
         layout.addWidget(url_group)
         layout.addWidget(options_group)
         layout.addLayout(actions)
-        layout.addWidget(QLabel("当前版本仅呈现界面壳；分析和下载将在后续任务接入。"))
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.duration_label)
+        layout.addWidget(self.format_summary_label)
+        layout.addWidget(self.save_folder_label)
         layout.addStretch()
 
     def choose_folder(self) -> str:
         return QFileDialog.getExistingDirectory(self, "选择保存位置")
+
+    def set_status(self, message: str) -> None:
+        self.status_label.setText(message)
+
+    def set_save_folder(self, path: str) -> None:
+        self.save_folder_label.setText(f"保存位置：{path}")
+
+    def show_analysis_result(self, title: str, duration_text: str, format_summary: str) -> None:
+        self.title_label.setText(f"标题：{title}")
+        self.duration_label.setText(f"时长：{duration_text}")
+        self.format_summary_label.setText(f"格式：{format_summary}")

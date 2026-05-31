@@ -20,6 +20,8 @@ class FormatsPage(QWidget):
         self.container_combo.addItems(["自动", "mp4", "mkv", "webm", "mp3"])
         self.subtitle_combo = QComboBox()
         self.subtitle_combo.addItems(["不下载", "下载字幕文件", "嵌入", "烧录"])
+        self.format_id_combo = QComboBox()
+        self.format_id_combo.addItem("自动")
 
         group = QGroupBox("格式偏好")
         form = QFormLayout(group)
@@ -30,6 +32,7 @@ class FormatsPage(QWidget):
         form.addRow("音频码率偏好", self.audio_bitrate_combo)
         form.addRow("容器", self.container_combo)
         form.addRow("字幕行为", self.subtitle_combo)
+        form.addRow("实际格式", self.format_id_combo)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 22)
@@ -37,3 +40,13 @@ class FormatsPage(QWidget):
         layout.addWidget(PageHeader("格式", "设置下载格式偏好；不做强制转码承诺。"))
         layout.addWidget(group)
         layout.addStretch()
+
+    def load_available_formats(self, formats: list[dict], selected_format_id: str) -> None:
+        self.format_id_combo.clear()
+        for item in formats:
+            format_id = str(item.get("format_id") or "")
+            if format_id:
+                self.format_id_combo.addItem(format_id)
+        index = self.format_id_combo.findText(selected_format_id)
+        if index >= 0:
+            self.format_id_combo.setCurrentIndex(index)
