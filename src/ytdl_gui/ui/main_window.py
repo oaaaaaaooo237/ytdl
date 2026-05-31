@@ -51,6 +51,9 @@ class MainWindow(QWidget):
         self.selected_format_id = ""
         self.selected_format_summary = ""
         self.save_folder_path = ""
+        self._download_workers_by_task: dict[str, DownloadWorker] = {}
+        self._download_requests_by_task: dict[str, DownloadRequest] = {}
+        self._download_task_states: dict[str, str] = {}
         self._threads: list[QThread] = []
         self._workers: list[object] = []
         self._ffmpeg_finder = ffmpeg_finder
@@ -105,6 +108,7 @@ class MainWindow(QWidget):
         self.connect_settings_actions()
         self.connect_download_actions()
         self.connect_history_actions()
+        self.connect_queue_actions()
 
     def connect_settings_actions(self) -> None:
         self.settings_page.choose_default_folder_button.clicked.connect(self.choose_default_folder)
@@ -219,6 +223,11 @@ class MainWindow(QWidget):
         self.history_page.clear_button.clicked.connect(self.clear_history)
         self.history_page.open_folder_button.clicked.connect(self.open_download_folder)
 
+    def connect_queue_actions(self) -> None:
+        self.queue_page.task_action_requested.connect(self.handle_queue_action)
+        self.queue_page.pause_all_button.clicked.connect(self.pause_all_tasks)
+        self.queue_page.clear_completed_button.clicked.connect(self.clear_completed_queue_tasks)
+
     def start_analysis(self) -> None:
         url = self._first_url()
         if not url:
@@ -309,18 +318,25 @@ class MainWindow(QWidget):
         task_id = uuid4().hex
         title = str(self.analyzed_metadata.get("title") or "未命名视频")
         self.queue_page.add_task(task_id, title, "下载中")
-        self.download_page.set_status("下载已开始，进度见队列。")
+        request = DownloadRequest(
+            url=self.analyzed_url,
+            ytdlp_path=self._active_ytdlp_path(),
+            output_template=self._output_template(),
+            format_id=self.selected_format_id,
+            cookies_path=self._cookies_path(),
+        )
+        self._download_requests_by_task[task_id] = request
+        self._start_download_worker(task_id, request, "下载已开始，进度见队列。")
 
+    def _start_download_worker(self, task_id: str, request: DownloadRequest, status_text: str) -> None:
+        self._download_task_states[task_id] = "running"
+        self.queue_page.update_task(task_id, status="下载中", progress=0.0, speed="", eta="")
+        self.download_page.set_status(status_text)
         worker = DownloadWorker(
-            DownloadRequest(
-                url=self.analyzed_url,
-                ytdlp_path=self._active_ytdlp_path(),
-                output_template=self._output_template(),
-                format_id=self.selected_format_id,
-                cookies_path=self._cookies_path(),
-            ),
+            request,
             popen_factory=self._download_popen_factory,
         )
+        self._download_workers_by_task[task_id] = worker
         worker.progress.connect(lambda event, task=task_id: self.update_download_progress(task, event))
         worker.finished.connect(lambda task=task_id: self.finish_download(task))
         worker.failed.connect(lambda message, task=task_id: self.fail_download(task, message))
@@ -332,14 +348,77 @@ class MainWindow(QWidget):
         self.queue_page.update_task(task_id, status="下载中", progress=event.percent, speed=event.speed, eta=event.eta)
 
     def finish_download(self, task_id: str) -> None:
+        self._download_workers_by_task.pop(task_id, None)
+        self._download_task_states[task_id] = "finished"
         self.queue_page.update_task(task_id, status="已完成", progress=100.0, speed="", eta="00:00")
         self.download_page.set_status("下载完成。")
         self.record_finished_download()
 
     def fail_download(self, task_id: str, message: str) -> None:
+        self._download_workers_by_task.pop(task_id, None)
+        state = self._download_task_states.get(task_id, "")
+        if state == "cancel_requested":
+            self._download_task_states[task_id] = "canceled"
+            self.queue_page.update_task(task_id, status="已取消")
+            self.download_page.set_status("下载已取消。")
+            return
+        if state == "pause_requested":
+            self._download_task_states[task_id] = "paused"
+            self.queue_page.update_task(task_id, status="已暂停")
+            self.download_page.set_status("下载已暂停，可继续。")
+            return
+        self._download_task_states[task_id] = "failed"
         safe_message = "下载失败，请检查地址、网络或 yt-dlp 状态后重试。"
         self.queue_page.update_task(task_id, status="失败")
         self.download_page.set_status(safe_message if "cookies" in message.lower() else message)
+
+    def handle_queue_action(self, task_id: str, action: str) -> None:
+        if action == "cancel":
+            self.cancel_queue_task(task_id)
+        elif action == "pause":
+            self.pause_queue_task(task_id)
+        elif action == "retry":
+            self.retry_queue_task(task_id)
+
+    def cancel_queue_task(self, task_id: str) -> None:
+        self._download_task_states[task_id] = "cancel_requested"
+        worker = self._download_workers_by_task.get(task_id)
+        if worker:
+            worker.cancel()
+        self.queue_page.update_task(task_id, status="已取消")
+        self.download_page.set_status("下载已取消。")
+
+    def pause_queue_task(self, task_id: str) -> None:
+        self._download_task_states[task_id] = "pause_requested"
+        worker = self._download_workers_by_task.get(task_id)
+        if worker:
+            worker.cancel()
+        self.queue_page.update_task(task_id, status="已暂停")
+        self.download_page.set_status("下载已暂停，可继续。")
+
+    def retry_queue_task(self, task_id: str) -> None:
+        state = self._download_task_states.get(task_id, "")
+        if state not in {"paused", "canceled", "failed", "pause_requested", "cancel_requested"}:
+            self.download_page.set_status("只能重试已暂停、已取消或失败的任务。")
+            return
+        request = self._download_requests_by_task.get(task_id)
+        if request is None:
+            return
+        self._start_download_worker(task_id, request, "已重新开始下载。")
+
+    def pause_all_tasks(self) -> None:
+        for row in range(self.queue_page.table.rowCount()):
+            task_item = self.queue_page.table.verticalHeaderItem(row)
+            if task_item:
+                self.pause_queue_task(task_item.text())
+
+    def clear_completed_queue_tasks(self) -> None:
+        task_ids = self.queue_page.completed_task_ids()
+        self.queue_page.remove_tasks(task_ids)
+        for task_id in task_ids:
+            self._download_workers_by_task.pop(task_id, None)
+            self._download_requests_by_task.pop(task_id, None)
+            self._download_task_states.pop(task_id, None)
 
     def record_finished_download(self) -> None:
         if not self.history_store:

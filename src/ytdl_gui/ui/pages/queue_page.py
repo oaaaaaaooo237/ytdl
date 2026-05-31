@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -17,6 +17,8 @@ from ytdl_gui.ui.widgets import PageHeader
 
 
 class QueuePage(QWidget):
+    task_action_requested = Signal(str, str)
+
     def __init__(self):
         super().__init__()
         self._task_cards: dict[str, dict[str, object]] = {}
@@ -110,17 +112,32 @@ class QueuePage(QWidget):
 
         pause = QPushButton("暂停")
         cancel = QPushButton("取消")
-        pause.setObjectName("iconButton")
-        cancel.setObjectName("iconButton")
+        retry = QPushButton("重试")
+        pause.setObjectName(f"queue-pause-{task_id}")
+        cancel.setObjectName(f"queue-cancel-{task_id}")
+        retry.setObjectName(f"queue-retry-{task_id}")
+        for button in (pause, cancel, retry):
+            button.setProperty("queueAction", True)
+        pause.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "pause"))
+        cancel.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "cancel"))
+        retry.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "retry"))
         actions = QHBoxLayout()
         actions.addWidget(pause)
         actions.addWidget(cancel)
+        actions.addWidget(retry)
 
         layout.addWidget(thumb)
         layout.addLayout(content, 1)
         layout.addLayout(actions)
         self.card_layout.insertWidget(max(self.card_layout.count() - 1, 0), card)
-        self._task_cards[task_id] = {"card": card, "progress": progress, "meta": meta}
+        self._task_cards[task_id] = {
+            "card": card,
+            "progress": progress,
+            "meta": meta,
+            "pause": pause,
+            "cancel": cancel,
+            "retry": retry,
+        }
 
     def _update_task_card(self, task_id: str, status: str | None, progress_value, speed: str, eta: str) -> None:
         card = self._task_cards.get(task_id)
@@ -134,3 +151,23 @@ class QueuePage(QWidget):
             parts = [part for part in [status, speed, f"ETA {eta}" if eta else ""] if part]
             if parts:
                 meta.setText(" · ".join(parts))
+
+    def completed_task_ids(self) -> list[str]:
+        task_ids: list[str] = []
+        for row in range(self.table.rowCount()):
+            status_item = self.table.item(row, 1)
+            task_item = self.table.verticalHeaderItem(row)
+            if status_item and task_item and status_item.text() in {"已完成", "已取消"}:
+                task_ids.append(task_item.text())
+        return task_ids
+
+    def remove_tasks(self, task_ids: list[str]) -> None:
+        for task_id in task_ids:
+            row = self._row_for_task(task_id)
+            if row >= 0:
+                self.table.removeRow(row)
+            card = self._task_cards.pop(task_id, None)
+            widget = card.get("card") if card else None
+            if isinstance(widget, QWidget):
+                self.card_layout.removeWidget(widget)
+                widget.deleteLater()

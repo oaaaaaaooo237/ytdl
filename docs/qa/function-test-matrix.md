@@ -15,4 +15,4 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Cookies settings | Select and validate cookies.txt from GUI | `tests/test_settings_actions.py` covers choose/validate/clear and path-only storage | Pass |
 | History actions | Search/open folder/clear from GUI | `tests/test_ui_service_wiring.py` covers search/open/clear; history write covered by real smoke | Pass |
 | Preview | Play-while-downloading obtains stream and failure does not block download | Preview failure covered; stream integration missing | Not complete |
-| Queue controls | Pause/resume/cancel/retry from GUI | Core queue manager covered; GUI controls incomplete | Not complete |
+| Queue controls | Pause/resume/cancel/retry from GUI | `tests/test_queue_controls_gui.py` covers task action buttons, cancel, and retry restart; core queue manager covers pause/resume states | Pass |

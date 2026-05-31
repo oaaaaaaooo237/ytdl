@@ -170,7 +170,7 @@ def apply_light_theme(app) -> None:
         #toolbarButton {{
             min-width: 88px;
         }}
-        #iconButton {{
+        #iconButton, QPushButton[queueAction="true"] {{
             min-width: 44px;
             max-width: 54px;
             padding: 6px;
