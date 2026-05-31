@@ -38,7 +38,7 @@ def test_download_page_has_primary_controls(qtbot):
 
     assert window.download_page.url_input.placeholderText() == "粘贴一个或多个视频播放地址"
     assert window.download_page.analyze_button.text() == "分析"
-    assert window.download_page.save_folder_button.text() == "选择保存位置"
+    assert window.download_page.save_folder_button.text() == "浏览"
     assert window.download_page.start_button.text() == "开始下载"
     assert window.download_page.start_button.objectName() == "primaryButton"
     assert combo_items(window.download_page.mode_combo) == ["音频+视频", "仅音频", "仅视频"]

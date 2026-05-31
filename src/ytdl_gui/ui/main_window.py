@@ -4,7 +4,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from PySide6.QtCore import QThread, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QListWidget, QMessageBox, QStackedWidget, QWidget
 
 from ytdl_gui.config_store import AppConfig
@@ -36,10 +37,11 @@ class MainWindow(QWidget):
         download_popen_factory=None,
         worker_runner: Callable[[object], object] | None = None,
         save_folder_picker: Callable[[], str] | None = None,
-    ):
+        ):
         super().__init__()
         self.setWindowTitle("视频地址提取器")
-        self.resize(1120, 720)
+        self.resize(620, 860)
+        self.setMinimumSize(620, 760)
         self.config_store = config_store
         self.history_store = history_store
         self.analyzed_url = ""
@@ -57,9 +59,10 @@ class MainWindow(QWidget):
         self._download_popen_factory = download_popen_factory
         self._worker_runner = worker_runner or self._run_worker_in_thread
         self._save_folder_picker = save_folder_picker
+        self._network_manager = QNetworkAccessManager(self)
 
         self.nav = QListWidget()
-        self.nav.setFixedWidth(168)
+        self.nav.setFixedWidth(92)
         self.nav.addItems(["下载", "格式", "队列", "历史", "设置", "关于"])
 
         self.stack = QStackedWidget()
@@ -207,6 +210,7 @@ class MainWindow(QWidget):
         title = str(metadata.get("title") or "未命名视频")
         self.formats_page.load_available_formats(formats, choice.format_id)
         self.download_page.show_analysis_result(title, _duration_text(metadata.get("duration")), choice.actual_summary)
+        self._load_thumbnail(_thumbnail_url(metadata))
         self.download_page.set_status("分析完成，可以开始下载。")
 
     def show_analysis_error(self, message: str) -> None:
@@ -354,6 +358,21 @@ class MainWindow(QWidget):
         if worker in self._workers:
             self._workers.remove(worker)
 
+    def _load_thumbnail(self, url: str) -> None:
+        if not url:
+            return
+        reply = self._network_manager.get(QNetworkRequest(QUrl(url)))
+        reply.finished.connect(lambda reply=reply: self._apply_thumbnail_reply(reply))
+
+    def _apply_thumbnail_reply(self, reply) -> None:
+        try:
+            data = bytes(reply.readAll())
+            pixmap = QPixmap()
+            if pixmap.loadFromData(data):
+                self.download_page.set_thumbnail(pixmap)
+        finally:
+            reply.deleteLater()
+
 
 def _duration_text(value: object) -> str:
     try:
@@ -365,3 +384,15 @@ def _duration_text(value: object) -> str:
     if hours:
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     return f"{minutes:02d}:{seconds:02d}"
+
+
+def _thumbnail_url(metadata: dict) -> str:
+    thumbnail = metadata.get("thumbnail")
+    if isinstance(thumbnail, str) and thumbnail:
+        return thumbnail
+    thumbnails = metadata.get("thumbnails")
+    if isinstance(thumbnails, list):
+        for item in reversed(thumbnails):
+            if isinstance(item, dict) and isinstance(item.get("url"), str):
+                return item["url"]
+    return ""

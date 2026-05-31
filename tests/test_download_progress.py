@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryStore
-from ytdl_gui.ui.main_window import MainWindow
+from ytdl_gui.ui.main_window import MainWindow, _thumbnail_url
 from ytdl_gui.ytdlp_runner import ProgressEvent, parse_progress_line, safe_command_summary
 
 
@@ -115,6 +115,14 @@ def test_analysis_respects_audio_only_mode(qtbot, app_data_dir: Path):
 
     assert window.selected_format_id == "140"
     assert window.download_page.format_summary_label.text() == "格式：音频 m4a mp4a.40.2 129kbps"
+
+
+def test_thumbnail_url_prefers_direct_thumbnail_then_highest_list_entry():
+    assert _thumbnail_url({"thumbnail": "https://example.test/direct.jpg"}) == "https://example.test/direct.jpg"
+    assert (
+        _thumbnail_url({"thumbnails": [{"url": "https://example.test/small.jpg"}, {"url": "https://example.test/large.jpg"}]})
+        == "https://example.test/large.jpg"
+    )
 
 
 def test_start_download_uses_injected_popen_updates_queue_and_history(qtbot, app_data_dir: Path):

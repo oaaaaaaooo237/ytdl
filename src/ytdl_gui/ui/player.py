@@ -2,7 +2,7 @@ from enum import Enum
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-from PySide6.QtWidgets import QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 
 class PreviewState(str, Enum):
@@ -42,9 +42,13 @@ class PreviewPlayer(QWidget):
         self.player.errorOccurred.connect(self._show_playback_error)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
         layout.addWidget(self.status)
-        layout.addWidget(self.play_button)
-        layout.addWidget(self.pause_button)
+        controls = QHBoxLayout()
+        controls.addWidget(self.play_button)
+        controls.addWidget(self.pause_button)
+        layout.addLayout(controls)
         layout.addWidget(self.volume)
 
     def load_url(self, url: str) -> None:

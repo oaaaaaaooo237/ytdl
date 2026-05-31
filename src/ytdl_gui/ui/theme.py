@@ -4,8 +4,8 @@ TEAL = "#0f8f8c"
 TEAL_DARK = "#08716f"
 TEAL_SOFT = "#d7f0ee"
 SURFACE = "#ffffff"
-BACKGROUND = "#f5f7f8"
-NAV_BACKGROUND = "#eef2f3"
+BACKGROUND = "#f6f9fb"
+NAV_BACKGROUND = "#ffffff"
 TEXT = "#1f2933"
 MUTED_TEXT = "#667085"
 BORDER = "#d8dee4"
@@ -37,7 +37,7 @@ def apply_light_theme(app) -> None:
             border-radius: 8px;
         }}
         #pageTitle {{
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 600;
             background: transparent;
         }}
@@ -47,24 +47,26 @@ def apply_light_theme(app) -> None:
         }}
         QListWidget {{
             background: {NAV_BACKGROUND};
-            border: 0;
-            padding: 10px;
+            border: 1px solid #e6ecf0;
+            border-radius: 8px;
+            padding: 12px 8px;
             outline: 0;
         }}
         QListWidget::item {{
-            padding: 11px 12px;
+            padding: 12px 8px;
             border-radius: 6px;
-            margin: 2px 0;
+            margin: 4px 0;
         }}
         QListWidget::item:selected {{
             background: {TEAL_SOFT};
             color: #064e4b;
             font-weight: 600;
+            border-left: 3px solid {TEAL};
         }}
         QPushButton {{
             border: 1px solid {BORDER};
             border-radius: 6px;
-            padding: 7px 12px;
+            padding: 8px 14px;
             background: {SURFACE};
             min-height: 20px;
         }}
@@ -85,12 +87,47 @@ def apply_light_theme(app) -> None:
         QLineEdit, QTextEdit, QComboBox, QSpinBox {{
             border: 1px solid {BORDER};
             border-radius: 6px;
-            padding: 7px;
+            padding: 8px;
             background: {SURFACE};
             selection-background-color: {TEAL};
         }}
         QTextEdit {{
-            min-height: 118px;
+            min-height: 34px;
+        }}
+        #sectionTitle {{
+            font-size: 13px;
+            font-weight: 700;
+            background: transparent;
+            margin-top: 4px;
+        }}
+        #videoCard, #optionsCard {{
+            background: {SURFACE};
+            border: 1px solid #dfe7ec;
+            border-radius: 8px;
+        }}
+        #thumbnailPlaceholder {{
+            background: #e8eff5;
+            border-radius: 6px;
+            color: {MUTED_TEXT};
+            font-weight: 600;
+        }}
+        #videoTitle {{
+            font-size: 15px;
+            font-weight: 700;
+            background: transparent;
+        }}
+        #mutedLabel, #pathDisplay {{
+            color: {MUTED_TEXT};
+            background: transparent;
+        }}
+        #optionLabel {{
+            color: {TEXT};
+            background: transparent;
+        }}
+        #compactPreview {{
+            border-top: 1px solid #edf1f3;
+            margin-top: 8px;
+            padding-top: 8px;
         }}
         QGroupBox {{
             border: 1px solid #dde3e7;
