@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ytdl_gui.ui.player import PreviewPlayer
 from ytdl_gui.ui.widgets import PageHeader
 
 
@@ -32,6 +33,7 @@ class DownloadPage(QWidget):
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["音频+视频", "仅音频", "仅视频"])
         self.preview_checkbox = QCheckBox("下载时同步预览播放")
+        self.preview_player = PreviewPlayer()
 
         url_group = QGroupBox("视频地址")
         url_layout = QVBoxLayout(url_group)
@@ -41,6 +43,10 @@ class DownloadPage(QWidget):
         form = QFormLayout(options_group)
         form.addRow("下载类型", self.mode_combo)
         form.addRow("", self.preview_checkbox)
+
+        preview_group = QGroupBox("预览")
+        preview_layout = QVBoxLayout(preview_group)
+        preview_layout.addWidget(self.preview_player)
 
         actions = QHBoxLayout()
         actions.addWidget(self.analyze_button)
@@ -54,6 +60,7 @@ class DownloadPage(QWidget):
         layout.addWidget(PageHeader("下载", "粘贴播放地址，先分析格式，再加入下载队列。"))
         layout.addWidget(url_group)
         layout.addWidget(options_group)
+        layout.addWidget(preview_group)
         layout.addLayout(actions)
         layout.addWidget(self.status_label)
         layout.addWidget(self.title_label)
