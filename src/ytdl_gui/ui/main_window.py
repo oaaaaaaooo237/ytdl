@@ -304,6 +304,7 @@ class MainWindow(QWidget):
     def connect_history_actions(self) -> None:
         self.history_page.clear_button.clicked.connect(self.clear_history)
         self.history_page.open_folder_button.clicked.connect(self.open_download_folder)
+        self.history_page.history_action_requested.connect(self.handle_history_action)
 
     def connect_queue_actions(self) -> None:
         self.queue_page.task_action_requested.connect(self.handle_queue_action)
@@ -467,6 +468,38 @@ class MainWindow(QWidget):
             self._external_url_opener(QUrl.fromLocalFile(folder).toString())
         else:
             self._information_dialog(self, "未设置保存位置", "请先在设置中选择默认保存位置。")
+
+    def handle_history_action(self, action: str, record_index: int) -> None:
+        records = self.history_store.list() if self.history_store else list(self.history_page._records)
+        if record_index < 0 or record_index >= len(records):
+            return
+        record = records[record_index]
+        output_path = Path(record.output_path)
+        if action == "open_file":
+            self._external_url_opener(QUrl.fromLocalFile(str(output_path)).toString())
+            return
+        if action == "open_folder":
+            self._external_url_opener(QUrl.fromLocalFile(str(output_path.parent)).toString())
+            return
+        if action == "redownload":
+            self.nav.setCurrentRow(0)
+            self.download_page.url_input.setPlainText(record.url)
+            self.start_analysis()
+            return
+        if action == "delete":
+            self.delete_history_record(record_index)
+
+    def delete_history_record(self, record_index: int) -> None:
+        if not self.history_store:
+            records = list(self.history_page._records)
+            if 0 <= record_index < len(records):
+                del records[record_index]
+            self.history_page.load_records(records)
+            return
+        self.history_store.delete(record_index)
+        records = self.history_store.list()
+        self.history_page.load_records(records)
+        self.queue_page.load_history_records(records)
 
     def start_download(self) -> None:
         analyzed_items = list(self.analyzed_results.items())

@@ -3,6 +3,10 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import subprocess
+
+from PySide6.QtWidgets import QPushButton
+
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryRecord, HistoryStore
 from ytdl_gui.ui.main_window import MainWindow
@@ -56,12 +60,73 @@ def test_history_page_renders_history_without_sensitive_fields(qtbot, app_data_d
     assert window.queue_page.recent_history_table.rowCount() == 1
     assert window.queue_page.recent_history_table.item(0, 0).text() == "Title"
     assert window.queue_page.recent_history_table.item(0, 2).text() == "已完成"
-    values = [window.history_page.table.item(0, column).text() for column in range(6)]
-    assert values == ["Title", "audio_video", "720p mp4", "已完成", "2026-05-30T22:00:00", "打开"]
+    values = [window.history_page.table.item(0, column).text() for column in range(5)]
+    assert values == ["Title", "audio_video", "720p mp4", "已完成", "2026-05-30T22:00:00"]
+    assert history_action_button(window, 0, "打开").text() == "打开"
     visible_text = " ".join(values)
     assert "cookies" not in visible_text.lower()
     assert "token" not in visible_text.lower()
     assert "--cookies" not in visible_text
+
+
+def history_action_button(window: MainWindow, row: int, text: str) -> QPushButton:
+    widget = window.history_page.table.cellWidget(row, 5)
+    assert widget is not None
+    for button in widget.findChildren(QPushButton):
+        if button.text() == text:
+            return button
+    raise AssertionError(f"missing history action button: {text}")
+
+
+def test_history_row_actions_open_redownload_and_delete(qtbot, app_data_dir: Path):
+    output_path = app_data_dir / "downloads" / "demo.mp4"
+    output_path.parent.mkdir()
+    output_path.write_text("fake", encoding="utf-8")
+    history = HistoryStore(app_data_dir)
+    history.add(
+        HistoryRecord(
+            "Demo",
+            "https://example.test/watch?v=demo",
+            str(output_path),
+            "音频+视频",
+            "360p mp4",
+            "不下载",
+            "finished",
+            "2026-06-01T22:00:00",
+        )
+    )
+    opened: list[str] = []
+    analysis_urls: list[str] = []
+
+    def analysis_runner(command, **kwargs):
+        analysis_urls.append(command[-1])
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"title": "Demo", "formats": [{"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}]}',
+            stderr="",
+        )
+
+    window = MainWindow(
+        config_store=ConfigStore(app_data_dir),
+        history_store=history,
+        external_url_opener=opened.append,
+        analysis_runner=analysis_runner,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+
+    history_action_button(window, 0, "打开").click()
+    history_action_button(window, 0, "目录").click()
+    history_action_button(window, 0, "重下").click()
+    history_action_button(window, 0, "删除").click()
+
+    assert opened[0] == output_path.as_uri()
+    assert opened[1] == output_path.parent.as_uri()
+    assert analysis_urls == ["https://example.test/watch?v=demo"]
+    assert window.download_page.url_input.toPlainText() == "https://example.test/watch?v=demo"
+    assert history.list() == []
+    assert window.history_page.table.rowCount() == 0
 
 
 def test_history_page_load_records_clears_existing_rows(qtbot):

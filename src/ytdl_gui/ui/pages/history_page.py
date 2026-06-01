@@ -1,3 +1,4 @@
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -13,6 +14,8 @@ from ytdl_gui.ui.widgets import PageHeader, display_status
 
 
 class HistoryPage(QWidget):
+    history_action_requested = Signal(str, int)
+
     def __init__(self):
         super().__init__()
         self._records = []
@@ -20,7 +23,11 @@ class HistoryPage(QWidget):
         self.search.setPlaceholderText("搜索历史")
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["标题", "类型", "格式", "状态", "时间", "操作"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        header = self.table.horizontalHeader()
+        for column in range(5):
+            header.setSectionResizeMode(column, QHeaderView.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.Fixed)
+        self.table.setColumnWidth(5, 224)
         self.open_folder_button = QPushButton("打开下载文件夹")
         self.clear_button = QPushButton("清空历史")
 
@@ -45,7 +52,7 @@ class HistoryPage(QWidget):
     def apply_filter(self, text: str = "") -> None:
         needle = text.casefold().strip()
         self.table.setRowCount(0)
-        for record in self._records:
+        for record_index, record in enumerate(self._records):
             searchable = " ".join(
                 [
                     str(record.title),
@@ -66,7 +73,24 @@ class HistoryPage(QWidget):
                 record.format_summary,
                 display_status(record.status),
                 record.created_at,
-                "打开",
             ]
             for column, value in enumerate(values):
                 self.table.setItem(row, column, QTableWidgetItem(str(value)))
+            self.table.setCellWidget(row, 5, self._action_widget(record_index))
+
+    def _action_widget(self, record_index: int) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        for text, action in [("打开", "open_file"), ("目录", "open_folder"), ("重下", "redownload"), ("删除", "delete")]:
+            button = QPushButton(text)
+            button.setFixedWidth(52)
+            button.clicked.connect(
+                lambda _checked=False, current_action=action, current_index=record_index: self.history_action_requested.emit(
+                    current_action, current_index
+                )
+            )
+            layout.addWidget(button)
+        layout.addStretch()
+        return widget
