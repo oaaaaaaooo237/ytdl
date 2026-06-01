@@ -14,6 +14,7 @@ from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
 from ytdl_gui.format_selector import FormatPreference, choose_format
 from ytdl_gui.history_store import HistoryRecord
 from ytdl_gui.paths import bundled_ytdlp_path
+from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 from ytdl_gui.ui.pages.about_page import AboutPage
 from ytdl_gui.ui.pages.download_page import DownloadPage
 from ytdl_gui.ui.pages.formats_page import FormatsPage
@@ -21,6 +22,7 @@ from ytdl_gui.ui.pages.history_page import HistoryPage
 from ytdl_gui.ui.pages.queue_page import QueuePage
 from ytdl_gui.ui.pages.settings_page import SettingsPage
 from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, DownloadRequest, DownloadWorker, PreviewUrlRequest, PreviewUrlWorker
+from ytdl_gui.workers import YtdlpUpdateRequest, YtdlpUpdateRunner, YtdlpUpdateWorker
 from ytdl_gui.ytdlp_runner import ProgressEvent
 
 
@@ -38,6 +40,7 @@ class MainWindow(QWidget):
         analysis_runner=None,
         download_popen_factory=None,
         preview_runner=None,
+        ytdlp_update_runner: YtdlpUpdateRunner | None = None,
         worker_runner: Callable[[object], object] | None = None,
         save_folder_picker: Callable[[], str] | None = None,
         ):
@@ -68,6 +71,7 @@ class MainWindow(QWidget):
         self._analysis_runner = analysis_runner
         self._download_popen_factory = download_popen_factory
         self._preview_runner = preview_runner
+        self._ytdlp_update_runner = ytdlp_update_runner
         self._worker_runner = worker_runner or self._run_worker_in_thread
         self._save_folder_picker = save_folder_picker
         self._network_manager = QNetworkAccessManager(self)
@@ -125,6 +129,7 @@ class MainWindow(QWidget):
         self.connect_download_actions()
         self.connect_history_actions()
         self.connect_queue_actions()
+        self.connect_update_actions()
 
     def _build_title_bar(self) -> QFrame:
         frame = QFrame()
@@ -300,6 +305,75 @@ class MainWindow(QWidget):
         self.queue_page.task_action_requested.connect(self.handle_queue_action)
         self.queue_page.pause_all_button.clicked.connect(self.pause_all_tasks)
         self.queue_page.clear_completed_button.clicked.connect(self.clear_completed_queue_tasks)
+
+    def connect_update_actions(self) -> None:
+        self.footer_update_button.clicked.connect(lambda: self.check_ytdlp_updates(silent=False))
+
+    def maybe_startup_update_check(self) -> None:
+        if not self.config_store:
+            return
+        if not self.config_store.load().check_ytdlp_updates_on_startup:
+            return
+        self.check_ytdlp_updates(silent=True)
+
+    def check_ytdlp_updates(self, silent: bool = False) -> None:
+        if not self.config_store:
+            if not silent:
+                self.footer_status_label.setText("未配置")
+            return
+        self.footer_status_label.setText("检查中")
+        request = YtdlpUpdateRequest(
+            data_dir=self.config_store.path.parent,
+            active_path=self._active_ytdlp_path(),
+            tasks_running=self._has_running_download_tasks(),
+        )
+        worker = YtdlpUpdateWorker(request, runner=self._ytdlp_update_runner)
+        worker.finished.connect(lambda outcome, quiet=silent: self.apply_ytdlp_update_outcome(outcome, quiet))
+        worker.failed.connect(lambda message, quiet=silent: self.show_ytdlp_update_failure(message, quiet))
+        self._worker_runner(worker)
+
+    def apply_ytdlp_update_outcome(self, outcome: UpdateOutcome, silent: bool = False) -> None:
+        if outcome.result == UpdateResult.UPDATED:
+            self._save_ytdlp_update_config(outcome)
+            self.ytdlp_footer_label.setText(f"yt-dlp {outcome.active_version}")
+            self.about_page.set_ytdlp_status(f"yt-dlp {outcome.active_version}")
+            self.footer_status_label.setText("已更新")
+            if not silent:
+                self.download_page.set_status(outcome.message or "yt-dlp 更新完成。")
+            return
+        if outcome.result == UpdateResult.BUSY:
+            self.footer_status_label.setText("稍后更新")
+            if not silent:
+                self.download_page.set_status(outcome.message or "下载任务运行中，稍后再更新 yt-dlp。")
+            return
+        self.footer_status_label.setText("无需更新" if silent else "更新失败")
+        if not silent:
+            self.download_page.set_status(outcome.message or "yt-dlp 更新失败或验证未通过。")
+
+    def show_ytdlp_update_failure(self, message: str, silent: bool = False) -> None:
+        self.footer_status_label.setText("更新失败")
+        if not silent:
+            self.download_page.set_status(message)
+
+    def _save_ytdlp_update_config(self, outcome: UpdateOutcome) -> None:
+        if not self.config_store:
+            return
+        current = self.config_store.load()
+        self.config_store.save(
+            AppConfig(
+                default_save_dir=current.default_save_dir,
+                cookies_path=current.cookies_path,
+                ffmpeg_path=current.ffmpeg_path,
+                max_concurrency=current.max_concurrency,
+                check_ytdlp_updates_on_startup=current.check_ytdlp_updates_on_startup,
+                active_ytdlp_path=outcome.active_path,
+                active_ytdlp_version=outcome.active_version,
+                rollback_ytdlp_path=outcome.rollback_path,
+            )
+        )
+
+    def _has_running_download_tasks(self) -> bool:
+        return any(state in {"running", "pause_requested", "cancel_requested"} for state in self._download_task_states.values())
 
     def start_analysis(self) -> None:
         urls = self._all_urls()

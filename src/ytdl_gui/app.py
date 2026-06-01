@@ -15,4 +15,5 @@ def run() -> int:
     data_dir = app_data_dir()
     window = MainWindow(config_store=ConfigStore(data_dir), history_store=HistoryStore(data_dir))
     window.show()
+    window.maybe_startup_update_check()
     return app.exec()

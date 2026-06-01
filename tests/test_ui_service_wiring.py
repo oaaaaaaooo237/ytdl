@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryRecord, HistoryStore
 from ytdl_gui.ui.main_window import MainWindow
+from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 
 
 def test_settings_page_loads_config_and_displays_cookie_path_only(qtbot, app_data_dir: Path):
@@ -163,6 +164,9 @@ def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Pa
         def show(self):
             created["shown"] = True
 
+        def maybe_startup_update_check(self):
+            created["startup_update_checked"] = True
+
     monkeypatch.setattr(app_module, "QApplication", FakeApplication)
     monkeypatch.setattr(app_module, "MainWindow", FakeWindow)
     monkeypatch.setattr(app_module, "apply_light_theme", lambda app: created.setdefault("theme_applied", True))
@@ -171,7 +175,58 @@ def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Pa
     assert app_module.run() == 0
     assert created["theme_applied"] is True
     assert created["shown"] is True
+    assert created["startup_update_checked"] is True
     assert isinstance(created["config_store"], ConfigStore)
     assert isinstance(created["history_store"], HistoryStore)
     assert created["config_store"].path == app_data_dir / "config.json"
     assert created["history_store"].path == app_data_dir / "history.json"
+
+
+def test_footer_update_button_runs_update_worker_and_updates_config(qtbot, app_data_dir: Path):
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(active_ytdlp_path="D:/old/yt-dlp.exe", active_ytdlp_version="2026.03.17"))
+
+    def update_runner(request):
+        return UpdateOutcome(
+            result=UpdateResult.UPDATED,
+            active_path="D:/new/yt-dlp.exe",
+            active_version="2026.06.01",
+            rollback_path=str(request.active_path),
+            message="已更新到 2026.06.01",
+        )
+
+    window = MainWindow(
+        config_store=store,
+        history_store=HistoryStore(app_data_dir),
+        ytdlp_update_runner=update_runner,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+
+    window.footer_update_button.click()
+
+    config = store.load()
+    assert config.active_ytdlp_path == "D:/new/yt-dlp.exe"
+    assert config.active_ytdlp_version == "2026.06.01"
+    assert Path(config.rollback_ytdlp_path) == Path("D:/old/yt-dlp.exe")
+    assert window.ytdlp_footer_label.text() == "yt-dlp 2026.06.01"
+    assert window.footer_status_label.text() == "已更新"
+
+
+def test_startup_update_check_schedules_worker_without_running_inline(qtbot, app_data_dir: Path):
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(check_ytdlp_updates_on_startup=True))
+    scheduled_workers: list[object] = []
+
+    window = MainWindow(
+        config_store=store,
+        history_store=HistoryStore(app_data_dir),
+        ytdlp_update_runner=lambda request: UpdateOutcome(result=UpdateResult.INVALID_DOWNLOAD, message="not run"),
+        worker_runner=scheduled_workers.append,
+    )
+    qtbot.addWidget(window)
+
+    window.maybe_startup_update_check()
+
+    assert len(scheduled_workers) == 1
+    assert window.footer_status_label.text() == "检查中"

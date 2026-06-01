@@ -8,6 +8,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal, Slot
 
 from ytdl_gui.ffmpeg import FfmpegStatus, find_ffmpeg
+from ytdl_gui.update_manager import UpdateOutcome, download_and_install_latest_ytdlp
 from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error, parse_progress_line
 
 
@@ -216,3 +217,42 @@ class FfmpegSearchWorker(QObject):
     @Slot()
     def run(self) -> None:
         self.finished.emit(self._finder())
+
+
+@dataclass(frozen=True)
+class YtdlpUpdateRequest:
+    data_dir: Path
+    active_path: Path
+    tasks_running: bool = False
+
+
+YtdlpUpdateRunner = Callable[[YtdlpUpdateRequest], UpdateOutcome]
+
+
+class YtdlpUpdateWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        request: YtdlpUpdateRequest,
+        runner: YtdlpUpdateRunner | None = None,
+    ):
+        super().__init__()
+        self.request = request
+        self._runner = runner or _default_ytdlp_update_runner
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.finished.emit(self._runner(self.request))
+        except (OSError, subprocess.SubprocessError, ValueError):
+            self.failed.emit("yt-dlp 更新失败。")
+
+
+def _default_ytdlp_update_runner(request: YtdlpUpdateRequest) -> UpdateOutcome:
+    return download_and_install_latest_ytdlp(
+        data_dir=request.data_dir,
+        active_path=request.active_path,
+        tasks_running=request.tasks_running,
+    )

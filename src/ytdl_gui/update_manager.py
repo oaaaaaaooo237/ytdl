@@ -1,9 +1,12 @@
 import json
 import shutil
+import subprocess
+import tempfile
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Callable
+from urllib.request import urlretrieve
 
 
 OFFICIAL_YTDLP_EXE_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
@@ -22,6 +25,58 @@ class UpdateState:
     active_version: str = ""
     rollback_path: str = ""
     source_url: str = OFFICIAL_YTDLP_EXE_URL
+
+
+@dataclass(frozen=True)
+class UpdateOutcome:
+    result: UpdateResult
+    active_path: str = ""
+    active_version: str = ""
+    rollback_path: str = ""
+    message: str = ""
+
+
+def download_and_install_latest_ytdlp(data_dir: Path, active_path: Path, tasks_running: bool = False) -> UpdateOutcome:
+    if tasks_running:
+        return UpdateOutcome(UpdateResult.BUSY, active_path=str(active_path), message="有下载任务运行，稍后再更新。")
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="ytdlp-update-", dir=str(data_dir)))
+    downloaded_path = temp_dir / "yt-dlp.tmp.exe"
+    try:
+        urlretrieve(OFFICIAL_YTDLP_EXE_URL, downloaded_path)
+        version = probe_ytdlp_version(downloaded_path)
+        manager = UpdateManager(data_dir=data_dir, active_path=active_path)
+        result = manager.accept_downloaded_update(version=version, downloaded_path=downloaded_path, validated=True)
+        if result == UpdateResult.UPDATED:
+            return UpdateOutcome(
+                result=result,
+                active_path=manager.state.active_path,
+                active_version=manager.state.active_version,
+                rollback_path=manager.state.rollback_path,
+                message=f"已更新到 {manager.state.active_version}",
+            )
+        return UpdateOutcome(result=result, active_path=str(active_path), message="更新验证失败。")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return UpdateOutcome(UpdateResult.INVALID_DOWNLOAD, active_path=str(active_path), message="更新失败或下载文件无效。")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def probe_ytdlp_version(executable: Path) -> str:
+    result = subprocess.run(
+        [str(executable), "--version"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError("yt-dlp version probe failed")
+    version = (result.stdout or "").splitlines()[0].strip()
+    if not version:
+        raise ValueError("empty yt-dlp version")
+    return version
 
 
 class UpdateManager:
