@@ -583,6 +583,14 @@ class MainWindow(QWidget):
         record = records[record_index]
         output_path = Path(record.output_path)
         if action == "open_file":
+            if not output_path.exists():
+                if self._confirmation_dialog(
+                    self,
+                    "文件不存在",
+                    "下载文件已移动或删除。是否打开最后记录的保存目录？",
+                ):
+                    self._external_url_opener(QUrl.fromLocalFile(str(output_path.parent)).toString())
+                return
             self._external_url_opener(QUrl.fromLocalFile(str(output_path)).toString())
             return
         if action == "open_folder":

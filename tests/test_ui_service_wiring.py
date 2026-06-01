@@ -131,6 +131,40 @@ def test_history_row_actions_open_redownload_and_delete(qtbot, app_data_dir: Pat
     assert window.history_page.table.rowCount() == 0
 
 
+def test_history_open_missing_file_offers_last_known_folder(qtbot, app_data_dir: Path):
+    output_path = app_data_dir / "downloads" / "missing.mp4"
+    output_path.parent.mkdir()
+    history = HistoryStore(app_data_dir)
+    history.add(
+        HistoryRecord(
+            "Missing",
+            "https://example.test/watch?v=missing",
+            str(output_path),
+            "音频+视频",
+            "360p mp4",
+            "不下载",
+            "finished",
+            "2026-06-01T22:00:00",
+        )
+    )
+    opened: list[str] = []
+    confirmations: list[tuple[str, str]] = []
+    window = MainWindow(
+        config_store=ConfigStore(app_data_dir),
+        history_store=history,
+        external_url_opener=opened.append,
+        confirmation_dialog=lambda _parent, title, text: confirmations.append((title, text)) or True,
+    )
+    qtbot.addWidget(window)
+
+    history_action_button(window, 0, "打开").click()
+
+    assert confirmations
+    assert confirmations[0][0] == "文件不存在"
+    assert "已移动或删除" in confirmations[0][1]
+    assert opened == [output_path.parent.as_uri()]
+
+
 def test_history_page_load_records_clears_existing_rows(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)

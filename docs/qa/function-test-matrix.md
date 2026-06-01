@@ -9,6 +9,7 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Format preferences | Resolution, container, codec, and audio bitrate controls affect selected format | `tests/test_format_preferences_ui.py`; real matrix selected `18` for 360p mp4, `140` for 128k-near audio, `160` for 144p H.264 video-only | Pass |
 | Queue | Progress reaches completed state | `scripts/real_download_matrix.ps1`, all matrix cases `queue_status=已完成` | Pass |
 | History | Finished download writes history | `scripts/real_download_matrix.ps1`, all matrix cases `history_count=1` | Pass |
+| History missing files | Opening a moved/deleted history file shows Chinese confirmation and offers last known folder | `tests/test_ui_service_wiring.py::test_history_open_missing_file_offers_last_known_folder` | Pass |
 | Packaging | Build Win11 x64 dist folder | `scripts/package_win.ps1` | Pass |
 | Packaged smoke | Bundled yt-dlp reports version | `scripts/smoke_packaged.ps1`, `2026.03.17` | Pass |
 | Packaged startup | Exe opens responsive window | Manual process smoke, title `视频地址提取器` | Pass |
