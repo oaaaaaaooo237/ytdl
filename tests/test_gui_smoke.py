@@ -138,6 +138,27 @@ def test_settings_page_has_ffmpeg_and_cookies_controls(qtbot):
     assert window.settings_page.cookies_help_button.text() == "如何获取 cookies.txt"
 
 
+def test_settings_action_buttons_fit_chinese_labels_at_default_width(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.nav.setCurrentRow(4)
+    window.show()
+    qtbot.wait(50)
+
+    buttons = [
+        window.settings_page.choose_cookies_button,
+        window.settings_page.clear_cookies_button,
+        window.settings_page.cookies_help_button,
+        window.settings_page.find_ffmpeg_button,
+        window.settings_page.choose_ffmpeg_button,
+        window.settings_page.ffmpeg_download_button,
+    ]
+
+    for button in buttons:
+        assert button.width() >= button.sizeHint().width(), button.text()
+
+
 def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)

@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFormLayout, QGroupBox, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
 
 from ytdl_gui.ui.widgets import PageHeader
 
@@ -37,14 +37,14 @@ class SettingsPage(QWidget):
         paths.addRow("默认保存位置", self.default_folder)
         paths.addRow("", self.choose_default_folder_button)
         paths.addRow("cookies.txt", self.cookies_path)
-        cookie_actions = QHBoxLayout()
+        cookie_actions = QVBoxLayout()
         cookie_actions.addWidget(self.choose_cookies_button)
         cookie_actions.addWidget(self.clear_cookies_button)
         cookie_actions.addWidget(self.cookies_help_button)
         paths.addRow("", cookie_actions)
         paths.addRow("ffmpeg.exe", self.ffmpeg_path)
 
-        ffmpeg_actions = QHBoxLayout()
+        ffmpeg_actions = QVBoxLayout()
         ffmpeg_actions.addWidget(self.find_ffmpeg_button)
         ffmpeg_actions.addWidget(self.choose_ffmpeg_button)
         ffmpeg_actions.addWidget(self.ffmpeg_download_button)
