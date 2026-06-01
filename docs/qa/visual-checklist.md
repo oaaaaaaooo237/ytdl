@@ -16,7 +16,7 @@
 - Packaged smoke: bundled `yt-dlp.exe --version` prints `2026.03.17`.
 - Packaged executable startup smoke: `YTDL-GUI.exe` starts, window title is `视频地址提取器`, process responds.
 - Real URL analysis smoke uses `https://www.youtube.com/watch?v=KYDPpt3eqaQ`.
-- Real GUI-logic download smoke completed in audio-only mode, selected format `140`, wrote history, and downloaded `23,382,701` bytes.
+- Real download matrix completed audio+video `18`, audio-only `140`, and video-only `160`; each case wrote history and downloaded a real file.
 - Current screenshots are saved under `docs/qa/screenshots/`.
 
 ## Visual Status
