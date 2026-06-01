@@ -15,7 +15,7 @@
 - Real URL analysis smoke uses `https://www.youtube.com/watch?v=KYDPpt3eqaQ`.
 - Real download matrix completed audio+video `18`, audio-only `140`, and video-only `160`; each case wrote history and downloaded a real file.
 - Current screenshots are saved under `docs/qa/screenshots/`; the primary Download screenshot uses the audio+video default path.
-- Earlier packaging checkpoint generated `dist/YTDL-GUI/YTDL-GUI.exe`, confirmed bundled `yt-dlp.exe --version` printed `2026.03.17`, and confirmed the executable opened a responding window. This has not been rerun after the latest visual changes.
+- Current packaging checkpoint generated `dist/YTDL-GUI/YTDL-GUI.exe`, confirmed bundled `yt-dlp.exe --version` printed `2026.03.17`, and confirmed the executable opened a responding window titled `视频地址提取器`.
 
 ## Visual Status
 
