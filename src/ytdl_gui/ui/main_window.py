@@ -13,7 +13,7 @@ from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
 from ytdl_gui.format_selector import FormatPreference, choose_format
 from ytdl_gui.history_store import HistoryRecord
-from ytdl_gui.paths import bundled_ytdlp_path
+from ytdl_gui.paths import bundled_ytdlp_path, resource_root
 from ytdl_gui.subtitles import subtitle_action_requires_ffmpeg
 from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 from ytdl_gui.ui.pages.about_page import AboutPage
@@ -148,6 +148,7 @@ class MainWindow(QWidget):
         self.connect_queue_actions()
         self.connect_update_actions()
         self.connect_format_actions()
+        self.connect_about_actions()
 
     def _build_title_bar(self) -> QFrame:
         frame = QFrame()
@@ -350,6 +351,16 @@ class MainWindow(QWidget):
 
     def connect_format_actions(self) -> None:
         self.formats_page.subtitle_combo.currentTextChanged.connect(self.validate_subtitle_option)
+
+    def connect_about_actions(self) -> None:
+        self.about_page.legal_button.clicked.connect(self.open_legal_notices)
+
+    def open_legal_notices(self) -> None:
+        notice_path = resource_root() / "licenses" / "THIRD_PARTY_NOTICES.txt"
+        if not notice_path.exists():
+            self._information_dialog(self, "未找到第三方许可", "第三方许可文件未包含在当前程序目录中。")
+            return
+        self._external_url_opener(QUrl.fromLocalFile(str(notice_path)).toString())
 
     def validate_subtitle_option(self, text: str) -> None:
         if not subtitle_action_requires_ffmpeg(_subtitle_action_value(text)):

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QPushButton
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryRecord, HistoryStore
+from ytdl_gui.paths import resource_root
 from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 
@@ -204,6 +205,16 @@ def test_about_page_status_loaders(qtbot):
     window.about_page.set_ffmpeg_status("已配置")
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：已配置"
+
+
+def test_about_legal_button_opens_third_party_notice_file(qtbot):
+    opened: list[str] = []
+    window = MainWindow(external_url_opener=opened.append)
+    qtbot.addWidget(window)
+
+    window.about_page.legal_button.click()
+
+    assert opened == [(resource_root() / "licenses" / "THIRD_PARTY_NOTICES.txt").as_uri()]
 
 
 def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Path):
