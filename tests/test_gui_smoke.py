@@ -56,6 +56,9 @@ def test_formats_page_exposes_format_preferences(qtbot):
         "1080p",
         "720p",
         "480p",
+        "360p",
+        "240p",
+        "144p",
     ]
     assert "Auto" not in combo_items(window.formats_page.resolution_combo)
     assert "Auto" not in combo_items(window.formats_page.fps_combo)
@@ -63,6 +66,7 @@ def test_formats_page_exposes_format_preferences(qtbot):
     assert "Auto" not in combo_items(window.formats_page.video_bitrate_combo)
     assert "Auto" not in combo_items(window.formats_page.audio_bitrate_combo)
     assert "Auto" not in combo_items(window.formats_page.container_combo)
+    assert "m4a" in combo_items(window.formats_page.container_combo)
     labels = label_texts(window.formats_page)
     assert "视频编码" in labels
     assert "codec" not in labels

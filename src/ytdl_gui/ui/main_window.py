@@ -256,7 +256,7 @@ class MainWindow(QWidget):
         self.analyzed_metadata = metadata
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
         try:
-            choice = choose_format(formats, FormatPreference(download_mode=self._download_mode()))
+            choice = choose_format(formats, self._format_preference())
         except ValueError as exc:
             self.selected_format_id = ""
             self.selected_format_summary = ""
@@ -491,6 +491,17 @@ class MainWindow(QWidget):
             return "video_only"
         return "audio_video"
 
+    def _format_preference(self) -> FormatPreference:
+        return FormatPreference(
+            resolution=_resolution_value(self.formats_page.resolution_combo.currentText()),
+            container=_auto_empty(self.formats_page.container_combo.currentText()),
+            fps=_integer_text(self.formats_page.fps_combo.currentText()),
+            codec=_codec_value(self.formats_page.codec_combo.currentText()),
+            video_bitrate=_video_bitrate_value(self.formats_page.video_bitrate_combo.currentText()),
+            audio_bitrate=_audio_bitrate_value(self.formats_page.audio_bitrate_combo.currentText()),
+            download_mode=self._download_mode(),
+        )
+
     def _run_worker_in_thread(self, worker: object) -> None:
         thread = QThread(self)
         self._threads.append(thread)
@@ -557,3 +568,45 @@ def _thumbnail_url(metadata: dict) -> str:
             if isinstance(item, dict) and isinstance(item.get("url"), str):
                 return item["url"]
     return ""
+
+
+def _resolution_value(text: str) -> int | None:
+    if text == "自动":
+        return None
+    return _integer_text(text.rstrip("p"))
+
+
+def _integer_text(text: str) -> int | None:
+    if text == "自动":
+        return None
+    try:
+        return int(text.rstrip("k"))
+    except ValueError:
+        return None
+
+
+def _auto_empty(text: str) -> str:
+    return "" if text == "自动" else text
+
+
+def _codec_value(text: str) -> str | None:
+    if text == "自动":
+        return None
+    return {
+        "H.264": "avc1",
+        "HEVC": "hev",
+        "AV1": "av01",
+        "VP9": "vp9",
+    }.get(text, text)
+
+
+def _video_bitrate_value(text: str) -> int | None:
+    return {
+        "高": 5000,
+        "中": 2500,
+        "低": 800,
+    }.get(text)
+
+
+def _audio_bitrate_value(text: str) -> int | None:
+    return _integer_text(text)

@@ -4,15 +4,16 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 
 | Area | Requirement | Evidence | Status |
 | --- | --- | --- | --- |
-| Analysis | Analyze real video URL without blocking startup | `scripts/real_url_smoke.ps1` selects metadata and format | Pass |
-| Download | Download selected audio-only format from real URL | `scripts/real_url_smoke.ps1`, `format_id=140`, `downloaded_bytes=23382701` | Pass |
-| Queue | Progress reaches completed state | `scripts/real_url_smoke.ps1`, `queue_status=已完成` | Pass |
-| History | Finished download writes history | `scripts/real_url_smoke.ps1`, `history_count=1` | Pass |
+| Analysis | Analyze real video URL without blocking startup | `scripts/real_download_matrix.ps1` analyzes the test URL in three modes and selects expected formats `18`, `140`, `160` | Pass |
+| Download modes | Real download for audio+video, audio-only, and video-only | `scripts/real_download_matrix.ps1`: `audio_video_360p` 74,327,155 bytes; `audio_only_128k` 23,382,701 bytes; `video_only_144p` 15,240,017 bytes | Pass |
+| Format preferences | Resolution, container, codec, and audio bitrate controls affect selected format | `tests/test_format_preferences_ui.py`; real matrix selected `18` for 360p mp4, `140` for 128k-near audio, `160` for 144p H.264 video-only | Pass |
+| Queue | Progress reaches completed state | `scripts/real_download_matrix.ps1`, all matrix cases `queue_status=已完成` | Pass |
+| History | Finished download writes history | `scripts/real_download_matrix.ps1`, all matrix cases `history_count=1` | Pass |
 | Packaging | Build Win11 x64 dist folder | `scripts/package_win.ps1` | Pass |
 | Packaged smoke | Bundled yt-dlp reports version | `scripts/smoke_packaged.ps1`, `2026.03.17` | Pass |
 | Packaged startup | Exe opens responsive window | Manual process smoke, title `视频地址提取器` | Pass |
 | Visual diff | Strict pixel comparison with reference crops | `scripts/visual_compare.py`, `docs/qa/visual-diff.json` | Not pass |
 | Cookies settings | Select and validate cookies.txt from GUI | `tests/test_settings_actions.py` covers choose/validate/clear and path-only storage | Pass |
 | History actions | Search/open folder/clear from GUI | `tests/test_ui_service_wiring.py` covers search/open/clear; history write covered by real smoke | Pass |
-| Preview | Play-while-downloading obtains stream and failure does not block download | `scripts/real_full_smoke.ps1` with test URL loaded a real preview URL (`preview_state=loading`, `preview_url_loaded=yes`) while real download completed | Pass |
+| Preview | Play-while-downloading obtains stream and failure does not block download | `scripts/real_download_matrix.ps1`, `audio_video_360p` loaded a real preview URL while real download completed | Pass |
 | Queue controls | Pause/resume/cancel/retry from GUI | `tests/test_queue_controls_gui.py` covers task action buttons, cancel, and retry restart; core queue manager covers pause/resume states | Pass |

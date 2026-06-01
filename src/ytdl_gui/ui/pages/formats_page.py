@@ -7,7 +7,7 @@ class FormatsPage(QWidget):
     def __init__(self):
         super().__init__()
         self.resolution_combo = QComboBox()
-        self.resolution_combo.addItems(["自动", "2160p", "1440p", "1080p", "720p", "480p"])
+        self.resolution_combo.addItems(["自动", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"])
         self.fps_combo = QComboBox()
         self.fps_combo.addItems(["自动", "60", "30", "24"])
         self.codec_combo = QComboBox()
@@ -17,7 +17,7 @@ class FormatsPage(QWidget):
         self.audio_bitrate_combo = QComboBox()
         self.audio_bitrate_combo.addItems(["自动", "320k", "256k", "192k", "128k"])
         self.container_combo = QComboBox()
-        self.container_combo.addItems(["自动", "mp4", "mkv", "webm", "mp3"])
+        self.container_combo.addItems(["自动", "mp4", "mkv", "webm", "m4a", "mp3"])
         self.subtitle_combo = QComboBox()
         self.subtitle_combo.addItems(["不下载", "下载字幕文件", "嵌入", "烧录"])
         self.format_id_combo = QComboBox()
