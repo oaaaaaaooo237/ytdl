@@ -58,3 +58,18 @@ class ErrorPanel(QWidget):
     def show_message(self, message: str) -> None:
         self.label.setText(message)
         self.show()
+
+
+def display_status(status: str) -> str:
+    labels = {
+        "finished": "已完成",
+        "completed": "已完成",
+        "failed": "失败",
+        "canceled": "已取消",
+        "cancelled": "已取消",
+        "queued": "等待中",
+        "pending": "等待中",
+        "running": "下载中",
+        "downloading": "下载中",
+    }
+    return labels.get(str(status).casefold(), str(status))

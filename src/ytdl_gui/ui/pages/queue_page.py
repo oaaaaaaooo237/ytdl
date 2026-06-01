@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtWidgets import QHeaderView
 
-from ytdl_gui.ui.widgets import PageHeader
+from ytdl_gui.ui.widgets import PageHeader, display_status
 
 
 class QueuePage(QWidget):
@@ -40,6 +40,8 @@ class QueuePage(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("queueScroll")
         self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setWidget(self.card_host)
 
         actions = QHBoxLayout()
@@ -47,12 +49,25 @@ class QueuePage(QWidget):
         actions.addWidget(self.clear_completed_button)
         actions.addStretch()
 
+        self.history_heading = QLabel("历史")
+        self.history_heading.setObjectName("sectionTitle")
+        self.recent_history_table = QTableWidget(0, 4)
+        self.recent_history_table.setObjectName("queueHistoryTable")
+        self.recent_history_table.setHorizontalHeaderLabels(["标题", "格式", "状态", "时间"])
+        self.recent_history_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.recent_history_table.verticalHeader().hide()
+        self.recent_history_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.recent_history_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.recent_history_table.setMinimumHeight(144)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
         layout.addWidget(PageHeader("队列", "查看待处理、下载中和已完成任务。"))
         layout.addLayout(actions)
-        layout.addWidget(self.scroll_area, 1)
+        layout.addWidget(self.scroll_area, 2)
+        layout.addWidget(self.history_heading)
+        layout.addWidget(self.recent_history_table, 1)
         layout.addWidget(self.table, 1)
 
     def add_task(self, task_id: str, title: str, status: str = "等待中") -> None:
@@ -118,10 +133,14 @@ class QueuePage(QWidget):
         retry.setObjectName(f"queue-retry-{task_id}")
         for button in (pause, cancel, retry):
             button.setProperty("queueAction", True)
+            button.setFixedSize(58, 30)
+        retry.setVisible(_should_show_retry(status))
         pause.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "pause"))
         cancel.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "cancel"))
         retry.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "retry"))
-        actions = QHBoxLayout()
+        actions = QVBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(6)
         actions.addWidget(pause)
         actions.addWidget(cancel)
         actions.addWidget(retry)
@@ -151,6 +170,9 @@ class QueuePage(QWidget):
             parts = [part for part in [status, speed, f"ETA {eta}" if eta else ""] if part]
             if parts:
                 meta.setText(" · ".join(parts))
+        retry = card.get("retry")
+        if isinstance(retry, QPushButton) and status is not None:
+            retry.setVisible(_should_show_retry(status))
 
     def completed_task_ids(self) -> list[str]:
         task_ids: list[str] = []
@@ -171,3 +193,29 @@ class QueuePage(QWidget):
             if isinstance(widget, QWidget):
                 self.card_layout.removeWidget(widget)
                 widget.deleteLater()
+
+    def load_history_records(self, records) -> None:
+        self.recent_history_table.setRowCount(0)
+        for record in list(records)[-5:]:
+            row = self.recent_history_table.rowCount()
+            self.recent_history_table.insertRow(row)
+            values = [
+                record.title,
+                record.format_summary,
+                display_status(record.status),
+                record.created_at,
+            ]
+            for column, value in enumerate(values):
+                self.recent_history_table.setItem(row, column, QTableWidgetItem(str(value)))
+
+
+def _should_show_retry(status: str) -> bool:
+    return str(status).casefold() in {
+        "failed",
+        "canceled",
+        "cancelled",
+        "paused",
+        "失败",
+        "已取消",
+        "已暂停",
+    }

@@ -31,6 +31,49 @@ def apply_light_theme(app) -> None:
             color: {TEXT};
             background: {BACKGROUND};
         }}
+        #titleBar, #bottomStatusBar {{
+            background: {SURFACE};
+            border-bottom: 1px solid #e1e7ec;
+        }}
+        #bottomStatusBar {{
+            border-top: 1px solid #e1e7ec;
+            border-bottom: 0;
+        }}
+        #appIcon {{
+            background: {TEAL};
+            color: white;
+            border-radius: 6px;
+            font-weight: 700;
+        }}
+        #appTitle {{
+            background: transparent;
+            font-size: 13px;
+            font-weight: 700;
+        }}
+        #windowChromeButton {{
+            border: 0;
+            background: transparent;
+            padding: 0;
+            min-height: 0;
+        }}
+        #windowChromeButton:hover {{
+            background: #eef3f6;
+        }}
+        #footerMuted {{
+            color: {MUTED_TEXT};
+            background: transparent;
+            font-size: 11px;
+        }}
+        #footerStatusDot {{
+            color: #15b34f;
+            background: transparent;
+            font-size: 12px;
+        }}
+        #footerButton {{
+            font-size: 11px;
+            padding: 5px 10px;
+            min-height: 18px;
+        }}
         #contentSurface {{
             background: {SURFACE};
             border: 1px solid #e3e8ec;

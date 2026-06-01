@@ -52,8 +52,11 @@ def test_history_page_renders_history_without_sensitive_fields(qtbot, app_data_d
 
     assert window.history_store is history
     assert window.history_page.table.rowCount() == 1
+    assert window.queue_page.recent_history_table.rowCount() == 1
+    assert window.queue_page.recent_history_table.item(0, 0).text() == "Title"
+    assert window.queue_page.recent_history_table.item(0, 2).text() == "已完成"
     values = [window.history_page.table.item(0, column).text() for column in range(6)]
-    assert values == ["Title", "audio_video", "720p mp4", "finished", "2026-05-30T22:00:00", "打开"]
+    assert values == ["Title", "audio_video", "720p mp4", "已完成", "2026-05-30T22:00:00", "打开"]
     visible_text = " ".join(values)
     assert "cookies" not in visible_text.lower()
     assert "token" not in visible_text.lower()
@@ -72,6 +75,7 @@ def test_history_page_load_records_clears_existing_rows(qtbot):
 
     assert window.history_page.table.rowCount() == 1
     assert window.history_page.table.item(0, 0).text() == "New"
+    assert window.history_page.table.item(0, 3).text() == "失败"
 
 
 def test_history_search_filters_visible_records(qtbot):

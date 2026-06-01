@@ -4,6 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from ytdl_gui.ui.main_window import MainWindow
 from PySide6.QtWidgets import QLabel
+from PySide6.QtCore import QPoint
 
 
 def combo_items(combo):
@@ -29,6 +30,11 @@ def test_main_window_has_chinese_navigation(qtbot):
 
     assert nav_text == ["下载", "格式", "队列", "历史", "设置", "关于"]
     assert window.windowTitle() == "视频地址提取器"
+    assert window.app_title_label.text() == "视频地址提取器"
+    assert window.title_bar.objectName() == "titleBar"
+    assert window.bottom_status_bar.objectName() == "bottomStatusBar"
+    assert window.ytdlp_footer_label.text().startswith("yt-dlp")
+    assert window.footer_update_button.text() == "检查更新"
     assert window.stack.count() == 6
 
 
@@ -38,9 +44,13 @@ def test_download_page_has_primary_controls(qtbot):
 
     assert window.download_page.url_input.placeholderText() == "粘贴一个或多个视频播放地址"
     assert window.download_page.analyze_button.text() == "分析"
+    assert window.download_page.paste_button.text() == "粘贴"
     assert window.download_page.save_folder_button.text() == "浏览"
     assert window.download_page.start_button.text() == "开始下载"
     assert window.download_page.start_button.objectName() == "primaryButton"
+    assert window.download_page.title_label.wordWrap() is True
+    assert window.download_page.format_summary_label.wordWrap() is True
+    assert window.download_page.status_label.wordWrap() is True
     assert combo_items(window.download_page.mode_combo) == ["音频+视频", "仅音频", "仅视频"]
     assert window.download_page.preview_checkbox.text() == "下载时同步预览播放"
 
@@ -89,6 +99,27 @@ def test_queue_page_headers_and_actions(qtbot):
     assert table_headers(window.queue_page.table) == ["标题", "状态", "进度", "速度", "剩余时间", "操作"]
     assert window.queue_page.pause_all_button.text() == "全部暂停"
     assert window.queue_page.clear_completed_button.text() == "清除已完成"
+    assert window.queue_page.history_heading.text() == "历史"
+    assert table_headers(window.queue_page.recent_history_table) == ["标题", "格式", "状态", "时间"]
+
+
+def test_queue_card_actions_fit_compact_width(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(535, 883)
+    window.nav.setCurrentRow(2)
+    window.queue_page.add_task("task-1", "The Harsh Truth As A Subaru Owner / 2026 BRZ tS Review")
+    window.show()
+    qtbot.wait(50)
+
+    card = window.queue_page._task_cards["task-1"]["card"]
+    cancel_button = window.queue_page._task_cards["task-1"]["cancel"]
+    retry_button = window.queue_page._task_cards["task-1"]["retry"]
+    viewport = window.queue_page.scroll_area.viewport()
+    button_right = cancel_button.mapTo(viewport, QPoint(cancel_button.width(), 0)).x()
+
+    assert button_right <= viewport.width()
+    assert retry_button.isHidden()
 
 
 def test_settings_page_has_ffmpeg_and_cookies_controls(qtbot):

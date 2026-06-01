@@ -22,7 +22,7 @@ def test_queue_card_buttons_emit_task_actions(qtbot):
     events: list[tuple[str, str]] = []
     page.task_action_requested.connect(lambda task_id, action: events.append((task_id, action)))
 
-    page.add_task("task-1", "Demo Video", "下载中")
+    page.add_task("task-1", "Demo Video", "失败")
 
     assert _button(page, "queue-pause-task-1").text() == "暂停"
     assert _button(page, "queue-cancel-task-1").text() == "取消"

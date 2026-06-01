@@ -2,16 +2,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
+os.environ.setdefault("QT_SCALE_FACTOR", "1")
+os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "0")
+
 from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryRecord, HistoryStore
 from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.ui.theme import apply_light_theme
+
+
+QA_SCREENSHOT_SIZES = {
+    "download": (590, 883),
+    "formats": (488, 883),
+    "queue": (535, 883),
+    "history": (590, 883),
+    "settings": (590, 883),
+    "about": (590, 883),
+}
 
 
 def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) -> None:
@@ -29,24 +44,33 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
     )
     history = HistoryStore(data_dir)
     history.clear()
-    history.add(
-        HistoryRecord(
-            metadata.get("title") or "测试视频",
-            "https://www.youtube.com/watch?v=KYDPpt3eqaQ",
-            str(data_dir / "downloads" / "sample.m4a"),
-            "仅音频",
-            "音频 m4a mp4a.40.2 129.477kbps",
-            "不下载",
-            "finished",
-            "2026-05-31T13:30:00",
+    for title, download_type, summary, created_at in [
+        (metadata.get("title") or "测试视频", "音频+视频", "360p mp4", "2026-06-01T21:44:42"),
+        ("仅音频测试", "仅音频", "音频 m4a 129kbps", "2026-06-01T21:45:20"),
+        ("仅视频测试", "仅视频", "144p mp4 无音频", "2026-06-01T21:46:10"),
+        ("历史样例", "音频+视频", "720p mp4", "2026-05-31T13:30:00"),
+    ]:
+        history.add(
+            HistoryRecord(
+                title,
+                "https://www.youtube.com/watch?v=KYDPpt3eqaQ",
+                str(data_dir / "downloads" / "sample.mp4"),
+                download_type,
+                summary,
+                "不下载",
+                "finished",
+                created_at,
+            )
         )
-    )
 
     app = QApplication.instance() or QApplication(sys.argv)
     apply_light_theme(app)
     window = MainWindow(config_store=config, history_store=history, worker_runner=lambda worker: worker.run())
-    window.download_page.mode_combo.setCurrentIndex(1)
+    window.download_page.mode_combo.setCurrentIndex(0)
     window.apply_analysis_result("https://www.youtube.com/watch?v=KYDPpt3eqaQ", metadata)
+    thumbnail = QPixmap("docs/qa/assets/KYDPpt3eqaQ-thumbnail.jpg")
+    if not thumbnail.isNull():
+        window.download_page.set_thumbnail(thumbnail)
     for index, percent in enumerate([68.0, 32.0, 100.0]):
         task_id = f"qa-task-{index}"
         status = "下载中" if percent < 100 else "已完成"
@@ -68,6 +92,8 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
 
     for index, name in enumerate(["download", "formats", "queue", "history", "settings", "about"]):
         window.nav.setCurrentRow(index)
+        width, height = QA_SCREENSHOT_SIZES[name]
+        window.resize(width, height)
         app.processEvents()
         window.grab().save(str(output_dir / f"{index + 1}-{name}.png"))
 

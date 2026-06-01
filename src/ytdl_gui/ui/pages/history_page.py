@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ytdl_gui.ui.widgets import PageHeader
+from ytdl_gui.ui.widgets import PageHeader, display_status
 
 
 class HistoryPage(QWidget):
@@ -64,7 +64,7 @@ class HistoryPage(QWidget):
                 record.title,
                 record.download_type,
                 record.format_summary,
-                record.status,
+                display_status(record.status),
                 record.created_at,
                 "打开",
             ]

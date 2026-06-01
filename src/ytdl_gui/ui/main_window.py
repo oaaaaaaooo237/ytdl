@@ -3,10 +3,10 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QThread, QUrl
+from PySide6.QtCore import Qt, QThread, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QListWidget, QMessageBox, QStackedWidget, QWidget
+from PySide6.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from ytdl_gui.config_store import AppConfig
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
@@ -43,8 +43,8 @@ class MainWindow(QWidget):
         ):
         super().__init__()
         self.setWindowTitle("视频地址提取器")
-        self.resize(620, 860)
-        self.setMinimumSize(620, 760)
+        self.resize(590, 883)
+        self.setMinimumSize(488, 760)
         self.config_store = config_store
         self.history_store = history_store
         self.analyzed_url = ""
@@ -71,7 +71,7 @@ class MainWindow(QWidget):
         self._network_manager = QNetworkAccessManager(self)
 
         self.nav = QListWidget()
-        self.nav.setFixedWidth(92)
+        self.nav.setFixedWidth(80)
         self.nav.addItems(["下载", "格式", "队列", "历史", "设置", "关于"])
 
         self.stack = QStackedWidget()
@@ -96,21 +96,90 @@ class MainWindow(QWidget):
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
 
-        layout = QHBoxLayout(self)
+        self.title_bar = self._build_title_bar()
+        self.bottom_status_bar = self._build_bottom_status_bar()
+
+        body_layout = QHBoxLayout()
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(self.nav)
+        body_layout.addWidget(self.stack, 1)
+
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self.nav)
-        layout.addWidget(self.stack, 1)
+        layout.addWidget(self.title_bar)
+        layout.addLayout(body_layout, 1)
+        layout.addWidget(self.bottom_status_bar)
 
         if self.config_store:
             self.settings_page.load_config(self.config_store.load())
         if self.history_store:
-            self.history_page.load_records(self.history_store.list())
+            records = self.history_store.list()
+            self.history_page.load_records(records)
+            self.queue_page.load_history_records(records)
 
         self.connect_settings_actions()
         self.connect_download_actions()
         self.connect_history_actions()
         self.connect_queue_actions()
+
+    def _build_title_bar(self) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("titleBar")
+        frame.setFixedHeight(48)
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setSpacing(8)
+
+        self.app_icon_label = QLabel("↓")
+        self.app_icon_label.setObjectName("appIcon")
+        self.app_icon_label.setFixedSize(22, 22)
+        self.app_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.app_title_label = QLabel("视频地址提取器")
+        self.app_title_label.setObjectName("appTitle")
+
+        layout.addWidget(self.app_icon_label)
+        layout.addWidget(self.app_title_label)
+        layout.addStretch()
+        for text in ("－", "□", "×"):
+            button = QPushButton(text)
+            button.setObjectName("windowChromeButton")
+            button.setFixedSize(32, 28)
+            layout.addWidget(button)
+        return frame
+
+    def _build_bottom_status_bar(self) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("bottomStatusBar")
+        frame.setFixedHeight(44)
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setSpacing(10)
+
+        self.ytdlp_footer_label = QLabel(self._footer_ytdlp_text())
+        self.ytdlp_footer_label.setObjectName("footerMuted")
+        self.footer_status_dot = QLabel("●")
+        self.footer_status_dot.setObjectName("footerStatusDot")
+        self.footer_status_label = QLabel("正常")
+        self.footer_status_label.setObjectName("footerMuted")
+        self.footer_update_button = QPushButton("检查更新")
+        self.footer_update_button.setObjectName("footerButton")
+
+        layout.addWidget(self.ytdlp_footer_label)
+        layout.addSpacing(18)
+        layout.addWidget(self.footer_status_dot)
+        layout.addWidget(self.footer_status_label)
+        layout.addStretch()
+        layout.addWidget(self.footer_update_button)
+        return frame
+
+    def _footer_ytdlp_text(self) -> str:
+        if self.config_store:
+            version = self.config_store.load().active_ytdlp_version
+            if version:
+                return f"yt-dlp {version}"
+        return "yt-dlp 待检测"
 
     def connect_settings_actions(self) -> None:
         self.settings_page.choose_default_folder_button.clicked.connect(self.choose_default_folder)
@@ -299,6 +368,7 @@ class MainWindow(QWidget):
             return
         self.history_store.clear()
         self.history_page.load_records([])
+        self.queue_page.load_history_records([])
 
     def open_download_folder(self) -> None:
         folder = self.settings_page.default_folder.text().strip()
@@ -453,7 +523,9 @@ class MainWindow(QWidget):
             created_at=datetime.now().isoformat(timespec="seconds"),
         )
         self.history_store.add(record)
-        self.history_page.load_records(self.history_store.list())
+        records = self.history_store.list()
+        self.history_page.load_records(records)
+        self.queue_page.load_history_records(records)
 
     def _first_url(self) -> str:
         for line in self.download_page.url_input.toPlainText().splitlines():

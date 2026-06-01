@@ -2,28 +2,28 @@
   {
     "page": "download",
     "reference_size": "590x883",
-    "actual_size": "1085x1505",
+    "actual_size": "590x883",
     "compared_size": "590x883",
-    "mean_abs_channel_delta": 25.4808,
-    "exact_pixel_match_percent": 1.6049,
+    "mean_abs_channel_delta": 23.6702,
+    "exact_pixel_match_percent": 1.0427,
     "max_channel_delta": 255
   },
   {
     "page": "formats",
     "reference_size": "488x883",
-    "actual_size": "1085x1505",
+    "actual_size": "488x918",
     "compared_size": "488x883",
-    "mean_abs_channel_delta": 9.4853,
-    "exact_pixel_match_percent": 2.4841,
+    "mean_abs_channel_delta": 10.4489,
+    "exact_pixel_match_percent": 2.3258,
     "max_channel_delta": 255
   },
   {
     "page": "queue",
     "reference_size": "535x883",
-    "actual_size": "1085x1505",
+    "actual_size": "535x883",
     "compared_size": "535x883",
-    "mean_abs_channel_delta": 13.8721,
-    "exact_pixel_match_percent": 0.1801,
+    "mean_abs_channel_delta": 19.0089,
+    "exact_pixel_match_percent": 1.0684,
     "max_channel_delta": 255
   }
 ]

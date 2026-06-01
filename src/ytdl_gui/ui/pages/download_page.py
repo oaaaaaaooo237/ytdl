@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QApplication,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -24,7 +25,11 @@ class DownloadPage(QWidget):
         self.url_input.setFixedHeight(38)
         self.analyze_button = QPushButton("分析")
         self.analyze_button.setObjectName("primaryButton")
-        self.analyze_button.setFixedWidth(96)
+        self.analyze_button.setFixedWidth(110)
+        self.analyze_button.setMinimumHeight(42)
+        self.paste_button = QPushButton("粘贴")
+        self.paste_button.setFixedWidth(72)
+        self.paste_button.clicked.connect(self.paste_from_clipboard)
         self.save_folder_button = QPushButton("浏览")
         self.start_button = QPushButton("开始下载")
         self.start_button.setObjectName("primaryButton")
@@ -35,6 +40,14 @@ class DownloadPage(QWidget):
         self.duration_label = QLabel("时长：未分析")
         self.format_summary_label = QLabel("格式：未选择")
         self.save_folder_label = QLabel("保存位置：未选择")
+        for dynamic_label in (
+            self.status_label,
+            self.title_label,
+            self.duration_label,
+            self.format_summary_label,
+            self.save_folder_label,
+        ):
+            dynamic_label.setWordWrap(True)
         self.thumbnail_label = QLabel("预览图")
         self.thumbnail_label.setObjectName("thumbnailPlaceholder")
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -54,8 +67,12 @@ class DownloadPage(QWidget):
         url_row = QHBoxLayout()
         url_row.setSpacing(10)
         url_row.addWidget(self.url_input, 1)
-        url_row.addWidget(self.analyze_button)
+        url_row.addWidget(self.paste_button)
         layout.addLayout(url_row)
+        analyze_row = QHBoxLayout()
+        analyze_row.addStretch()
+        analyze_row.addWidget(self.analyze_button)
+        layout.addLayout(analyze_row)
 
         video_card = QFrame()
         video_card.setObjectName("videoCard")
@@ -100,6 +117,11 @@ class DownloadPage(QWidget):
 
     def choose_folder(self) -> str:
         return QFileDialog.getExistingDirectory(self, "选择保存位置")
+
+    def paste_from_clipboard(self) -> None:
+        text = QApplication.clipboard().text().strip()
+        if text:
+            self.url_input.setPlainText(text)
 
     def set_status(self, message: str) -> None:
         self.status_label.setText(message)
