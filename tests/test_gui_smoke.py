@@ -3,8 +3,9 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from ytdl_gui.ui.main_window import MainWindow
-from PySide6.QtWidgets import QLabel
-from PySide6.QtCore import QPoint
+from ytdl_gui.ui.theme import apply_light_theme
+from PySide6.QtWidgets import QApplication, QLabel, QListView
+from PySide6.QtCore import QPoint, Qt
 
 
 def combo_items(combo):
@@ -36,6 +37,86 @@ def test_main_window_has_chinese_navigation(qtbot):
     assert window.ytdlp_footer_label.text().startswith("yt-dlp")
     assert window.footer_update_button.text() == "检查更新"
     assert window.stack.count() == 6
+
+
+def test_navigation_matches_reference_icon_rail(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    for index in range(window.nav.count()):
+        item = window.nav.item(index)
+        widget = window.nav.itemWidget(item)
+        assert widget is not None, item.text()
+        icon_label = widget.findChild(QLabel, "navItemIcon")
+        assert icon_label is not None, item.text()
+        assert icon_label.pixmap() is not None and not icon_label.pixmap().isNull()
+    assert window.nav.iconSize().width() >= 18
+    assert window.nav.gridSize().height() >= 68
+
+
+def test_navigation_custom_widgets_avoid_native_icon_duplication(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    for index in range(window.nav.count()):
+        assert window.nav.item(index).icon().isNull(), window.nav.item(index).text()
+
+
+def test_navigation_icon_rail_avoids_scrollbar_artifacts(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    assert window.nav.viewMode() == QListView.ViewMode.ListMode
+    assert window.nav.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert not window.nav.horizontalScrollBar().isVisible()
+
+
+def test_navigation_icon_labels_have_stable_width(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    widest_label = max(
+        window.nav.fontMetrics().horizontalAdvance(window.nav.item(index).text())
+        for index in range(window.nav.count())
+    )
+    assert window.nav.viewport().width() >= widest_label + window.nav.iconSize().width() + 24
+
+
+def test_navigation_uses_full_chinese_label_widgets(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    for index in range(window.nav.count()):
+        item = window.nav.item(index)
+        widget = window.nav.itemWidget(item)
+        assert widget is not None, item.text()
+        label = widget.findChild(QLabel, "navItemLabel")
+        assert label is not None, item.text()
+        assert label.text() == item.text()
+        assert label.minimumWidth() >= window.nav.fontMetrics().horizontalAdvance(item.text())
+
+
+def test_navigation_icon_and_label_do_not_overlap(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    for index in range(window.nav.count()):
+        widget = window.nav.itemWidget(window.nav.item(index))
+        icon_label = widget.findChild(QLabel, "navItemIcon")
+        text_label = widget.findChild(QLabel, "navItemLabel")
+        assert icon_label.geometry().bottom() + 2 <= text_label.geometry().top(), window.nav.item(index).text()
 
 
 def test_download_page_has_primary_controls(qtbot):

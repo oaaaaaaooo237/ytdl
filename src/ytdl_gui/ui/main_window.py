@@ -4,10 +4,24 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import Qt, QThread, QUrl
+from PySide6.QtCore import QSize, Qt, QThread, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
-from PySide6.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListView,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ytdl_gui.config_store import AppConfig
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
@@ -36,6 +50,16 @@ from ytdl_gui.workers import (
 )
 from ytdl_gui.workers import YtdlpUpdateRequest, YtdlpUpdateRunner, YtdlpUpdateWorker
 from ytdl_gui.ytdlp_runner import ProgressEvent, extract_playlist_urls, playlist_limit_message
+
+
+NAV_ITEMS = [
+    ("下载", QStyle.StandardPixmap.SP_ArrowDown),
+    ("格式", QStyle.StandardPixmap.SP_FileDialogDetailedView),
+    ("队列", QStyle.StandardPixmap.SP_FileDialogListView),
+    ("历史", QStyle.StandardPixmap.SP_BrowserReload),
+    ("设置", QStyle.StandardPixmap.SP_ComputerIcon),
+    ("关于", QStyle.StandardPixmap.SP_MessageBoxInformation),
+]
 
 
 class MainWindow(QWidget):
@@ -94,9 +118,7 @@ class MainWindow(QWidget):
         self._confirmation_dialog = confirmation_dialog or self._ask_confirmation
         self._network_manager = QNetworkAccessManager(self)
 
-        self.nav = QListWidget()
-        self.nav.setFixedWidth(80)
-        self.nav.addItems(["下载", "格式", "队列", "历史", "设置", "关于"])
+        self.nav = self._build_navigation()
 
         self.stack = QStackedWidget()
         self.download_page = DownloadPage()
@@ -150,6 +172,51 @@ class MainWindow(QWidget):
         self.connect_update_actions()
         self.connect_format_actions()
         self.connect_about_actions()
+
+    def _build_navigation(self) -> QListWidget:
+        nav = QListWidget()
+        nav.setObjectName("navRail")
+        nav.setFixedWidth(90)
+        nav.setViewMode(QListView.ViewMode.ListMode)
+        nav.setMovement(QListView.Movement.Static)
+        nav.setFlow(QListView.Flow.TopToBottom)
+        nav.setWrapping(False)
+        nav.setResizeMode(QListView.ResizeMode.Adjust)
+        nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        nav.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        nav.setIconSize(QSize(20, 20))
+        nav.setGridSize(QSize(78, 72))
+        nav.setUniformItemSizes(True)
+        for text, standard_icon in NAV_ITEMS:
+            icon = self.style().standardIcon(standard_icon)
+            item = QListWidgetItem(text)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setSizeHint(QSize(78, 72))
+            nav.addItem(item)
+            nav.setItemWidget(item, self._build_navigation_item_widget(text, icon))
+        return nav
+
+    def _build_navigation_item_widget(self, text: str, icon) -> QWidget:
+        widget = QWidget()
+        widget.setObjectName("navItem")
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 7, 0, 7)
+        layout.setSpacing(3)
+
+        icon_label = QLabel()
+        icon_label.setObjectName("navItemIcon")
+        icon_label.setFixedSize(24, 24)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setPixmap(icon.pixmap(QSize(20, 20)))
+
+        text_label = QLabel(text)
+        text_label.setObjectName("navItemLabel")
+        text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        text_label.setMinimumWidth(text_label.fontMetrics().horizontalAdvance(text))
+
+        layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(text_label, 0, Qt.AlignmentFlag.AlignHCenter)
+        return widget
 
     def _build_title_bar(self) -> QFrame:
         frame = QFrame()

@@ -106,6 +106,19 @@ def apply_light_theme(app) -> None:
             font-weight: 600;
             border-left: 3px solid {TEAL};
         }}
+        QListWidget#navRail {{
+            padding: 8px 6px;
+        }}
+        QListWidget#navRail::item {{
+            padding: 4px 3px;
+            margin: 4px 0;
+        }}
+        #navItem, #navItemIcon, #navItemLabel {{
+            background: transparent;
+        }}
+        #navItemLabel {{
+            font-size: 12px;
+        }}
         QPushButton {{
             border: 1px solid {BORDER};
             border-radius: 6px;
