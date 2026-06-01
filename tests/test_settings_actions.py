@@ -176,6 +176,30 @@ def test_ffmpeg_search_missing_shows_chinese_baseline_message(qtbot):
     ]
 
 
+def test_subtitle_embed_or_burn_warns_when_ffmpeg_missing(qtbot, app_data_dir: Path):
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(ffmpeg_path=""))
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    window.formats_page.subtitle_combo.setCurrentText("嵌入")
+
+    assert "需要 ffmpeg" in window.download_page.status_label.text()
+    assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：未找到，基础下载功能仍可使用"
+
+
+def test_subtitle_embed_does_not_warn_when_ffmpeg_configured(qtbot, app_data_dir: Path):
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(ffmpeg_path="D:/ffmpeg/bin/ffmpeg.exe"))
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    window.download_page.set_status("ready")
+    window.formats_page.subtitle_combo.setCurrentText("嵌入")
+
+    assert window.download_page.status_label.text() == "ready"
+
+
 def test_ffmpeg_search_can_use_user_data_dir(tmp_path: Path):
     exe = tmp_path / "ffmpeg" / "bin" / "ffmpeg.exe"
     exe.parent.mkdir(parents=True)

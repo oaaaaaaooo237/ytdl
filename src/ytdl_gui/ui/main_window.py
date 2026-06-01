@@ -14,6 +14,7 @@ from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
 from ytdl_gui.format_selector import FormatPreference, choose_format
 from ytdl_gui.history_store import HistoryRecord
 from ytdl_gui.paths import bundled_ytdlp_path
+from ytdl_gui.subtitles import subtitle_action_requires_ffmpeg
 from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 from ytdl_gui.ui.pages.about_page import AboutPage
 from ytdl_gui.ui.pages.download_page import DownloadPage
@@ -132,6 +133,7 @@ class MainWindow(QWidget):
         self.connect_history_actions()
         self.connect_queue_actions()
         self.connect_update_actions()
+        self.connect_format_actions()
 
     def _build_title_bar(self) -> QFrame:
         frame = QFrame()
@@ -314,6 +316,17 @@ class MainWindow(QWidget):
     def connect_update_actions(self) -> None:
         self.footer_update_button.clicked.connect(lambda: self.check_ytdlp_updates(silent=False))
 
+    def connect_format_actions(self) -> None:
+        self.formats_page.subtitle_combo.currentTextChanged.connect(self.validate_subtitle_option)
+
+    def validate_subtitle_option(self, text: str) -> None:
+        if not subtitle_action_requires_ffmpeg(_subtitle_action_value(text)):
+            return
+        if self._has_ffmpeg_configured():
+            return
+        self.about_page.show_ffmpeg_missing_baseline()
+        self.download_page.set_status("嵌入或烧录字幕需要 ffmpeg；请在设置中搜索或选择 ffmpeg.exe。")
+
     def maybe_startup_update_check(self) -> None:
         if not self.config_store:
             return
@@ -379,6 +392,12 @@ class MainWindow(QWidget):
 
     def _has_running_download_tasks(self) -> bool:
         return any(state in {"running", "pause_requested", "cancel_requested"} for state in self._download_task_states.values())
+
+    def _has_ffmpeg_configured(self) -> bool:
+        path = self.settings_page.ffmpeg_path.text().strip()
+        if not path and self.config_store:
+            path = self.config_store.load().ffmpeg_path.strip()
+        return bool(path)
 
     def start_analysis(self) -> None:
         urls = self._all_urls()
@@ -897,3 +916,11 @@ def _video_bitrate_value(text: str) -> int | None:
 
 def _audio_bitrate_value(text: str) -> int | None:
     return _integer_text(text)
+
+
+def _subtitle_action_value(text: str) -> str:
+    return {
+        "下载字幕文件": "file",
+        "嵌入": "embed",
+        "烧录": "burn",
+    }.get(text, "none")
