@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -70,14 +71,14 @@ class QueuePage(QWidget):
         layout.addWidget(self.recent_history_table, 1)
         layout.addWidget(self.table, 1)
 
-    def add_task(self, task_id: str, title: str, status: str = "等待中") -> None:
+    def add_task(self, task_id: str, title: str, status: str = "等待中", thumbnail: QPixmap | None = None) -> None:
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setVerticalHeaderItem(row, QTableWidgetItem(task_id))
         values = [title, status, "0.0%", "", "", ""]
         for column, value in enumerate(values):
             self.table.setItem(row, column, QTableWidgetItem(value))
-        self._add_task_card(task_id, title, status)
+        self._add_task_card(task_id, title, status, thumbnail)
 
     def update_task(self, task_id: str, status: str | None = None, progress=None, speed: str = "", eta: str = "") -> None:
         row = self._row_for_task(task_id)
@@ -100,7 +101,7 @@ class QueuePage(QWidget):
                 return row
         return -1
 
-    def _add_task_card(self, task_id: str, title: str, status: str) -> None:
+    def _add_task_card(self, task_id: str, title: str, status: str, thumbnail: QPixmap | None = None) -> None:
         card = QFrame()
         card.setObjectName("queueCard")
         layout = QHBoxLayout(card)
@@ -111,6 +112,15 @@ class QueuePage(QWidget):
         thumb.setObjectName("queueThumb")
         thumb.setFixedSize(84, 54)
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if thumbnail is not None and not thumbnail.isNull():
+            thumb.setText("")
+            thumb.setPixmap(
+                thumbnail.scaled(
+                    thumb.size(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
 
         content = QVBoxLayout()
         title_label = QLabel(title)
@@ -153,6 +163,7 @@ class QueuePage(QWidget):
             "card": card,
             "progress": progress,
             "meta": meta,
+            "thumb": thumb,
             "pause": pause,
             "cancel": cancel,
             "retry": retry,

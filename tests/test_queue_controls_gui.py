@@ -3,7 +3,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtWidgets import QLabel, QPushButton
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.ui.main_window import MainWindow
@@ -33,6 +34,58 @@ def test_queue_card_buttons_emit_task_actions(qtbot):
     _button(page, "queue-retry-task-1").click()
 
     assert events == [("task-1", "pause"), ("task-1", "cancel"), ("task-1", "retry")]
+
+
+def test_queue_card_can_render_thumbnail(qtbot):
+    page = QueuePage()
+    qtbot.addWidget(page)
+    thumbnail = QPixmap(120, 80)
+    thumbnail.fill(QColor("#0f8f8c"))
+
+    page.add_task("task-1", "Demo Video", "等待中", thumbnail=thumbnail)
+
+    thumb = page._task_cards["task-1"]["thumb"]
+    assert isinstance(thumb, QLabel)
+    assert thumb.text() == ""
+    assert thumb.pixmap() is not None and not thumb.pixmap().isNull()
+
+
+def test_main_window_adds_analysis_thumbnail_to_queue_card(qtbot, app_data_dir: Path):
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    window = MainWindow(
+        config_store=store,
+        worker_runner=lambda worker: None,
+    )
+    qtbot.addWidget(window)
+    thumbnail = QPixmap(120, 80)
+    thumbnail.fill(QColor("#0f8f8c"))
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "formats": [
+                {
+                    "format_id": "22",
+                    "height": 720,
+                    "ext": "mp4",
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                    "fps": 30,
+                }
+            ],
+        },
+    )
+    window.download_page.set_thumbnail(thumbnail)
+
+    window.download_page.start_button.click()
+
+    task_id = window.queue_page.table.verticalHeaderItem(0).text()
+    thumb = window.queue_page._task_cards[task_id]["thumb"]
+    assert isinstance(thumb, QLabel)
+    assert thumb.pixmap() is not None and not thumb.pixmap().isNull()
 
 
 def test_main_window_cancel_and_retry_queue_actions_restart_worker(qtbot, app_data_dir: Path):

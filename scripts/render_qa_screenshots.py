@@ -74,7 +74,12 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
     for index, percent in enumerate([68.0, 32.0, 100.0]):
         task_id = f"qa-task-{index}"
         status = "下载中" if percent < 100 else "已完成"
-        window.queue_page.add_task(task_id, metadata.get("title") or "测试视频", status)
+        window.queue_page.add_task(
+            task_id,
+            metadata.get("title") or "测试视频",
+            status,
+            thumbnail=thumbnail if not thumbnail.isNull() else None,
+        )
         window.queue_page.update_task(
             task_id,
             status=status,

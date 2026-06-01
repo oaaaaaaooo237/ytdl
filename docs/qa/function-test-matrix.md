@@ -11,6 +11,7 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Format fallback explanation | Relaxed format preferences are shown in Chinese before download | `tests/test_format_preferences_ui.py::test_analysis_status_explains_relaxed_format_preferences` | Pass |
 | Analysis failure recovery | yt-dlp analysis failures clearly offer retry and update guidance, then reset after a successful retry | `tests/test_download_progress.py::test_ytdlp_analysis_failure_offers_retry_and_update_guidance`; `tests/test_download_progress.py::test_analysis_retry_label_returns_to_analyze_after_success` | Pass |
 | Queue | Progress reaches completed state | `scripts/real_download_matrix.ps1`, all matrix cases `queue_status=已完成` | Pass |
+| Queue thumbnails | Queue cards can show the analyzed video thumbnail instead of a placeholder | `tests/test_queue_controls_gui.py::test_queue_card_can_render_thumbnail`; `tests/test_queue_controls_gui.py::test_main_window_adds_analysis_thumbnail_to_queue_card`; refreshed `docs/qa/screenshots/3-queue.png` | Pass |
 | History | Finished download writes history | `scripts/real_download_matrix.ps1`, all matrix cases `history_count=1` | Pass |
 | History missing files | Opening a moved/deleted history file shows Chinese confirmation and offers last known folder | `tests/test_ui_service_wiring.py::test_history_open_missing_file_offers_last_known_folder` | Pass |
 | Packaging | Build Win11 x64 dist folder | `scripts/package_win.ps1` | Pass |

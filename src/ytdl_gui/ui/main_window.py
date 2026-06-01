@@ -728,7 +728,10 @@ class MainWindow(QWidget):
         self.selected_format_summary = choice.actual_summary
         task_id = uuid4().hex
         title = str(metadata.get("title") or "未命名视频")
-        self.queue_page.add_task(task_id, title, "等待中")
+        thumbnail = self.download_page.thumbnail_label.pixmap()
+        if thumbnail is not None and thumbnail.isNull():
+            thumbnail = None
+        self.queue_page.add_task(task_id, title, "等待中", thumbnail=thumbnail)
         request = DownloadRequest(
             url=url,
             ytdlp_path=self._active_ytdlp_path(),
