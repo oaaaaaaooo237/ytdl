@@ -60,6 +60,8 @@ class MainWindow(QWidget):
         self._download_requests_by_task: dict[str, DownloadRequest] = {}
         self._download_context_by_task: dict[str, dict[str, object]] = {}
         self._download_task_states: dict[str, str] = {}
+        self._pending_download_task_ids: list[str] = []
+        self._pending_download_status_by_task: dict[str, str] = {}
         self._threads: list[QThread] = []
         self._workers: list[object] = []
         self._ffmpeg_finder = ffmpeg_finder
@@ -495,7 +497,7 @@ class MainWindow(QWidget):
         self.selected_format_summary = choice.actual_summary
         task_id = uuid4().hex
         title = str(metadata.get("title") or "未命名视频")
-        self.queue_page.add_task(task_id, title, "下载中")
+        self.queue_page.add_task(task_id, title, "等待中")
         request = DownloadRequest(
             url=url,
             ytdlp_path=self._active_ytdlp_path(),
@@ -507,14 +509,49 @@ class MainWindow(QWidget):
         self._download_context_by_task[task_id] = {
             "title": title,
             "url": url,
+            "format_id": choice_format_id,
             "format_summary": choice.actual_summary,
             "download_type": self.download_page.mode_combo.currentText(),
             "subtitle_behavior": self.formats_page.subtitle_combo.currentText(),
+            "preview_on_start": allow_preview and self.download_page.preview_checkbox.isChecked(),
         }
-        if allow_preview and self.download_page.preview_checkbox.isChecked():
-            self.start_preview(url, choice_format_id)
-        self._start_download_worker(task_id, request, "下载已开始，进度见队列。")
+        self._queue_download_task(task_id, "下载已开始，进度见队列。")
         return True
+
+    def _queue_download_task(self, task_id: str, status_text: str) -> None:
+        self._download_task_states[task_id] = "pending"
+        if task_id not in self._pending_download_task_ids:
+            self._pending_download_task_ids.append(task_id)
+        self._pending_download_status_by_task[task_id] = status_text
+        self._start_ready_download_workers()
+
+    def _start_ready_download_workers(self) -> None:
+        while self._active_download_count() < self._max_concurrency() and self._pending_download_task_ids:
+            task_id = self._pending_download_task_ids.pop(0)
+            if self._download_task_states.get(task_id) != "pending":
+                continue
+            request = self._download_requests_by_task.get(task_id)
+            if request is None:
+                continue
+            context = self._download_context_by_task.get(task_id, {})
+            if context.pop("preview_on_start", False):
+                self.start_preview(str(context.get("url") or request.url), str(context.get("format_id") or request.format_id))
+            status_text = self._pending_download_status_by_task.pop(task_id, "下载已开始，进度见队列。")
+            self._start_download_worker(task_id, request, status_text)
+
+    def _active_download_count(self) -> int:
+        return sum(
+            1
+            for state in self._download_task_states.values()
+            if state in {"running", "pause_requested", "cancel_requested"}
+        )
+
+    def _max_concurrency(self) -> int:
+        if self.config_store:
+            value = self.config_store.load().max_concurrency
+        else:
+            value = self.settings_page.concurrency.value()
+        return max(1, min(5, int(value)))
 
     def start_preview(self, url: str | None = None, format_id: str | None = None) -> None:
         request = PreviewUrlRequest(
@@ -556,6 +593,7 @@ class MainWindow(QWidget):
         self.queue_page.update_task(task_id, status="已完成", progress=100.0, speed="", eta="00:00")
         self.download_page.set_status("下载完成。")
         self.record_finished_download(task_id)
+        self._start_ready_download_workers()
 
     def fail_download(self, task_id: str, message: str) -> None:
         self._download_workers_by_task.pop(task_id, None)
@@ -564,16 +602,19 @@ class MainWindow(QWidget):
             self._download_task_states[task_id] = "canceled"
             self.queue_page.update_task(task_id, status="已取消")
             self.download_page.set_status("下载已取消。")
+            self._start_ready_download_workers()
             return
         if state == "pause_requested":
             self._download_task_states[task_id] = "paused"
             self.queue_page.update_task(task_id, status="已暂停")
             self.download_page.set_status("下载已暂停，可继续。")
+            self._start_ready_download_workers()
             return
         self._download_task_states[task_id] = "failed"
         safe_message = "下载失败，请检查地址、网络或 yt-dlp 状态后重试。"
         self.queue_page.update_task(task_id, status="失败")
         self.download_page.set_status(safe_message if "cookies" in message.lower() else message)
+        self._start_ready_download_workers()
 
     def handle_queue_action(self, task_id: str, action: str) -> None:
         if action == "cancel":
@@ -584,6 +625,12 @@ class MainWindow(QWidget):
             self.retry_queue_task(task_id)
 
     def cancel_queue_task(self, task_id: str) -> None:
+        if self._download_task_states.get(task_id) == "pending":
+            self._remove_pending_download_task(task_id)
+            self._download_task_states[task_id] = "canceled"
+            self.queue_page.update_task(task_id, status="已取消")
+            self.download_page.set_status("下载已取消。")
+            return
         self._download_task_states[task_id] = "cancel_requested"
         worker = self._download_workers_by_task.get(task_id)
         if worker:
@@ -592,6 +639,12 @@ class MainWindow(QWidget):
         self.download_page.set_status("下载已取消。")
 
     def pause_queue_task(self, task_id: str) -> None:
+        if self._download_task_states.get(task_id) == "pending":
+            self._remove_pending_download_task(task_id)
+            self._download_task_states[task_id] = "paused"
+            self.queue_page.update_task(task_id, status="已暂停")
+            self.download_page.set_status("下载已暂停，可继续。")
+            return
         self._download_task_states[task_id] = "pause_requested"
         worker = self._download_workers_by_task.get(task_id)
         if worker:
@@ -607,7 +660,8 @@ class MainWindow(QWidget):
         request = self._download_requests_by_task.get(task_id)
         if request is None:
             return
-        self._start_download_worker(task_id, request, "已重新开始下载。")
+        self.queue_page.update_task(task_id, status="等待中", progress=0.0, speed="", eta="")
+        self._queue_download_task(task_id, "已重新开始下载。")
 
     def pause_all_tasks(self) -> None:
         for row in range(self.queue_page.table.rowCount()):
@@ -623,6 +677,11 @@ class MainWindow(QWidget):
             self._download_requests_by_task.pop(task_id, None)
             self._download_context_by_task.pop(task_id, None)
             self._download_task_states.pop(task_id, None)
+            self._pending_download_status_by_task.pop(task_id, None)
+            self._remove_pending_download_task(task_id)
+
+    def _remove_pending_download_task(self, task_id: str) -> None:
+        self._pending_download_task_ids = [pending_id for pending_id in self._pending_download_task_ids if pending_id != task_id]
 
     def record_finished_download(self, task_id: str | None = None) -> None:
         if not self.history_store:

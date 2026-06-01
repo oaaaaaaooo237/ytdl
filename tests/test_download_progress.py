@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryStore
 from ytdl_gui.ui.main_window import MainWindow, _thumbnail_url
+from ytdl_gui.workers import DownloadWorker
 from ytdl_gui.ytdlp_runner import ProgressEvent, parse_progress_line, safe_command_summary
 
 
@@ -278,3 +279,75 @@ def test_batch_urls_analyze_and_download_each_url(qtbot, app_data_dir: Path):
     records = history.list()
     assert [record.url for record in records] == urls
     assert [record.title for record in records] == ["Demo a", "Demo b"]
+
+
+def test_batch_download_respects_configured_concurrency(qtbot, app_data_dir: Path):
+    started_downloads: list[DownloadWorker] = []
+
+    def analysis_runner(command, **kwargs):
+        suffix = command[-1].rsplit("=", 1)[-1]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "title": f"Demo {suffix}",
+                    "formats": [
+                        {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}
+                    ],
+                }
+            ),
+            stderr="",
+        )
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(["[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n"])
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    def worker_runner(worker):
+        if isinstance(worker, DownloadWorker):
+            started_downloads.append(worker)
+        else:
+            worker.run()
+
+    config = ConfigStore(app_data_dir)
+    config.save(
+        AppConfig(
+            default_save_dir=str(app_data_dir / "downloads"),
+            active_ytdlp_path="D:/tools/yt-dlp.exe",
+            max_concurrency=1,
+        )
+    )
+    window = MainWindow(
+        config_store=config,
+        history_store=HistoryStore(app_data_dir),
+        analysis_runner=analysis_runner,
+        download_popen_factory=lambda command, **kwargs: FakeProcess(),
+        worker_runner=worker_runner,
+    )
+    qtbot.addWidget(window)
+
+    urls = [f"https://example.test/watch?v={suffix}" for suffix in ("a", "b", "c")]
+    window.download_page.url_input.setPlainText("\n".join(urls))
+    window.download_page.analyze_button.click()
+    window.download_page.start_button.click()
+
+    assert len(started_downloads) == 1
+    assert [window.queue_page.table.item(row, 1).text() for row in range(3)] == ["下载中", "等待中", "等待中"]
+
+    started_downloads[0].run()
+
+    assert len(started_downloads) == 2
+    assert [window.queue_page.table.item(row, 1).text() for row in range(3)] == ["已完成", "下载中", "等待中"]
