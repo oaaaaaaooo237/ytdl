@@ -36,6 +36,29 @@ def test_resolution_preference_selects_matching_audio_video_format(qtbot):
     assert window.download_page.format_summary_label.text() == "格式：360p mp4 avc1/mp4a 30fps"
 
 
+def test_analysis_status_explains_relaxed_format_preferences(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.formats_page.resolution_combo.setCurrentText("1080p")
+    window.formats_page.fps_combo.setCurrentText("60")
+    window.formats_page.codec_combo.setCurrentText("H.264")
+
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "formats": [
+                {"format_id": "22", "height": 720, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30},
+            ],
+        },
+    )
+
+    status = window.download_page.status_label.text()
+    assert "已放宽" in status
+    assert "分辨率" in status
+    assert "帧率" in status
+
+
 def test_audio_bitrate_preference_selects_matching_audio_only_format(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)

@@ -494,7 +494,7 @@ class MainWindow(QWidget):
         self.formats_page.load_available_formats(formats, choice.format_id)
         self.download_page.show_analysis_result(title, _duration_text(metadata.get("duration")), choice.actual_summary)
         self._load_thumbnail(_thumbnail_url(metadata))
-        self.download_page.set_status("分析完成，可以开始下载。")
+        self.download_page.set_status(_analysis_success_status(choice.relaxed))
 
     def show_analysis_error(self, message: str, url: str | None = None) -> None:
         if message == "playlist_confirmation_needed" and url:
@@ -981,6 +981,23 @@ def _duration_text(value: object) -> str:
     if hours:
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     return f"{minutes:02d}:{seconds:02d}"
+
+
+_RELAXED_PREFERENCE_LABELS = {
+    "resolution": "分辨率",
+    "fps": "帧率",
+    "codec": "编码",
+    "video_bitrate": "视频码率",
+    "audio_bitrate": "音频码率",
+    "container": "容器",
+}
+
+
+def _analysis_success_status(relaxed_preferences: list[str]) -> str:
+    labels = [_RELAXED_PREFERENCE_LABELS.get(key, key) for key in relaxed_preferences]
+    if labels:
+        return f"分析完成，已放宽：{'、'.join(labels)}。可以开始下载。"
+    return "分析完成，可以开始下载。"
 
 
 def _thumbnail_url(metadata: dict) -> str:

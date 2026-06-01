@@ -8,6 +8,7 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Download modes | Real download for audio+video, audio-only, and video-only | `scripts/real_download_matrix.ps1`: `audio_video_360p` 74,327,155 bytes; `audio_only_128k` 23,382,701 bytes; `video_only_144p` 15,240,017 bytes | Pass |
 | Output path validation | Missing or unwritable save folder is rejected before starting download worker | `tests/test_download_progress.py::test_start_download_rejects_missing_output_folder_before_starting_worker` | Pass |
 | Format preferences | Resolution, container, codec, and audio bitrate controls affect selected format | `tests/test_format_preferences_ui.py`; real matrix selected `18` for 360p mp4, `140` for 128k-near audio, `160` for 144p H.264 video-only | Pass |
+| Format fallback explanation | Relaxed format preferences are shown in Chinese before download | `tests/test_format_preferences_ui.py::test_analysis_status_explains_relaxed_format_preferences` | Pass |
 | Queue | Progress reaches completed state | `scripts/real_download_matrix.ps1`, all matrix cases `queue_status=已完成` | Pass |
 | History | Finished download writes history | `scripts/real_download_matrix.ps1`, all matrix cases `history_count=1` | Pass |
 | History missing files | Opening a moved/deleted history file shows Chinese confirmation and offers last known folder | `tests/test_ui_service_wiring.py::test_history_open_missing_file_offers_last_known_folder` | Pass |
