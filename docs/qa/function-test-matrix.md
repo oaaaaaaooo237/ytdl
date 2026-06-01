@@ -9,6 +9,7 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Output path validation | Missing or unwritable save folder is rejected before starting download worker | `tests/test_download_progress.py::test_start_download_rejects_missing_output_folder_before_starting_worker` | Pass |
 | Format preferences | Resolution, container, codec, and audio bitrate controls affect selected format | `tests/test_format_preferences_ui.py`; real matrix selected `18` for 360p mp4, `140` for 128k-near audio, `160` for 144p H.264 video-only | Pass |
 | Format fallback explanation | Relaxed format preferences are shown in Chinese before download | `tests/test_format_preferences_ui.py::test_analysis_status_explains_relaxed_format_preferences` | Pass |
+| Analysis failure recovery | yt-dlp analysis failures clearly offer retry and update guidance, then reset after a successful retry | `tests/test_download_progress.py::test_ytdlp_analysis_failure_offers_retry_and_update_guidance`; `tests/test_download_progress.py::test_analysis_retry_label_returns_to_analyze_after_success` | Pass |
 | Queue | Progress reaches completed state | `scripts/real_download_matrix.ps1`, all matrix cases `queue_status=已完成` | Pass |
 | History | Finished download writes history | `scripts/real_download_matrix.ps1`, all matrix cases `history_count=1` | Pass |
 | History missing files | Opening a moved/deleted history file shows Chinese confirmation and offers last known folder | `tests/test_ui_service_wiring.py::test_history_open_missing_file_offers_last_known_folder` | Pass |

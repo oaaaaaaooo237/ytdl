@@ -494,6 +494,7 @@ class MainWindow(QWidget):
         self.formats_page.load_available_formats(formats, choice.format_id)
         self.download_page.show_analysis_result(title, _duration_text(metadata.get("duration")), choice.actual_summary)
         self._load_thumbnail(_thumbnail_url(metadata))
+        self.download_page.reset_analysis_action()
         self.download_page.set_status(_analysis_success_status(choice.relaxed))
 
     def show_analysis_error(self, message: str, url: str | None = None) -> None:
@@ -506,9 +507,11 @@ class MainWindow(QWidget):
             "network_timeout": "分析超时，请检查网络后重试。",
             "unsupported_url": "当前地址暂不受支持。",
             "playlist_confirmation_needed": "检测到播放列表，请先确认需要展开的项目数量。",
-            "unknown_ytdlp_failure": "yt-dlp 分析失败，可尝试更新 yt-dlp 后重试。",
+            "unknown_ytdlp_failure": "yt-dlp 分析失败，可点击右下角“检查更新”，更新后重试分析。",
             "canceled": "分析已取消。",
         }
+        if message in {"login_required", "network_timeout", "unknown_ytdlp_failure"}:
+            self.download_page.set_analysis_retry_available()
         self.download_page.set_status(messages.get(message, "分析失败，请重试。"))
 
     def start_playlist_probe(self, url: str) -> None:

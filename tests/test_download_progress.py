@@ -119,6 +119,49 @@ def test_analysis_respects_audio_only_mode(qtbot, app_data_dir: Path):
     assert window.download_page.format_summary_label.text() == "格式：音频 m4a mp4a.40.2 129kbps"
 
 
+def test_ytdlp_analysis_failure_offers_retry_and_update_guidance(qtbot):
+    window = MainWindow(worker_runner=lambda worker: worker.run())
+    qtbot.addWidget(window)
+
+    window.show_analysis_error("unknown_ytdlp_failure", "https://example.test/watch?v=1")
+
+    assert window.download_page.analyze_button.text() == "重试分析"
+    status = window.download_page.status_label.text()
+    assert "检查更新" in status
+    assert "重试分析" in status
+
+
+def test_analysis_retry_label_returns_to_analyze_after_success(qtbot, app_data_dir: Path):
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                '{"title": "Demo Video", "duration": 30, '
+                '"formats": [{"format_id": "18", "height": 360, "ext": "mp4", '
+                '"vcodec": "avc1", "acodec": "mp4a", "fps": 30}]}'
+            ),
+            stderr="",
+        )
+
+    config = ConfigStore(app_data_dir)
+    config.save(AppConfig(active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    window = MainWindow(
+        config_store=config,
+        history_store=HistoryStore(app_data_dir),
+        analysis_runner=runner,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+    window.show_analysis_error("network_timeout", "https://example.test/watch?v=1")
+
+    window.download_page.url_input.setPlainText("https://example.test/watch?v=1")
+    window.download_page.analyze_button.click()
+
+    assert window.selected_format_id == "18"
+    assert window.download_page.analyze_button.text() == "分析"
+
+
 def test_thumbnail_url_prefers_direct_thumbnail_then_highest_list_entry():
     assert _thumbnail_url({"thumbnail": "https://example.test/direct.jpg"}) == "https://example.test/direct.jpg"
     assert (

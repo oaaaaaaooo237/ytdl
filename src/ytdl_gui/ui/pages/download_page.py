@@ -126,6 +126,12 @@ class DownloadPage(QWidget):
     def set_status(self, message: str) -> None:
         self.status_label.setText(message)
 
+    def set_analysis_retry_available(self) -> None:
+        self.analyze_button.setText("重试分析")
+
+    def reset_analysis_action(self) -> None:
+        self.analyze_button.setText("分析")
+
     def set_save_folder(self, path: str) -> None:
         self.save_folder_label.setText(path)
 
