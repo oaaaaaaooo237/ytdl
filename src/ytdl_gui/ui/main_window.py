@@ -22,9 +22,19 @@ from ytdl_gui.ui.pages.formats_page import FormatsPage
 from ytdl_gui.ui.pages.history_page import HistoryPage
 from ytdl_gui.ui.pages.queue_page import QueuePage
 from ytdl_gui.ui.pages.settings_page import SettingsPage
-from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, DownloadRequest, DownloadWorker, FfmpegSearchWorker, PreviewUrlRequest, PreviewUrlWorker
+from ytdl_gui.workers import (
+    AnalysisRequest,
+    AnalysisWorker,
+    DownloadRequest,
+    DownloadWorker,
+    FfmpegSearchWorker,
+    PlaylistProbeRequest,
+    PlaylistProbeWorker,
+    PreviewUrlRequest,
+    PreviewUrlWorker,
+)
 from ytdl_gui.workers import YtdlpUpdateRequest, YtdlpUpdateRunner, YtdlpUpdateWorker
-from ytdl_gui.ytdlp_runner import ProgressEvent
+from ytdl_gui.ytdlp_runner import ProgressEvent, extract_playlist_urls, playlist_limit_message
 
 
 class MainWindow(QWidget):
@@ -41,9 +51,11 @@ class MainWindow(QWidget):
         analysis_runner=None,
         download_popen_factory=None,
         preview_runner=None,
+        playlist_probe_runner=None,
         ytdlp_update_runner: YtdlpUpdateRunner | None = None,
         worker_runner: Callable[[object], object] | None = None,
         save_folder_picker: Callable[[], str] | None = None,
+        confirmation_dialog: Callable[[QWidget, str, str], bool] | None = None,
         ):
         super().__init__()
         self.setWindowTitle("视频地址提取器")
@@ -74,9 +86,11 @@ class MainWindow(QWidget):
         self._analysis_runner = analysis_runner
         self._download_popen_factory = download_popen_factory
         self._preview_runner = preview_runner
+        self._playlist_probe_runner = playlist_probe_runner
         self._ytdlp_update_runner = ytdlp_update_runner
         self._worker_runner = worker_runner or self._run_worker_in_thread
         self._save_folder_picker = save_folder_picker
+        self._confirmation_dialog = confirmation_dialog or self._ask_confirmation
         self._network_manager = QNetworkAccessManager(self)
 
         self.nav = QListWidget()
@@ -259,6 +273,19 @@ class MainWindow(QWidget):
     def _open_external_url(url: str) -> bool:
         return QDesktopServices.openUrl(QUrl(url))
 
+    @staticmethod
+    def _ask_confirmation(parent: QWidget, title: str, text: str) -> bool:
+        return (
+            QMessageBox.question(
+                parent,
+                title,
+                text,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        )
+
     def _pick_ffmpeg_file(self) -> str:
         path, _selected_filter = QFileDialog.getOpenFileName(
             self,
@@ -432,7 +459,7 @@ class MainWindow(QWidget):
         else:
             worker = AnalysisWorker(request, runner=self._analysis_runner)
         worker.finished.connect(lambda payload, analyzed_url=url: self.apply_analysis_result(analyzed_url, payload))
-        worker.failed.connect(self.show_analysis_error)
+        worker.failed.connect(lambda message, failed_url=url: self.show_analysis_error(message, failed_url))
         worker.canceled.connect(lambda: self.download_page.set_status("分析已取消。"))
         self._worker_runner(worker)
 
@@ -457,7 +484,10 @@ class MainWindow(QWidget):
         self._load_thumbnail(_thumbnail_url(metadata))
         self.download_page.set_status("分析完成，可以开始下载。")
 
-    def show_analysis_error(self, message: str) -> None:
+    def show_analysis_error(self, message: str, url: str | None = None) -> None:
+        if message == "playlist_confirmation_needed" and url:
+            self.start_playlist_probe(url)
+            return
         messages = {
             "login_required": "视频可能需要登录或年龄验证。请在设置中选择 cookies.txt 后重试。",
             "unavailable": "视频不可用、私有或已删除。",
@@ -468,6 +498,45 @@ class MainWindow(QWidget):
             "canceled": "分析已取消。",
         }
         self.download_page.set_status(messages.get(message, "分析失败，请重试。"))
+
+    def start_playlist_probe(self, url: str) -> None:
+        self.download_page.set_status("检测到播放列表，正在后台读取条目...")
+        request = PlaylistProbeRequest(
+            url=url,
+            ytdlp_path=self._active_ytdlp_path(),
+            cookies_path=self._cookies_path(),
+        )
+        if self._playlist_probe_runner is None:
+            worker = PlaylistProbeWorker(request)
+        else:
+            worker = PlaylistProbeWorker(request, runner=self._playlist_probe_runner)
+        worker.finished.connect(lambda payload, playlist_url=url: self.apply_playlist_probe_result(playlist_url, payload))
+        worker.failed.connect(lambda _message: self.download_page.set_status("播放列表读取失败，请检查地址或稍后重试。"))
+        self._worker_runner(worker)
+
+    def apply_playlist_probe_result(self, _url: str, payload: dict) -> None:
+        expansion = extract_playlist_urls(payload)
+        if not expansion.urls:
+            self.download_page.set_status("播放列表为空或无法读取条目。")
+            return
+
+        limit_text = ""
+        if expansion.skipped_count:
+            limit_text = "\n" + playlist_limit_message(len(expansion.urls), expansion.skipped_count)
+        confirmed = self._confirmation_dialog(
+            self,
+            "确认展开播放列表",
+            f"检测到播放列表，共 {expansion.total_count} 项。是否展开前 {len(expansion.urls)} 项并开始分析？{limit_text}",
+        )
+        if not confirmed:
+            self.download_page.set_status("已取消播放列表展开。")
+            return
+
+        self.download_page.url_input.setPlainText("\n".join(expansion.urls))
+        self.analyzed_results.clear()
+        self.download_page.set_status(f"已展开 {len(expansion.urls)} 项，正在后台分析...")
+        for entry_url in expansion.urls:
+            self._start_analysis_for_url(entry_url)
 
     def choose_save_folder(self) -> None:
         if self._save_folder_picker is not None:

@@ -28,6 +28,18 @@ def make_analysis_command(request: AnalysisRequest) -> list[str]:
     return YtdlpCommandBuilder(request.ytdlp_path).analysis_command(request.url, request.cookies_path)
 
 
+@dataclass(frozen=True)
+class PlaylistProbeRequest:
+    url: str
+    ytdlp_path: Path
+    cookies_path: Path | None
+    timeout_seconds: int = 60
+
+
+def make_playlist_probe_command(request: PlaylistProbeRequest) -> list[str]:
+    return YtdlpCommandBuilder(request.ytdlp_path).playlist_probe_command(request.url, request.cookies_path)
+
+
 class AnalysisWorker(QObject):
     finished = Signal(dict)
     failed = Signal(str)
@@ -90,6 +102,41 @@ class AnalysisWorker(QObject):
         if not isinstance(payload, dict):
             return None
         return payload
+
+
+class PlaylistProbeWorker(QObject):
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, request: PlaylistProbeRequest, runner: AnalysisRunner = subprocess.run):
+        super().__init__()
+        self.request = request
+        self._runner = runner
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = self._runner(
+                make_playlist_probe_command(self.request),
+                capture_output=True,
+                text=True,
+                timeout=self.request.timeout_seconds,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+            self.failed.emit(AnalysisFailureKind.UNKNOWN_YTDLP_FAILURE.value)
+            return
+
+        if result.returncode != 0:
+            self.failed.emit(categorize_analysis_error(result.stderr or "").value)
+            return
+
+        payload = AnalysisWorker._parse_stdout(result.stdout)
+        if payload is None:
+            self.failed.emit(AnalysisFailureKind.UNKNOWN_YTDLP_FAILURE.value)
+            return
+
+        self.finished.emit(payload)
 
 
 @dataclass(frozen=True)

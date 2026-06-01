@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -295,3 +296,70 @@ def test_startup_update_check_schedules_worker_without_running_inline(qtbot, app
 
     assert len(scheduled_workers) == 1
     assert window.footer_status_label.text() == "检查中"
+
+
+def test_playlist_analysis_failure_probes_and_confirms_before_expanding(qtbot, app_data_dir: Path):
+    playlist_url = "https://www.youtube.com/playlist?list=demo"
+    entry_urls = [
+        "https://www.youtube.com/watch?v=item1",
+        "https://www.youtube.com/watch?v=item2",
+    ]
+    analysis_urls: list[str] = []
+    playlist_probe_urls: list[str] = []
+    confirmations: list[tuple[str, str]] = []
+
+    def analysis_runner(command, **kwargs):
+        url = command[-1]
+        analysis_urls.append(url)
+        if url == playlist_url:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="playlist has 2 entries and needs confirmation")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "title": f"Video {url[-1]}",
+                    "formats": [
+                        {
+                            "format_id": "18",
+                            "height": 360,
+                            "ext": "mp4",
+                            "vcodec": "avc1",
+                            "acodec": "mp4a",
+                            "fps": 30,
+                        }
+                    ],
+                }
+            ),
+            stderr="",
+        )
+
+    def playlist_probe_runner(command, **kwargs):
+        playlist_probe_urls.append(command[-1])
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps({"entries": [{"url": url} for url in entry_urls]}),
+            stderr="",
+        )
+
+    window = MainWindow(
+        config_store=ConfigStore(app_data_dir),
+        history_store=HistoryStore(app_data_dir),
+        analysis_runner=analysis_runner,
+        playlist_probe_runner=playlist_probe_runner,
+        confirmation_dialog=lambda _parent, title, text: confirmations.append((title, text)) or True,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+    window.download_page.url_input.setPlainText(playlist_url)
+
+    window.start_analysis()
+
+    assert playlist_probe_urls == [playlist_url]
+    assert confirmations
+    assert "播放列表" in confirmations[0][0]
+    assert "2 项" in confirmations[0][1]
+    assert analysis_urls == [playlist_url, *entry_urls]
+    assert window.download_page.url_input.toPlainText() == "\n".join(entry_urls)
+    assert set(window.analyzed_results) == set(entry_urls)

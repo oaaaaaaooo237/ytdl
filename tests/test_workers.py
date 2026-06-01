@@ -2,7 +2,15 @@ import subprocess
 from pathlib import Path
 
 from ytdl_gui.ytdlp_runner import AnalysisFailureKind
-from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, PreviewUrlRequest, PreviewUrlWorker, make_analysis_command
+from ytdl_gui.workers import (
+    AnalysisRequest,
+    AnalysisWorker,
+    PlaylistProbeRequest,
+    PlaylistProbeWorker,
+    PreviewUrlRequest,
+    PreviewUrlWorker,
+    make_analysis_command,
+)
 
 
 def make_request(tmp_path: Path, cookies_path: Path | None = None) -> AnalysisRequest:
@@ -25,6 +33,13 @@ def collect_worker_signals(worker: AnalysisWorker) -> dict[str, list[object]]:
 def collect_preview_signals(worker: PreviewUrlWorker) -> dict[str, list[str]]:
     events: dict[str, list[str]] = {"finished": [], "failed": []}
     worker.finished.connect(lambda url: events["finished"].append(url))
+    worker.failed.connect(lambda message: events["failed"].append(message))
+    return events
+
+
+def collect_playlist_probe_signals(worker: PlaylistProbeWorker) -> dict[str, list[object]]:
+    events: dict[str, list[object]] = {"finished": [], "failed": []}
+    worker.finished.connect(lambda payload: events["finished"].append(payload))
     worker.failed.connect(lambda message: events["failed"].append(message))
     return events
 
@@ -167,6 +182,34 @@ def test_analysis_worker_invalid_json_emits_unknown_failure(tmp_path: Path):
     assert events["failed"] == [AnalysisFailureKind.UNKNOWN_YTDLP_FAILURE.value]
     assert events["finished"] == []
     assert events["canceled"] == []
+
+
+def test_playlist_probe_worker_emits_playlist_payload_and_uses_flat_playlist(tmp_path: Path):
+    calls: list[list[str]] = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"entries": [{"url": "https://www.youtube.com/watch?v=a"}]}',
+            stderr="",
+        )
+
+    request = PlaylistProbeRequest(
+        url="https://www.youtube.com/playlist?list=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        cookies_path=tmp_path / "cookies.txt",
+    )
+    worker = PlaylistProbeWorker(request, runner=runner)
+    events = collect_playlist_probe_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == [{"entries": [{"url": "https://www.youtube.com/watch?v=a"}]}]
+    assert events["failed"] == []
+    assert "--flat-playlist" in calls[0]
+    assert str(request.cookies_path) in calls[0]
 
 
 def test_preview_url_worker_emits_first_stream_url_and_passes_cookie_path(tmp_path: Path):

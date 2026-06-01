@@ -17,3 +17,4 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | History actions | Search/open folder/clear from GUI | `tests/test_ui_service_wiring.py` covers search/open/clear; history write covered by real smoke | Pass |
 | Preview | Play-while-downloading obtains stream and failure does not block download | `scripts/real_download_matrix.ps1`, `audio_video_360p` loaded a real preview URL while real download completed | Pass |
 | Queue controls | Pause/resume/cancel/retry from GUI | `tests/test_queue_controls_gui.py` covers task action buttons, cancel, and retry restart; core queue manager covers pause/resume states | Pass |
+| Playlist protection | Playlist-like analysis failures must probe entries, ask before expanding, and limit to 50 items | `tests/test_ui_service_wiring.py::test_playlist_analysis_failure_probes_and_confirms_before_expanding`; `tests/test_format_subtitle_analysis.py::test_extract_playlist_urls_limits_to_50_and_reports_skipped` | Pass |

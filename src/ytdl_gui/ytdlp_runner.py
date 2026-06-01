@@ -12,6 +12,13 @@ class ProgressEvent:
     raw: str = ""
 
 
+@dataclass(frozen=True)
+class PlaylistExpansion:
+    urls: list[str]
+    total_count: int
+    skipped_count: int
+
+
 PROGRESS_PATTERN = re.compile(r"\[download\]\s+(?P<percent>\d+(?:\.\d+)?)%.*? at (?P<speed>\S+) ETA (?P<eta>\S+)")
 
 
@@ -148,3 +155,28 @@ def categorize_analysis_error(stderr: str) -> AnalysisFailureKind:
 
 def playlist_limit_message(accepted: int, skipped: int) -> str:
     return f"播放列表最多展开 {PLAYLIST_EXPANSION_LIMIT} 项；已加入 {accepted} 项，跳过 {skipped} 项。"
+
+
+def extract_playlist_urls(payload: dict, limit: int = PLAYLIST_EXPANSION_LIMIT) -> PlaylistExpansion:
+    entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
+    urls: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        url = _playlist_entry_url(entry)
+        if url:
+            urls.append(url)
+    accepted = urls[:limit]
+    return PlaylistExpansion(
+        urls=accepted,
+        total_count=len(urls),
+        skipped_count=max(0, len(urls) - len(accepted)),
+    )
+
+
+def _playlist_entry_url(entry: dict) -> str:
+    for key in ("webpage_url", "url"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip().startswith(("http://", "https://")):
+            return value.strip()
+    return ""

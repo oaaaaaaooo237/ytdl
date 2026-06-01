@@ -1,6 +1,6 @@
 from ytdl_gui.format_selector import FormatPreference, choose_format
 from ytdl_gui.subtitles import choose_subtitle_language, subtitle_action_requires_ffmpeg
-from ytdl_gui.ytdlp_runner import AnalysisFailureKind, categorize_analysis_error, playlist_limit_message
+from ytdl_gui.ytdlp_runner import AnalysisFailureKind, categorize_analysis_error, extract_playlist_urls, playlist_limit_message
 
 
 def test_choose_format_relaxes_resolution_and_reports_actual():
@@ -266,3 +266,20 @@ def test_playlist_limit_message_is_readable_chinese():
     assert message == "播放列表最多展开 50 项；已加入 50 项，跳过 12 项。"
     assert "鎾" not in message
     assert "�" not in message
+
+
+def test_extract_playlist_urls_limits_to_50_and_reports_skipped():
+    payload = {
+        "entries": [
+            {"url": f"https://www.youtube.com/watch?v=item{index}", "title": f"Item {index}"}
+            for index in range(52)
+        ]
+    }
+
+    result = extract_playlist_urls(payload)
+
+    assert result.urls[0] == "https://www.youtube.com/watch?v=item0"
+    assert result.urls[-1] == "https://www.youtube.com/watch?v=item49"
+    assert len(result.urls) == 50
+    assert result.total_count == 52
+    assert result.skipped_count == 2
