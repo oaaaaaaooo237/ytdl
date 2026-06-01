@@ -50,6 +50,43 @@ def test_download_command_uses_output_path_and_format(tmp_path: Path):
     assert str(cookies) in command
 
 
+def test_download_command_can_write_subtitle_files(tmp_path: Path):
+    exe = tmp_path / "yt-dlp.exe"
+    output = tmp_path / "%(title)s.%(ext)s"
+    builder = YtdlpCommandBuilder(exe)
+
+    command = builder.download_command(
+        "https://www.youtube.com/watch?v=abc",
+        output,
+        "18",
+        subtitle_action="file",
+    )
+
+    assert "--write-subs" in command
+    assert "--write-auto-subs" in command
+    assert "--sub-langs" in command
+    assert "all" in command
+
+
+def test_download_command_can_embed_subtitles_with_ffmpeg_location(tmp_path: Path):
+    exe = tmp_path / "yt-dlp.exe"
+    output = tmp_path / "%(title)s.%(ext)s"
+    ffmpeg = tmp_path / "ffmpeg.exe"
+    builder = YtdlpCommandBuilder(exe)
+
+    command = builder.download_command(
+        "https://www.youtube.com/watch?v=abc",
+        output,
+        "18",
+        subtitle_action="embed",
+        ffmpeg_path=ffmpeg,
+    )
+
+    assert "--embed-subs" in command
+    assert "--ffmpeg-location" in command
+    assert str(ffmpeg) in command
+
+
 def test_preview_url_command_uses_get_url_optional_format_and_cookies(tmp_path: Path):
     exe = tmp_path / "yt-dlp.exe"
     cookies = tmp_path / "cookies.txt"

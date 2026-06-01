@@ -351,3 +351,31 @@ def test_batch_download_respects_configured_concurrency(qtbot, app_data_dir: Pat
 
     assert len(started_downloads) == 2
     assert [window.queue_page.table.item(row, 1).text() for row in range(3)] == ["已完成", "下载中", "等待中"]
+
+
+def test_start_download_rejects_burn_subtitle_without_fake_burn_in(qtbot, app_data_dir: Path):
+    popen_calls: list[list[str]] = []
+    config = ConfigStore(app_data_dir)
+    config.save(AppConfig(default_save_dir=str(app_data_dir / "downloads"), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    window = MainWindow(
+        config_store=config,
+        history_store=HistoryStore(app_data_dir),
+        download_popen_factory=lambda command, **kwargs: popen_calls.append(command),
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "formats": [
+                {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}
+            ],
+        },
+    )
+    window.formats_page.subtitle_combo.setCurrentText("烧录")
+
+    window.download_page.start_button.click()
+
+    assert popen_calls == []
+    assert "烧录字幕" in window.download_page.status_label.text()

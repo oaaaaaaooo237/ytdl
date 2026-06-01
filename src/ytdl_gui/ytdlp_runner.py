@@ -76,6 +76,8 @@ class YtdlpCommandBuilder:
         output_template: Path,
         format_id: str,
         cookies_path: Path | None = None,
+        subtitle_action: str = "none",
+        ffmpeg_path: Path | None = None,
     ) -> list[str]:
         command = [
             str(self.executable),
@@ -85,6 +87,12 @@ class YtdlpCommandBuilder:
             "-o",
             str(output_template),
         ]
+        if subtitle_action in {"file", "embed"}:
+            command.extend(["--write-subs", "--write-auto-subs", "--sub-langs", "all"])
+        if subtitle_action == "embed":
+            command.append("--embed-subs")
+        if ffmpeg_path:
+            command.extend(["--ffmpeg-location", str(ffmpeg_path)])
         self._append_cookies(command, cookies_path)
         command.append(url)
         return command

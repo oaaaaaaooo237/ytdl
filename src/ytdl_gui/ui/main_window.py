@@ -394,10 +394,13 @@ class MainWindow(QWidget):
         return any(state in {"running", "pause_requested", "cancel_requested"} for state in self._download_task_states.values())
 
     def _has_ffmpeg_configured(self) -> bool:
+        return self._configured_ffmpeg_path() is not None
+
+    def _configured_ffmpeg_path(self) -> Path | None:
         path = self.settings_page.ffmpeg_path.text().strip()
         if not path and self.config_store:
             path = self.config_store.load().ffmpeg_path.strip()
-        return bool(path)
+        return Path(path) if path else None
 
     def start_analysis(self) -> None:
         urls = self._all_urls()
@@ -532,8 +535,6 @@ class MainWindow(QWidget):
         for url, metadata in analyzed_items:
             if self._start_download_for_analysis(url, metadata, allow_preview=started == 0):
                 started += 1
-        if started == 0:
-            self.download_page.set_status("没有可下载的已分析视频。")
 
     def _start_download_for_analysis(self, url: str, metadata: dict, allow_preview: bool) -> bool:
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
@@ -547,6 +548,15 @@ class MainWindow(QWidget):
             choice_format_id = selected_format
         else:
             choice_format_id = choice.format_id
+        subtitle_action = _subtitle_action_value(self.formats_page.subtitle_combo.currentText())
+        if subtitle_action == "burn":
+            self.download_page.set_status("烧录字幕尚未实现；请选择下载字幕文件或嵌入字幕，避免假烧录。")
+            return False
+        ffmpeg_path = self._configured_ffmpeg_path()
+        if subtitle_action_requires_ffmpeg(subtitle_action) and ffmpeg_path is None:
+            self.about_page.show_ffmpeg_missing_baseline()
+            self.download_page.set_status("嵌入字幕需要 ffmpeg；请先在设置中搜索或选择 ffmpeg.exe。")
+            return False
         self.selected_format_id = choice_format_id
         self.selected_format_summary = choice.actual_summary
         task_id = uuid4().hex
@@ -558,6 +568,8 @@ class MainWindow(QWidget):
             output_template=self._output_template(),
             format_id=choice_format_id,
             cookies_path=self._cookies_path(),
+            subtitle_action=subtitle_action,
+            ffmpeg_path=ffmpeg_path,
         )
         self._download_requests_by_task[task_id] = request
         self._download_context_by_task[task_id] = {

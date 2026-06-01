@@ -99,6 +99,8 @@ class DownloadRequest:
     output_template: Path
     format_id: str
     cookies_path: Path | None = None
+    subtitle_action: str = "none"
+    ffmpeg_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,8 @@ class DownloadWorker(QObject):
             self.request.output_template,
             self.request.format_id,
             self.request.cookies_path,
+            subtitle_action=self.request.subtitle_action,
+            ffmpeg_path=self.request.ffmpeg_path,
         )
         try:
             self._process = self._popen_factory(
