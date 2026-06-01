@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 from pathlib import Path
 
@@ -201,3 +202,79 @@ def test_start_download_uses_injected_popen_updates_queue_and_history(qtbot, app
     assert records[0].title == "Demo Video"
     assert records[0].format_summary == "720p mp4 avc1/mp4a 30fps"
     assert "cookies" not in history.path.read_text(encoding="utf-8").lower()
+
+
+def test_batch_urls_analyze_and_download_each_url(qtbot, app_data_dir: Path):
+    analysis_urls: list[str] = []
+    popen_calls: list[list[str]] = []
+
+    def analysis_runner(command, **kwargs):
+        url = command[-1]
+        analysis_urls.append(url)
+        suffix = url.rsplit("=", 1)[-1]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "title": f"Demo {suffix}",
+                    "duration": 60,
+                    "formats": [
+                        {
+                            "format_id": "18",
+                            "height": 360,
+                            "ext": "mp4",
+                            "vcodec": "avc1",
+                            "acodec": "mp4a",
+                            "fps": 30,
+                        }
+                    ],
+                }
+            ),
+            stderr="",
+        )
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(["[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n"])
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    def popen_factory(command, **kwargs):
+        popen_calls.append(command)
+        return FakeProcess()
+
+    config = ConfigStore(app_data_dir)
+    config.save(AppConfig(default_save_dir=str(app_data_dir / "downloads"), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    history = HistoryStore(app_data_dir)
+    window = MainWindow(
+        config_store=config,
+        history_store=history,
+        analysis_runner=analysis_runner,
+        download_popen_factory=popen_factory,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+
+    urls = ["https://example.test/watch?v=a", "https://example.test/watch?v=b"]
+    window.download_page.url_input.setPlainText("\n".join(urls))
+    window.download_page.analyze_button.click()
+    window.download_page.start_button.click()
+
+    assert analysis_urls == urls
+    assert list(window.analyzed_results) == urls
+    assert [call[-1] for call in popen_calls] == urls
+    assert window.queue_page.table.rowCount() == 2
+    records = history.list()
+    assert [record.url for record in records] == urls
+    assert [record.title for record in records] == ["Demo a", "Demo b"]

@@ -49,11 +49,13 @@ class MainWindow(QWidget):
         self.history_store = history_store
         self.analyzed_url = ""
         self.analyzed_metadata: dict = {}
+        self.analyzed_results: dict[str, dict] = {}
         self.selected_format_id = ""
         self.selected_format_summary = ""
         self.save_folder_path = ""
         self._download_workers_by_task: dict[str, DownloadWorker] = {}
         self._download_requests_by_task: dict[str, DownloadRequest] = {}
+        self._download_context_by_task: dict[str, dict[str, object]] = {}
         self._download_task_states: dict[str, str] = {}
         self._threads: list[QThread] = []
         self._workers: list[object] = []
@@ -300,12 +302,20 @@ class MainWindow(QWidget):
         self.queue_page.clear_completed_button.clicked.connect(self.clear_completed_queue_tasks)
 
     def start_analysis(self) -> None:
-        url = self._first_url()
-        if not url:
+        urls = self._all_urls()
+        if not urls:
             self.download_page.set_status("请输入视频地址。")
             return
 
-        self.download_page.set_status("正在后台分析视频地址...")
+        self.analyzed_results.clear()
+        if len(urls) == 1:
+            self.download_page.set_status("正在后台分析视频地址...")
+        else:
+            self.download_page.set_status(f"正在后台分析 {len(urls)} 个视频地址...")
+        for url in urls:
+            self._start_analysis_for_url(url)
+
+    def _start_analysis_for_url(self, url: str) -> None:
         request = AnalysisRequest(
             url=url,
             ytdlp_path=self._active_ytdlp_path(),
@@ -323,6 +333,7 @@ class MainWindow(QWidget):
     def apply_analysis_result(self, url: str, metadata: dict) -> None:
         self.analyzed_url = url
         self.analyzed_metadata = metadata
+        self.analyzed_results[url] = metadata
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
         try:
             choice = choose_format(formats, self._format_preference())
@@ -380,33 +391,62 @@ class MainWindow(QWidget):
             self._information_dialog(self, "未设置保存位置", "请先在设置中选择默认保存位置。")
 
     def start_download(self) -> None:
-        if not self.analyzed_url or not self.selected_format_id:
+        analyzed_items = list(self.analyzed_results.items())
+        if not analyzed_items and self.analyzed_url and self.analyzed_metadata:
+            analyzed_items = [(self.analyzed_url, self.analyzed_metadata)]
+        if not analyzed_items:
             self.download_page.set_status("请先分析视频，再开始下载。")
             return
 
+        started = 0
+        for url, metadata in analyzed_items:
+            if self._start_download_for_analysis(url, metadata, allow_preview=started == 0):
+                started += 1
+        if started == 0:
+            self.download_page.set_status("没有可下载的已分析视频。")
+
+    def _start_download_for_analysis(self, url: str, metadata: dict, allow_preview: bool) -> bool:
+        formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
+        try:
+            choice = choose_format(formats, self._format_preference())
+        except ValueError as exc:
+            self.download_page.set_status(f"没有可直接下载的格式：{exc}")
+            return False
         selected_format = self.formats_page.format_id_combo.currentText().strip()
-        if selected_format and selected_format != "自动":
-            self.selected_format_id = selected_format
+        if len(self.analyzed_results) <= 1 and selected_format and selected_format != "自动":
+            choice_format_id = selected_format
+        else:
+            choice_format_id = choice.format_id
+        self.selected_format_id = choice_format_id
+        self.selected_format_summary = choice.actual_summary
         task_id = uuid4().hex
-        title = str(self.analyzed_metadata.get("title") or "未命名视频")
+        title = str(metadata.get("title") or "未命名视频")
         self.queue_page.add_task(task_id, title, "下载中")
         request = DownloadRequest(
-            url=self.analyzed_url,
+            url=url,
             ytdlp_path=self._active_ytdlp_path(),
             output_template=self._output_template(),
-            format_id=self.selected_format_id,
+            format_id=choice_format_id,
             cookies_path=self._cookies_path(),
         )
         self._download_requests_by_task[task_id] = request
-        if self.download_page.preview_checkbox.isChecked():
-            self.start_preview()
+        self._download_context_by_task[task_id] = {
+            "title": title,
+            "url": url,
+            "format_summary": choice.actual_summary,
+            "download_type": self.download_page.mode_combo.currentText(),
+            "subtitle_behavior": self.formats_page.subtitle_combo.currentText(),
+        }
+        if allow_preview and self.download_page.preview_checkbox.isChecked():
+            self.start_preview(url, choice_format_id)
         self._start_download_worker(task_id, request, "下载已开始，进度见队列。")
+        return True
 
-    def start_preview(self) -> None:
+    def start_preview(self, url: str | None = None, format_id: str | None = None) -> None:
         request = PreviewUrlRequest(
-            url=self.analyzed_url,
+            url=url or self.analyzed_url,
             ytdlp_path=self._active_ytdlp_path(),
-            format_id=self.selected_format_id,
+            format_id=format_id or self.selected_format_id,
             cookies_path=self._cookies_path(),
         )
         if self._preview_runner is None:
@@ -441,7 +481,7 @@ class MainWindow(QWidget):
         self._download_task_states[task_id] = "finished"
         self.queue_page.update_task(task_id, status="已完成", progress=100.0, speed="", eta="00:00")
         self.download_page.set_status("下载完成。")
-        self.record_finished_download()
+        self.record_finished_download(task_id)
 
     def fail_download(self, task_id: str, message: str) -> None:
         self._download_workers_by_task.pop(task_id, None)
@@ -507,18 +547,20 @@ class MainWindow(QWidget):
         for task_id in task_ids:
             self._download_workers_by_task.pop(task_id, None)
             self._download_requests_by_task.pop(task_id, None)
+            self._download_context_by_task.pop(task_id, None)
             self._download_task_states.pop(task_id, None)
 
-    def record_finished_download(self) -> None:
+    def record_finished_download(self, task_id: str | None = None) -> None:
         if not self.history_store:
             return
+        context = self._download_context_by_task.get(task_id or "", {})
         record = HistoryRecord(
-            title=str(self.analyzed_metadata.get("title") or "未命名视频"),
-            url=self.analyzed_url,
+            title=str(context.get("title") or self.analyzed_metadata.get("title") or "未命名视频"),
+            url=str(context.get("url") or self.analyzed_url),
             output_path=str(self._output_template()),
-            download_type=self.download_page.mode_combo.currentText(),
-            format_summary=self.selected_format_summary,
-            subtitle_behavior=self.formats_page.subtitle_combo.currentText(),
+            download_type=str(context.get("download_type") or self.download_page.mode_combo.currentText()),
+            format_summary=str(context.get("format_summary") or self.selected_format_summary),
+            subtitle_behavior=str(context.get("subtitle_behavior") or self.formats_page.subtitle_combo.currentText()),
             status="finished",
             created_at=datetime.now().isoformat(timespec="seconds"),
         )
@@ -528,11 +570,16 @@ class MainWindow(QWidget):
         self.queue_page.load_history_records(records)
 
     def _first_url(self) -> str:
+        urls = self._all_urls()
+        return urls[0] if urls else ""
+
+    def _all_urls(self) -> list[str]:
+        urls: list[str] = []
         for line in self.download_page.url_input.toPlainText().splitlines():
             text = line.strip()
             if text:
-                return text
-        return ""
+                urls.append(text)
+        return urls
 
     def _active_ytdlp_path(self) -> Path:
         if self.config_store:
