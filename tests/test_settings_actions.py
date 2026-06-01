@@ -144,7 +144,10 @@ def test_clear_cookies_path_updates_config(qtbot, app_data_dir: Path):
 def test_ffmpeg_search_is_user_triggered_and_updates_status(qtbot):
     calls: list[bool] = []
     found = FfmpegStatus(True, Path("D:/ffmpeg/bin/ffmpeg.exe"), "ffmpeg version test")
-    window = MainWindow(ffmpeg_finder=lambda: calls.append(True) or found)
+    window = MainWindow(
+        ffmpeg_finder=lambda: calls.append(True) or found,
+        worker_runner=lambda worker: worker.run(),
+    )
     qtbot.addWidget(window)
 
     assert calls == []
@@ -156,11 +159,36 @@ def test_ffmpeg_search_is_user_triggered_and_updates_status(qtbot):
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：已找到：ffmpeg version test"
 
 
+def test_ffmpeg_search_uses_worker_runner_without_inline_search(qtbot):
+    calls: list[bool] = []
+    scheduled: list[object] = []
+    found = FfmpegStatus(True, Path("D:/ffmpeg/bin/ffmpeg.exe"), "ffmpeg version test")
+
+    window = MainWindow(
+        ffmpeg_finder=lambda: calls.append(True) or found,
+        worker_runner=scheduled.append,
+    )
+    qtbot.addWidget(window)
+
+    window.search_ffmpeg()
+
+    assert calls == []
+    assert len(scheduled) == 1
+    assert isinstance(scheduled[0], FfmpegSearchWorker)
+    assert "搜索" in window.download_page.status_label.text()
+
+    scheduled[0].run()
+
+    assert calls == [True]
+    assert window.settings_page.ffmpeg_path.text() == "D:\\ffmpeg\\bin\\ffmpeg.exe"
+
+
 def test_ffmpeg_search_missing_shows_chinese_baseline_message(qtbot):
     messages: list[tuple[str, str]] = []
     window = MainWindow(
         ffmpeg_finder=lambda: FfmpegStatus(False, None, ""),
         information_dialog=lambda _parent, title, text: messages.append((title, text)),
+        worker_runner=lambda worker: worker.run(),
     )
     qtbot.addWidget(window)
 

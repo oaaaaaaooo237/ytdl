@@ -22,7 +22,7 @@ from ytdl_gui.ui.pages.formats_page import FormatsPage
 from ytdl_gui.ui.pages.history_page import HistoryPage
 from ytdl_gui.ui.pages.queue_page import QueuePage
 from ytdl_gui.ui.pages.settings_page import SettingsPage
-from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, DownloadRequest, DownloadWorker, PreviewUrlRequest, PreviewUrlWorker
+from ytdl_gui.workers import AnalysisRequest, AnalysisWorker, DownloadRequest, DownloadWorker, FfmpegSearchWorker, PreviewUrlRequest, PreviewUrlWorker
 from ytdl_gui.workers import YtdlpUpdateRequest, YtdlpUpdateRunner, YtdlpUpdateWorker
 from ytdl_gui.ytdlp_runner import ProgressEvent
 
@@ -216,7 +216,12 @@ class MainWindow(QWidget):
         self._apply_ffmpeg_path(selected_path, f"已选择：{selected_path}")
 
     def search_ffmpeg(self) -> None:
-        status = self._ffmpeg_finder()
+        self.download_page.set_status("正在后台搜索本机 ffmpeg...")
+        worker = FfmpegSearchWorker(self._ffmpeg_finder)
+        worker.finished.connect(self.apply_ffmpeg_search_result)
+        self._worker_runner(worker)
+
+    def apply_ffmpeg_search_result(self, status: FfmpegStatus) -> None:
         if status.found and status.path:
             self._apply_ffmpeg_path(str(status.path), f"已找到：{status.version}")
             return
