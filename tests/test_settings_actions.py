@@ -75,6 +75,20 @@ def test_choose_default_folder_updates_config(qtbot, app_data_dir: Path, tmp_pat
     assert store.load().default_save_dir == str(folder)
 
 
+def test_concurrency_and_startup_update_settings_save_immediately(qtbot, app_data_dir: Path):
+    store = ConfigStore(app_data_dir)
+    store.save(AppConfig(max_concurrency=2, check_ytdlp_updates_on_startup=True))
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    window.settings_page.concurrency.setValue(4)
+    window.settings_page.update_on_start.setChecked(False)
+
+    config = store.load()
+    assert config.max_concurrency == 4
+    assert config.check_ytdlp_updates_on_startup is False
+
+
 def test_choose_valid_cookies_path_updates_config_without_content(qtbot, app_data_dir: Path, tmp_path: Path):
     store = ConfigStore(app_data_dir)
     cookie_file = tmp_path / "cookies.txt"

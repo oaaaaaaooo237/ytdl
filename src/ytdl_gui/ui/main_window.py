@@ -198,6 +198,8 @@ class MainWindow(QWidget):
         self.settings_page.find_ffmpeg_button.clicked.connect(self.search_ffmpeg)
         self.settings_page.choose_ffmpeg_button.clicked.connect(self.choose_ffmpeg)
         self.settings_page.ffmpeg_download_button.clicked.connect(self.open_ffmpeg_download)
+        self.settings_page.concurrency.valueChanged.connect(lambda _value: self._save_settings_config())
+        self.settings_page.update_on_start.toggled.connect(lambda _checked: self._save_settings_config())
 
     def show_cookies_help(self) -> None:
         self._information_dialog(self, "如何获取 cookies.txt", cookie_help_text())
