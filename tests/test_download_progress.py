@@ -155,10 +155,12 @@ def test_start_download_uses_injected_popen_updates_queue_and_history(qtbot, app
         popen_calls.append(command)
         return FakeProcess()
 
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
     config = ConfigStore(app_data_dir)
     config.save(
         AppConfig(
-            default_save_dir=str(app_data_dir / "downloads"),
+            default_save_dir=str(download_dir),
             cookies_path="D:/secret/cookies.txt",
             active_ytdlp_path="D:/tools/yt-dlp.exe",
         )
@@ -203,6 +205,36 @@ def test_start_download_uses_injected_popen_updates_queue_and_history(qtbot, app
     assert records[0].title == "Demo Video"
     assert records[0].format_summary == "720p mp4 avc1/mp4a 30fps"
     assert "cookies" not in history.path.read_text(encoding="utf-8").lower()
+
+
+def test_start_download_rejects_missing_output_folder_before_starting_worker(qtbot, app_data_dir: Path):
+    missing_folder = app_data_dir / "missing-downloads"
+    messages: list[tuple[str, str]] = []
+
+    def forbidden_popen(*_args, **_kwargs):
+        raise AssertionError("download worker should not start when output folder is missing")
+
+    window = MainWindow(
+        config_store=ConfigStore(app_data_dir),
+        history_store=HistoryStore(app_data_dir),
+        download_popen_factory=forbidden_popen,
+        information_dialog=lambda _parent, title, text: messages.append((title, text)),
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+    window.save_folder_path = str(missing_folder)
+    window.analyzed_results = {
+        "https://example.test/watch?v=demo": {
+            "title": "Demo",
+            "formats": [{"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}],
+        }
+    }
+
+    window.start_download()
+
+    assert window.queue_page.table.rowCount() == 0
+    assert messages == [("保存位置不可用", "保存文件夹不存在或不可写，请重新选择保存位置。")]
+    assert "保存位置不可用" in window.download_page.status_label.text()
 
 
 def test_batch_urls_analyze_and_download_each_url(qtbot, app_data_dir: Path):
@@ -255,8 +287,10 @@ def test_batch_urls_analyze_and_download_each_url(qtbot, app_data_dir: Path):
         popen_calls.append(command)
         return FakeProcess()
 
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
     config = ConfigStore(app_data_dir)
-    config.save(AppConfig(default_save_dir=str(app_data_dir / "downloads"), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    config.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
     history = HistoryStore(app_data_dir)
     window = MainWindow(
         config_store=config,
@@ -322,10 +356,12 @@ def test_batch_download_respects_configured_concurrency(qtbot, app_data_dir: Pat
         else:
             worker.run()
 
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
     config = ConfigStore(app_data_dir)
     config.save(
         AppConfig(
-            default_save_dir=str(app_data_dir / "downloads"),
+            default_save_dir=str(download_dir),
             active_ytdlp_path="D:/tools/yt-dlp.exe",
             max_concurrency=1,
         )
@@ -355,8 +391,10 @@ def test_batch_download_respects_configured_concurrency(qtbot, app_data_dir: Pat
 
 def test_start_download_rejects_burn_subtitle_without_fake_burn_in(qtbot, app_data_dir: Path):
     popen_calls: list[list[str]] = []
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
     config = ConfigStore(app_data_dir)
-    config.save(AppConfig(default_save_dir=str(app_data_dir / "downloads"), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    config.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
     window = MainWindow(
         config_store=config,
         history_store=HistoryStore(app_data_dir),

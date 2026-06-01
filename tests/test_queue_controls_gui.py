@@ -37,8 +37,10 @@ def test_queue_card_buttons_emit_task_actions(qtbot):
 
 def test_main_window_cancel_and_retry_queue_actions_restart_worker(qtbot, app_data_dir: Path):
     started_workers: list[object] = []
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
     store = ConfigStore(app_data_dir)
-    store.save(AppConfig(default_save_dir=str(app_data_dir / "downloads"), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    store.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
     window = MainWindow(
         config_store=store,
         worker_runner=lambda worker: started_workers.append(worker),

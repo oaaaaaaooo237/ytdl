@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import datetime
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -624,6 +625,9 @@ class MainWindow(QWidget):
             self.download_page.set_status("请先分析视频，再开始下载。")
             return
 
+        if not self._ensure_output_dir_available():
+            return
+
         started = 0
         for url, metadata in analyzed_items:
             if self._start_download_for_analysis(url, metadata, allow_preview=started == 0):
@@ -888,11 +892,21 @@ class MainWindow(QWidget):
         return Path(value) if value else None
 
     def _output_template(self) -> Path:
+        return self._output_dir() / "%(title)s.%(ext)s"
+
+    def _output_dir(self) -> Path:
         folder = self.save_folder_path or self.settings_page.default_folder.text().strip()
         if not folder and self.config_store:
             folder = self.config_store.load().default_save_dir.strip()
-        output_dir = Path(folder) if folder else Path.home() / "Downloads"
-        return output_dir / "%(title)s.%(ext)s"
+        return Path(folder) if folder else Path.home() / "Downloads"
+
+    def _ensure_output_dir_available(self) -> bool:
+        output_dir = self._output_dir()
+        if not output_dir.exists() or not output_dir.is_dir() or not os.access(output_dir, os.W_OK):
+            self.download_page.set_status("保存位置不可用，请重新选择保存文件夹。")
+            self._information_dialog(self, "保存位置不可用", "保存文件夹不存在或不可写，请重新选择保存位置。")
+            return False
+        return True
 
     def _download_mode(self) -> str:
         index = self.download_page.mode_combo.currentIndex()

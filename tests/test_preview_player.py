@@ -59,8 +59,10 @@ def test_preview_failure_does_not_clear_download_readiness(qtbot):
 
 
 def _preview_window(qtbot, app_data_dir: Path, preview_runner):
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
     store = ConfigStore(app_data_dir)
-    store.save(AppConfig(default_save_dir=str(app_data_dir / "downloads"), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    store.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
     window = MainWindow(
         config_store=store,
         history_store=HistoryStore(app_data_dir),
