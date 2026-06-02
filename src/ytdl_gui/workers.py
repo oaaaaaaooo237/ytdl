@@ -1,9 +1,11 @@
 import json
+import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -22,6 +24,7 @@ class AnalysisRequest:
 
 AnalysisRunner = Callable[..., subprocess.CompletedProcess[str]]
 PopenFactory = Callable[..., subprocess.Popen]
+FfmpegRunner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 def make_analysis_command(request: AnalysisRequest) -> list[str]:
@@ -164,10 +167,16 @@ class DownloadWorker(QObject):
     finished = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, request: DownloadRequest, popen_factory: PopenFactory | None = None):
+    def __init__(
+        self,
+        request: DownloadRequest,
+        popen_factory: PopenFactory | None = None,
+        ffmpeg_runner: FfmpegRunner | None = None,
+    ):
         super().__init__()
         self.request = request
         self._popen_factory = popen_factory or subprocess.Popen
+        self._ffmpeg_runner = ffmpeg_runner or subprocess.run
         self._process = None
         self._canceled = False
 
@@ -217,9 +226,50 @@ class DownloadWorker(QObject):
         if self._canceled:
             self.failed.emit("下载已取消。")
         elif return_code == 0:
-            self.finished.emit(_resolve_output_path(output_path, self.request.output_template, before_files))
+            resolved_output_path = _resolve_output_path(output_path, self.request.output_template, before_files)
+            if self.request.subtitle_action == "burn":
+                burned_output_path = self._burn_subtitle(resolved_output_path, before_files)
+                if burned_output_path:
+                    self.finished.emit(burned_output_path)
+                return
+            self.finished.emit(resolved_output_path)
         else:
             self.failed.emit(f"yt-dlp 下载失败，退出码 {return_code}")
+
+    def _burn_subtitle(self, output_path: str, before_files: set[Path]) -> str:
+        media_path = Path(output_path)
+        if not output_path or not media_path.exists():
+            self.failed.emit(BURN_FAILURE_MESSAGE)
+            return ""
+        if self.request.ffmpeg_path is None:
+            self.failed.emit("烧录字幕需要 ffmpeg；请先在设置中搜索或选择 ffmpeg.exe。")
+            return ""
+        subtitle_path = _find_subtitle_file(media_path, before_files)
+        if subtitle_path is None:
+            self.failed.emit("未找到可烧录的字幕文件；原始文件已保留，可改为下载字幕文件或嵌入字幕后重试。")
+            return ""
+
+        burned_output_path = _burned_output_path(media_path)
+        safe_subtitle_path = _copy_subtitle_for_ffmpeg(subtitle_path)
+        command = _burn_subtitle_command(Path(self.request.ffmpeg_path), media_path, safe_subtitle_path, burned_output_path)
+        try:
+            result = self._ffmpeg_runner(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(safe_subtitle_path.parent),
+            )
+        except (OSError, subprocess.SubprocessError):
+            self.failed.emit(BURN_FAILURE_MESSAGE)
+            return ""
+        finally:
+            safe_subtitle_path.unlink(missing_ok=True)
+
+        if result.returncode != 0 or not burned_output_path.exists():
+            self.failed.emit(BURN_FAILURE_MESSAGE)
+            return ""
+        return str(burned_output_path)
 
 
 def _snapshot_output_files(output_dir: Path) -> set[Path]:
@@ -240,6 +290,58 @@ def _resolve_output_path(printed_path: str, output_template: Path, before_files:
     if not candidates:
         return printed_path
     return str(max(candidates, key=lambda path: path.stat().st_mtime))
+
+
+SUBTITLE_SUFFIXES = {".ass", ".srt", ".vtt"}
+BURN_FAILURE_MESSAGE = "字幕烧录失败，原始文件已保留；可改为下载字幕文件或嵌入字幕后重试。"
+
+
+def _find_subtitle_file(media_path: Path, before_files: set[Path]) -> Path | None:
+    output_dir = media_path.parent
+    if not output_dir.exists():
+        return None
+    subtitle_files = [
+        path
+        for path in output_dir.iterdir()
+        if path.is_file() and path not in before_files and path.suffix.casefold() in SUBTITLE_SUFFIXES
+    ]
+    preferred = [path for path in subtitle_files if path.stem == media_path.stem or path.stem.startswith(media_path.stem + ".")]
+    candidates = preferred or subtitle_files
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def _burned_output_path(media_path: Path) -> Path:
+    candidate = media_path.with_name(f"{media_path.stem}.burned.mp4")
+    if not candidate.exists():
+        return candidate
+    index = 2
+    while True:
+        candidate = media_path.with_name(f"{media_path.stem}.burned-{index}.mp4")
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def _copy_subtitle_for_ffmpeg(subtitle_path: Path) -> Path:
+    safe_path = subtitle_path.with_name(f".ytdl-burn-{uuid4().hex}{subtitle_path.suffix.casefold()}")
+    shutil.copy2(subtitle_path, safe_path)
+    return safe_path
+
+
+def _burn_subtitle_command(ffmpeg_path: Path, media_path: Path, subtitle_path: Path, output_path: Path) -> list[str]:
+    return [
+        str(ffmpeg_path),
+        "-y",
+        "-i",
+        str(media_path),
+        "-vf",
+        f"subtitles={subtitle_path.name}",
+        "-c:a",
+        "copy",
+        str(output_path),
+    ]
 
 
 def _looks_like_output_path(text: str) -> bool:

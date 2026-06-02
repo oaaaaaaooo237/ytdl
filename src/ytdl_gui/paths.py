@@ -26,6 +26,23 @@ def bundled_ytdlp_path() -> Path:
     return resource_root() / "tools" / "yt-dlp.exe"
 
 
+def bundled_ffmpeg_path() -> Path:
+    return resource_root() / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe"
+
+
+def venv_ffmpeg_path() -> Path:
+    return Path(sys.prefix) / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe"
+
+
+def local_ffmpeg_candidates(data_dir: Path | None = None) -> list[Path]:
+    root = data_dir or app_data_dir()
+    return [
+        bundled_ffmpeg_path(),
+        venv_ffmpeg_path(),
+        root / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe",
+    ]
+
+
 def updated_ytdlp_path(data_dir: Path | None = None) -> Path:
     root = data_dir or app_data_dir()
     return root / "tools" / "yt-dlp.exe"

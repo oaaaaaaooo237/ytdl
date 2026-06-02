@@ -64,7 +64,7 @@ Use:
 - Packaging: PyInstaller for Win11 x64.
 - Media preview: PySide6 media playback for a network preview stream extracted by `yt-dlp`.
 - Config and history: local files in the user's application data directory.
-- External media tooling: ffmpeg is not bundled in the first version.
+- External media tooling: ffmpeg is project-local and bundled into the packaged distribution; user-selected local `ffmpeg.exe` remains supported.
 
 Why this route:
 
@@ -338,15 +338,15 @@ Out of first-version playback scope:
 
 ## ffmpeg Detection and Guidance
 
-ffmpeg is not bundled in the first version.
+ffmpeg is bundled from the project-local `.venv/tools/ffmpeg/bin/ffmpeg.exe` into the packaged distribution. Source runs also prefer that project-local path before asking the user to choose another `ffmpeg.exe`.
 
 Capability tiers:
 
 - Baseline without ffmpeg: analyze videos, show formats, download single-file formats where available, download subtitle files, manage queue/history/settings.
 - Enhanced with ffmpeg: merge separate audio/video streams, extract or convert audio, embed subtitles, burn subtitles, transcode when explicitly requested.
-- If ffmpeg is missing, the UI must not promise enhanced operations as available.
-- Acceptance on a clean Win11 x64 machine without ffmpeg is limited to the baseline tier.
-- Full media-processing acceptance requires ffmpeg to be detected or configured.
+- The packaged distribution should include project-local ffmpeg so enhanced media-processing does not depend on system PATH.
+- If ffmpeg is missing from both the package/project environment and user configuration, the UI must not promise enhanced operations as available.
+- Full media-processing acceptance requires ffmpeg to be bundled, detected, or configured.
 
 The app should support:
 
@@ -425,12 +425,12 @@ Packaging includes:
 
 Packaging excludes:
 
-- ffmpeg binaries in the first version.
+- System-global ffmpeg installation requirements. ffmpeg is bundled from the project-local environment instead of relying on PATH.
 
 License and notices:
 
 - Distribution must include third-party license notices for bundled components.
-- Notices must cover at least Python runtime, PySide6/Qt, PyInstaller-related bootloader/runtime notices where applicable, and bundled `yt-dlp.exe`.
+- Notices must cover at least Python runtime, PySide6/Qt, PyInstaller-related bootloader/runtime notices where applicable, bundled `yt-dlp.exe`, and bundled `ffmpeg.exe`.
 - The app should include a visible About/Legal entry that opens the notice file.
 - Packaging should preserve license files required by dependencies.
 
@@ -539,7 +539,7 @@ Acceptance criteria:
 - Built-in proxy settings.
 - Browser cookie extraction without user-provided `cookies.txt`.
 - Full media-player feature set.
-- Automatic ffmpeg bundling.
+- System-wide ffmpeg installation.
 - Guaranteed preview playback for every video.
 - True active-download pause/resume unless explicitly implemented and verified.
 - Cloud sync.

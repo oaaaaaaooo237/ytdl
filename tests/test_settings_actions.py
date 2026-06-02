@@ -204,11 +204,12 @@ def test_ffmpeg_search_missing_shows_chinese_baseline_message(qtbot):
     ]
 
 
-def test_subtitle_embed_or_burn_warns_when_ffmpeg_missing(qtbot, app_data_dir: Path):
+def test_subtitle_embed_or_burn_warns_when_ffmpeg_missing(qtbot, app_data_dir: Path, monkeypatch):
     store = ConfigStore(app_data_dir)
     store.save(AppConfig(ffmpeg_path=""))
     window = MainWindow(config_store=store)
     qtbot.addWidget(window)
+    monkeypatch.setattr("ytdl_gui.ui.main_window.local_ffmpeg_candidates", lambda _data_dir=None: [])
 
     window.formats_page.subtitle_combo.setCurrentText("嵌入")
 

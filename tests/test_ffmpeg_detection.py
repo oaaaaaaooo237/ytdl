@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import ytdl_gui.ffmpeg as ffmpeg_module
@@ -44,6 +45,18 @@ def test_path_search_finds_ffmpeg_exe(tmp_path: Path):
     assert status.found is True
     assert status.path == exe
     assert status.version == "未检测版本"
+
+
+def test_default_search_includes_project_venv_ffmpeg(tmp_path: Path, monkeypatch):
+    exe = tmp_path / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("fake", encoding="utf-8")
+    monkeypatch.setattr(sys, "prefix", str(tmp_path))
+
+    status = find_ffmpeg(search_paths=None, env_path="")
+
+    assert status.found is True
+    assert status.path == exe
 
 
 def test_configured_path_must_be_a_file(tmp_path: Path):

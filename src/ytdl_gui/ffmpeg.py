@@ -3,6 +3,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from ytdl_gui.paths import local_ffmpeg_candidates
+
 
 UNKNOWN_VERSION = "未检测版本"
 
@@ -31,8 +33,11 @@ def find_ffmpeg(
     candidates: list[Path] = []
     if configured_path:
         candidates.append(configured_path)
-    for root in search_paths or []:
-        candidates.extend([root / "ffmpeg.exe", root / "ffmpeg" / "bin" / "ffmpeg.exe"])
+    if search_paths is None:
+        candidates.extend(local_ffmpeg_candidates())
+    else:
+        for root in search_paths:
+            candidates.extend([root / "ffmpeg.exe", root / "ffmpeg" / "bin" / "ffmpeg.exe"])
     for segment in (env_path if env_path is not None else os.environ.get("PATH", "")).split(os.pathsep):
         if segment:
             candidates.append(Path(segment) / "ffmpeg.exe")

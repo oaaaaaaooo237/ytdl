@@ -89,6 +89,31 @@ def test_download_command_can_embed_subtitles_with_ffmpeg_location(tmp_path: Pat
     assert str(ffmpeg) in command
 
 
+def test_download_command_can_prepare_burn_subtitles_with_ffmpeg_location(tmp_path: Path):
+    exe = tmp_path / "yt-dlp.exe"
+    output = tmp_path / "%(title)s.%(ext)s"
+    ffmpeg = tmp_path / "ffmpeg.exe"
+    builder = YtdlpCommandBuilder(exe)
+
+    command = builder.download_command(
+        "https://www.youtube.com/watch?v=abc",
+        output,
+        "18",
+        subtitle_action="burn",
+        ffmpeg_path=ffmpeg,
+    )
+
+    assert "--write-subs" in command
+    assert "--write-auto-subs" in command
+    assert "--sub-format" in command
+    assert "srt/best" in command
+    assert "--convert-subs" in command
+    assert "srt" in command
+    assert "--embed-subs" not in command
+    assert "--ffmpeg-location" in command
+    assert str(ffmpeg) in command
+
+
 def test_preview_url_command_uses_get_url_optional_format_and_cookies(tmp_path: Path):
     exe = tmp_path / "yt-dlp.exe"
     cookies = tmp_path / "cookies.txt"

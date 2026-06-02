@@ -96,10 +96,12 @@ class YtdlpCommandBuilder:
             "--print",
             "after_move:filepath",
         ]
-        if subtitle_action in {"file", "embed"}:
+        if subtitle_action in {"file", "embed", "burn"}:
             command.extend(["--write-subs", "--write-auto-subs", "--sub-langs", "all"])
         if subtitle_action == "embed":
             command.append("--embed-subs")
+        if subtitle_action == "burn":
+            command.extend(["--sub-format", "srt/best", "--convert-subs", "srt"])
         if ffmpeg_path:
             command.extend(["--ffmpeg-location", str(ffmpeg_path)])
         self._append_cookies(command, cookies_path)

@@ -18,4 +18,6 @@ yt-dlp executable
 License: Unlicense
 Source: https://github.com/yt-dlp/yt-dlp
 
-ffmpeg is not bundled in the first version. If users configure a local ffmpeg.exe, that binary remains user-provided.
+ffmpeg executable
+License: LGPL/GPL depending on the distributed build configuration
+Source: https://ffmpeg.org/

@@ -483,17 +483,29 @@ def test_batch_download_respects_configured_concurrency(qtbot, app_data_dir: Pat
     assert [window.queue_page.table.item(row, 1).text() for row in range(3)] == ["已完成", "下载中", "等待中"]
 
 
-def test_start_download_rejects_burn_subtitle_without_fake_burn_in(qtbot, app_data_dir: Path):
-    popen_calls: list[list[str]] = []
+def test_start_download_with_burn_subtitle_starts_real_worker_when_ffmpeg_configured(qtbot, app_data_dir: Path):
+    started_downloads: list[DownloadWorker] = []
     download_dir = app_data_dir / "downloads"
     download_dir.mkdir()
     config = ConfigStore(app_data_dir)
-    config.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    config.save(
+        AppConfig(
+            default_save_dir=str(download_dir),
+            active_ytdlp_path="D:/tools/yt-dlp.exe",
+            ffmpeg_path="D:/ffmpeg/bin/ffmpeg.exe",
+        )
+    )
+
+    def worker_runner(worker):
+        if isinstance(worker, DownloadWorker):
+            started_downloads.append(worker)
+            return
+        worker.run()
+
     window = MainWindow(
         config_store=config,
         history_store=HistoryStore(app_data_dir),
-        download_popen_factory=lambda command, **kwargs: popen_calls.append(command),
-        worker_runner=lambda worker: worker.run(),
+        worker_runner=worker_runner,
     )
     qtbot.addWidget(window)
     window.apply_analysis_result(
@@ -509,5 +521,9 @@ def test_start_download_rejects_burn_subtitle_without_fake_burn_in(qtbot, app_da
 
     window.download_page.start_button.click()
 
-    assert popen_calls == []
-    assert "烧录字幕" in window.download_page.status_label.text()
+    assert len(started_downloads) == 1
+    assert started_downloads[0].request.subtitle_action == "burn"
+    assert started_downloads[0].request.ffmpeg_path is not None
+    assert started_downloads[0].request.ffmpeg_path.name == "ffmpeg.exe"
+    assert started_downloads[0].request.ffmpeg_path.exists()
+    assert "尚未实现" not in window.download_page.status_label.text()

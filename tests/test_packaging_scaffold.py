@@ -24,6 +24,9 @@ def test_pyinstaller_spec_bundles_required_assets():
     assert 'str(root / "src" / "ytdl_gui" / "main.py")' in spec
     assert "tools" in spec
     assert "yt-dlp.exe" in spec
+    assert '".venv"' in spec
+    assert "ffmpeg.exe" in spec
+    assert '"tools/ffmpeg/bin"' in spec
     assert "licenses" in spec
     assert "THIRD_PARTY_NOTICES.txt" in spec
     assert "docs" in spec
@@ -39,10 +42,13 @@ def test_package_scripts_and_readme_document_packaging_flow():
     assert "PyInstaller" in package_script
     assert "$LASTEXITCODE" in package_script
     assert "tools\\yt-dlp.exe" in package_script
+    assert ".venv\\tools\\ffmpeg\\bin\\ffmpeg.exe" in package_script
     assert "dist\\YTDL-GUI\\YTDL-GUI.exe" in smoke_script
     assert "_internal\\tools\\yt-dlp.exe" in smoke_script
+    assert "_internal\\tools\\ffmpeg\\bin\\ffmpeg.exe" in smoke_script
     assert "--version" in smoke_script
     assert "scripts\\fetch_ytdlp.ps1" in readme
+    assert ".venv\\tools\\ffmpeg\\bin\\ffmpeg.exe" in readme
     assert "THIRD_PARTY_NOTICES.txt" in readme
     assert "ffmpeg" in readme
 
@@ -54,4 +60,5 @@ def test_third_party_notices_cover_bundled_components():
     assert "PySide6" in notices
     assert "PyInstaller" in notices
     assert "yt-dlp" in notices
-    assert "ffmpeg is not bundled" in notices
+    assert "ffmpeg executable" in notices
+    assert "https://ffmpeg.org/" in notices

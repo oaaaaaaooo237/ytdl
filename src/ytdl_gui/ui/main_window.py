@@ -28,7 +28,7 @@ from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
 from ytdl_gui.format_selector import FormatPreference, choose_format
 from ytdl_gui.history_store import HistoryRecord
-from ytdl_gui.paths import bundled_ytdlp_path, resource_root
+from ytdl_gui.paths import bundled_ytdlp_path, local_ffmpeg_candidates, resource_root
 from ytdl_gui.subtitles import subtitle_action_requires_ffmpeg
 from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 from ytdl_gui.ui.pages.about_page import AboutPage
@@ -512,6 +512,13 @@ class MainWindow(QWidget):
         path = self.settings_page.ffmpeg_path.text().strip()
         if not path and self.config_store:
             path = self.config_store.load().ffmpeg_path.strip()
+        if path:
+            configured = Path(path)
+            if configured.exists() and configured.is_file():
+                return configured
+        for candidate in local_ffmpeg_candidates(self.config_store.path.parent if self.config_store else None):
+            if candidate.exists() and candidate.is_file():
+                return candidate
         return Path(path) if path else None
 
     def start_analysis(self) -> None:
@@ -717,13 +724,10 @@ class MainWindow(QWidget):
         else:
             choice_format_id = choice.format_id
         subtitle_action = _subtitle_action_value(self.formats_page.subtitle_combo.currentText())
-        if subtitle_action == "burn":
-            self.download_page.set_status("烧录字幕尚未实现；请选择下载字幕文件或嵌入字幕，避免假烧录。")
-            return False
         ffmpeg_path = self._configured_ffmpeg_path()
         if subtitle_action_requires_ffmpeg(subtitle_action) and ffmpeg_path is None:
             self.about_page.show_ffmpeg_missing_baseline()
-            self.download_page.set_status("嵌入字幕需要 ffmpeg；请先在设置中搜索或选择 ffmpeg.exe。")
+            self.download_page.set_status("嵌入或烧录字幕需要 ffmpeg；请先在设置中搜索或选择 ffmpeg.exe。")
             return False
         self.selected_format_id = choice_format_id
         self.selected_format_summary = choice.actual_summary

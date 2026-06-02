@@ -4,11 +4,15 @@ from pathlib import Path
 
 
 root = Path(SPECPATH).parent
+ffmpeg_exe = root / ".venv" / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe"
 
 a = Analysis(
     [str(root / "src" / "ytdl_gui" / "main.py")],
     pathex=[str(root / "src")],
-    binaries=[(str(root / "tools" / "yt-dlp.exe"), "tools")],
+    binaries=[
+        (str(root / "tools" / "yt-dlp.exe"), "tools"),
+        (str(ffmpeg_exe), "tools/ffmpeg/bin"),
+    ],
     datas=[
         (str(root / "licenses" / "THIRD_PARTY_NOTICES.txt"), "licenses"),
         (str(root / "docs" / "gui-reference.png"), "docs"),

@@ -346,3 +346,115 @@ def test_download_worker_falls_back_to_new_existing_file_when_printed_path_is_st
 
     assert events["finished"] == [str(actual_path)]
     assert events["failed"] == []
+
+
+def test_download_worker_burns_downloaded_subtitle_to_new_output(tmp_path: Path):
+    media_path = tmp_path / "Demo Video.mp4"
+    subtitle_path = tmp_path / "Demo Video.en.srt"
+    burned_path = tmp_path / "Demo Video.burned.mp4"
+    ffmpeg_calls: list[list[str]] = []
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(
+                [
+                    "[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n",
+                    str(media_path) + "\n",
+                ]
+            )
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def __init__(self):
+            media_path.write_bytes(b"media")
+            subtitle_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nDemo\n", encoding="utf-8")
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    def ffmpeg_runner(command, **kwargs):
+        ffmpeg_calls.append(command)
+        burned_path.write_bytes(b"burned")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    request = DownloadRequest(
+        url="https://www.youtube.com/watch?v=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        output_template=tmp_path / "%(title)s.%(ext)s",
+        format_id="18",
+        subtitle_action="burn",
+        ffmpeg_path=tmp_path / "ffmpeg.exe",
+    )
+    worker = DownloadWorker(
+        request,
+        popen_factory=lambda command, **kwargs: FakeProcess(),
+        ffmpeg_runner=ffmpeg_runner,
+    )
+    events = collect_download_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == [str(burned_path)]
+    assert events["failed"] == []
+    assert ffmpeg_calls
+    assert str(media_path) in ffmpeg_calls[0]
+    assert str(burned_path) in ffmpeg_calls[0]
+    assert "-vf" in ffmpeg_calls[0]
+    assert media_path.exists()
+    assert subtitle_path.exists()
+
+
+def test_download_worker_preserves_original_media_when_burn_fails(tmp_path: Path):
+    media_path = tmp_path / "Demo Video.mp4"
+    subtitle_path = tmp_path / "Demo Video.en.srt"
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter([str(media_path) + "\n"])
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def __init__(self):
+            media_path.write_bytes(b"media")
+            subtitle_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nDemo\n", encoding="utf-8")
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    def ffmpeg_runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="burn failed")
+
+    request = DownloadRequest(
+        url="https://www.youtube.com/watch?v=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        output_template=tmp_path / "%(title)s.%(ext)s",
+        format_id="18",
+        subtitle_action="burn",
+        ffmpeg_path=tmp_path / "ffmpeg.exe",
+    )
+    worker = DownloadWorker(
+        request,
+        popen_factory=lambda command, **kwargs: FakeProcess(),
+        ffmpeg_runner=ffmpeg_runner,
+    )
+    events = collect_download_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == []
+    assert events["failed"] == ["字幕烧录失败，原始文件已保留；可改为下载字幕文件或嵌入字幕后重试。"]
+    assert media_path.exists()
