@@ -10,7 +10,7 @@ os.environ.setdefault("QT_SCALE_FACTOR", "1")
 os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "0")
 
 from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
@@ -100,7 +100,21 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
         width, height = QA_SCREENSHOT_SIZES[name]
         window.resize(width, height)
         app.processEvents()
-        window.grab().save(str(output_dir / f"{index + 1}-{name}.png"))
+        screenshot_path = output_dir / f"{index + 1}-{name}.png"
+        window.grab().save(str(screenshot_path))
+        assert_image_size(screenshot_path, width, height)
+
+
+def assert_image_size(path: Path, expected_width: int, expected_height: int) -> None:
+    image = QImage(str(path))
+    if image.isNull():
+        raise ValueError(f"无法读取截图：{path}")
+    if image.width() != expected_width or image.height() != expected_height:
+        raise ValueError(
+            "截图尺寸不一致："
+            f"{path.name} expected={expected_width}x{expected_height} "
+            f"actual={image.width()}x{image.height()}"
+        )
 
 
 def _read_metadata(path: Path) -> dict:

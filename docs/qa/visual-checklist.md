@@ -21,6 +21,7 @@
 - Real subtitle smoke completed subtitle-file download and ffmpeg burn-in on the Shorts link under `.qa-real-smoke/subtitles/20260603-010200`.
 - Real full GUI flow smoke completed analysis, preview URL extraction, download, queue, and history under `.qa-real-smoke/full/20260603-013630`.
 - Current screenshots are saved under `docs/qa/screenshots/`; the primary Download screenshot uses the audio+video default path.
+- `scripts/render_qa_screenshots.py` now validates every saved screenshot size, including History, Settings, and About.
 - Current packaging checkpoint generated `dist/YTDL-GUI/YTDL-GUI.exe`, confirmed bundled `yt-dlp.exe --version` printed `2026.03.17`, confirmed bundled `ffmpeg.exe -version` printed `8.1-essentials_build-www.gyan.dev`, and confirmed the executable opened a responding window titled `视频地址提取器`.
 
 ## Visual Status
