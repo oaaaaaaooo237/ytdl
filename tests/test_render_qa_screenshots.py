@@ -7,6 +7,7 @@ from scripts.render_qa_screenshots import assert_image_size
 from scripts.render_qa_screenshots import apply_visual_download_state
 from scripts.render_qa_screenshots import VISUAL_SAMPLE_URL
 from scripts.render_qa_screenshots import VISUAL_SAVE_DIR
+from scripts.render_qa_screenshots import VISUAL_HISTORY_ROWS
 from scripts.render_qa_screenshots import visual_metadata_fixture
 from ytdl_gui.ui.main_window import MainWindow
 
@@ -28,6 +29,10 @@ def test_visual_metadata_fixture_uses_reference_like_sample_content():
     assert metadata["duration"] == 213
     assert metadata["view_count"] == 1450123456
     assert metadata["formats"] == [{"format_id": "18"}]
+
+
+def test_visual_history_fixture_matches_reference_row_count():
+    assert len(VISUAL_HISTORY_ROWS) == 5
 
 
 def test_apply_visual_download_state_sets_reference_input_and_save_path(qtbot):

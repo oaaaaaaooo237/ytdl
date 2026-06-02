@@ -421,6 +421,7 @@ class MainWindow(QWidget):
     def connect_history_actions(self) -> None:
         self.history_page.clear_button.clicked.connect(self.clear_history)
         self.history_page.open_folder_button.clicked.connect(self.open_download_folder)
+        self.queue_page.open_downloads_button.clicked.connect(self.open_download_folder)
         self.history_page.history_action_requested.connect(self.handle_history_action)
 
     def connect_queue_actions(self) -> None:

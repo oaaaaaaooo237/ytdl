@@ -493,6 +493,32 @@ def test_queue_history_status_uses_completed_badge(qtbot):
     assert badge.maximumHeight() <= 24
 
 
+def test_queue_history_footer_exposes_folder_and_search_controls(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.queue_page.open_downloads_button.text() == "打开下载文件夹"
+    assert window.queue_page.history_search.placeholderText() == "搜索历史..."
+    assert window.queue_page.open_downloads_button.minimumWidth() >= 150
+    assert window.queue_page.history_search.minimumWidth() >= 180
+
+
+def test_queue_history_search_filters_recent_records(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.queue_page.load_history_records(
+        [
+            HistoryRecord("Alpha Video", "https://example.com/a", "D:/a.mp4", "音频+视频", "1080p MP4", "不下载", "finished", "2026-06-01T10:21:00"),
+            HistoryRecord("Beta Clip", "https://example.com/b", "D:/b.mp4", "音频+视频", "720p MP4", "不下载", "finished", "2026-06-01T09:15:00"),
+        ]
+    )
+
+    window.queue_page.history_search.setText("Beta")
+
+    assert window.queue_page.recent_history_table.rowCount() == 1
+    assert window.queue_page.recent_history_table.item(0, 0).text() == "Beta Clip"
+
+
 def test_queue_toolbar_aligns_with_header_at_reference_size(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
@@ -507,6 +533,45 @@ def test_queue_toolbar_aligns_with_header_at_reference_size(qtbot):
     button_top = window.queue_page.pause_all_button.mapTo(window.queue_page, QPoint(0, 0)).y()
 
     assert button_top <= title_top + 16
+
+
+def test_queue_header_uses_compact_reference_layout(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    subtitles = [
+        label.text()
+        for label in window.queue_page.findChildren(QLabel)
+        if label.text().startswith("查看")
+    ]
+
+    assert subtitles == []
+
+
+def test_queue_cards_match_reference_top_and_height(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(535, 883)
+    window.nav.setCurrentRow(2)
+    for index in range(3):
+        task_id = f"task-{index}"
+        window.queue_page.add_task(task_id, "Rick Astley - Never Gonna Give You Up (Official Music Video)")
+        window.queue_page.update_task(
+            task_id,
+            status="下载中" if index < 2 else "已完成",
+            progress=[68.0, 32.0, 100.0][index],
+            speed="2.00MiB/s",
+            eta="00:18" if index < 2 else "00:00",
+        )
+    window.show()
+    qtbot.wait(50)
+
+    first_card = window.queue_page._task_cards["task-0"]["card"]
+    first_card_top = first_card.mapTo(window, QPoint(0, 0)).y()
+
+    assert 112 <= first_card_top <= 125
+    assert 86 <= first_card.height() <= 94
 
 
 def test_queue_card_actions_fit_compact_width(qtbot):

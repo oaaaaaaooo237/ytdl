@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -24,6 +25,7 @@ class QueuePage(QWidget):
     def __init__(self):
         super().__init__()
         self._task_cards: dict[str, dict[str, object]] = {}
+        self._recent_history_records = []
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["标题", "状态", "进度", "速度", "剩余时间", "操作"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -36,7 +38,7 @@ class QueuePage(QWidget):
         self.card_host = QWidget()
         self.card_layout = QVBoxLayout(self.card_host)
         self.card_layout.setContentsMargins(0, 0, 0, 0)
-        self.card_layout.setSpacing(10)
+        self.card_layout.setSpacing(8)
         self.card_layout.addStretch()
 
         self.scroll_area = QScrollArea()
@@ -44,7 +46,7 @@ class QueuePage(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll_area.setMaximumHeight(340)
+        self.scroll_area.setMaximumHeight(300)
         self.scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.scroll_area.setWidget(self.card_host)
 
@@ -64,19 +66,34 @@ class QueuePage(QWidget):
         self.recent_history_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.recent_history_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.recent_history_table.setMinimumHeight(144)
+        self.open_downloads_button = QPushButton("打开下载文件夹")
+        self.open_downloads_button.setObjectName("queueOpenDownloadsButton")
+        self.open_downloads_button.setFixedWidth(150)
+        self.history_search = QLineEdit()
+        self.history_search.setPlaceholderText("搜索历史...")
+        self.history_search.setObjectName("queueHistorySearch")
+        self.history_search.setFixedWidth(180)
+        self.history_search.textChanged.connect(lambda _text: self._render_recent_history())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
-        layout.setSpacing(12)
+        layout.setContentsMargins(24, 20, 24, 22)
+        layout.setSpacing(10)
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(12)
-        header_row.addWidget(PageHeader("队列", "查看待处理、下载中和已完成任务。"), 1)
+        header_row.addWidget(PageHeader("队列"), 1)
         header_row.addLayout(actions)
         layout.addLayout(header_row)
         layout.addWidget(self.scroll_area, 2)
         layout.addWidget(self.history_heading)
         layout.addWidget(self.recent_history_table, 1)
+        history_footer = QHBoxLayout()
+        history_footer.setContentsMargins(0, 0, 0, 0)
+        history_footer.setSpacing(12)
+        history_footer.addWidget(self.open_downloads_button)
+        history_footer.addStretch()
+        history_footer.addWidget(self.history_search)
+        layout.addLayout(history_footer)
         layout.addWidget(self.table, 1)
 
     def add_task(self, task_id: str, title: str, status: str = "等待中", thumbnail: QPixmap | None = None) -> None:
@@ -112,8 +129,9 @@ class QueuePage(QWidget):
     def _add_task_card(self, task_id: str, title: str, status: str, thumbnail: QPixmap | None = None) -> None:
         card = QFrame()
         card.setObjectName("queueCard")
+        card.setFixedHeight(90)
         layout = QHBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(12)
 
         thumb = QLabel("视频")
@@ -214,8 +232,21 @@ class QueuePage(QWidget):
                 widget.deleteLater()
 
     def load_history_records(self, records) -> None:
+        self._recent_history_records = list(records)[-5:]
+        self._render_recent_history()
+
+    def _render_recent_history(self) -> None:
         self.recent_history_table.setRowCount(0)
-        for record in list(records)[-5:]:
+        query = self.history_search.text().strip().casefold()
+        records = [
+            record
+            for record in self._recent_history_records
+            if not query
+            or query in record.title.casefold()
+            or query in record.format_summary.casefold()
+            or query in record.created_at.casefold()
+        ]
+        for record in records:
             row = self.recent_history_table.rowCount()
             self.recent_history_table.insertRow(row)
             values = [
