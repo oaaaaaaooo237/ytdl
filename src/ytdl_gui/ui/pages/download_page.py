@@ -21,8 +21,11 @@ class DownloadPage(QWidget):
     def __init__(self):
         super().__init__()
         self.url_input = QTextEdit()
+        self.url_input.setObjectName("urlInput")
         self.url_input.setPlaceholderText("粘贴一个或多个视频播放地址")
         self.url_input.setFixedHeight(38)
+        self.url_input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.url_input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.analyze_button = QPushButton("分析")
         self.analyze_button.setObjectName("primaryButton")
         self.analyze_button.setFixedWidth(110)
@@ -52,7 +55,7 @@ class DownloadPage(QWidget):
         self.thumbnail_label = QLabel("预览图")
         self.thumbnail_label.setObjectName("thumbnailPlaceholder")
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.thumbnail_label.setFixedSize(188, 112)
+        self.thumbnail_label.setFixedSize(198, 170)
         self.mode_combo = QComboBox()
         self.mode_combo.setObjectName("hiddenModeCombo")
         self.mode_combo.hide()
@@ -79,7 +82,7 @@ class DownloadPage(QWidget):
         self.mode_combo.currentIndexChanged.connect(self._sync_toggles_from_mode)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 18)
+        layout.setContentsMargins(24, 48, 24, 18)
         layout.setSpacing(14)
 
         layout.addWidget(_SectionTitle("1. 输入视频地址"))
@@ -95,10 +98,11 @@ class DownloadPage(QWidget):
 
         video_card = QFrame()
         video_card.setObjectName("videoCard")
+        video_card.setFixedHeight(185)
         video_layout = QHBoxLayout(video_card)
-        video_layout.setContentsMargins(14, 14, 14, 14)
+        video_layout.setContentsMargins(14, 14, 14, 0)
         video_layout.setSpacing(16)
-        video_layout.addWidget(self.thumbnail_label)
+        video_layout.addWidget(self.thumbnail_label, 0, Qt.AlignmentFlag.AlignTop)
 
         detail_layout = QVBoxLayout()
         detail_layout.setSpacing(7)
@@ -133,7 +137,7 @@ class DownloadPage(QWidget):
         options_layout.addWidget(self.preview_player)
         layout.addWidget(self.options_card)
 
-        layout.addSpacing(60)
+        layout.addSpacing(8)
         layout.addWidget(self.start_button)
 
     def choose_folder(self) -> str:

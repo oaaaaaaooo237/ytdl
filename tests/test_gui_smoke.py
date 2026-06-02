@@ -218,6 +218,59 @@ def test_download_page_has_primary_controls(qtbot):
     assert window.download_page.preview_checkbox.text() == "下载时同步预览播放"
 
 
+def test_download_thumbnail_uses_reference_visual_size(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.download_page.thumbnail_label.size() == QSize(198, 170)
+
+
+def test_download_content_starts_near_reference_y(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    title = next(label for label in window.download_page.findChildren(QLabel) if label.text() == "1. 输入视频地址")
+    title_top = title.mapTo(window, QPoint(0, 0)).y()
+
+    assert 96 <= title_top <= 110
+
+
+def test_download_video_card_height_matches_reference(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    video_card = window.download_page.thumbnail_label.parentWidget()
+
+    assert 180 <= video_card.height() <= 195
+
+
+def test_download_url_input_height_matches_reference(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    assert 36 <= window.download_page.url_input.height() <= 42
+
+
+def test_download_url_input_hides_scrollbar_chrome(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.download_page.url_input.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert window.download_page.url_input.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+
+
 def test_download_page_uses_reference_toggle_option_rows(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
@@ -277,7 +330,7 @@ def test_download_start_button_stays_near_options_card(qtbot):
 
     gap = window.download_page.start_button.geometry().top() - window.download_page.options_card.geometry().bottom()
 
-    assert 40 <= gap <= 75
+    assert 18 <= gap <= 34
 
 
 def test_download_thumbnail_renders_play_overlay_and_duration_badge(qtbot):

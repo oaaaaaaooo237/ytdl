@@ -30,6 +30,7 @@ QA_SCREENSHOT_SIZES = {
 
 REFERENCE_THUMBNAIL_CROP = QRect(126, 255, 198, 170)
 VISUAL_SAMPLE_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+VISUAL_SAVE_DIR = r"C:\Users\Public\Videos\YTDL Studio"
 VISUAL_HISTORY_ROWS = [
     (
         "Rick Astley - Never Gonna Give You Up (Official Music Video)",
@@ -86,6 +87,12 @@ def reference_thumbnail_pixmap(reference_path: Path = Path("docs/gui-reference.p
     return reference.copy(REFERENCE_THUMBNAIL_CROP)
 
 
+def apply_visual_download_state(window: MainWindow) -> None:
+    window.download_page.url_input.setPlainText(VISUAL_SAMPLE_URL)
+    window.download_page.set_save_folder(VISUAL_SAVE_DIR)
+    window.download_page.analyze_button.setFocus()
+
+
 def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) -> None:
     metadata = visual_metadata_fixture(_read_metadata(metadata_path))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -119,6 +126,7 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
     apply_light_theme(app)
     window = MainWindow(config_store=config, history_store=history, worker_runner=lambda worker: worker.run())
     window.download_page.mode_combo.setCurrentIndex(0)
+    apply_visual_download_state(window)
     window.apply_analysis_result(VISUAL_SAMPLE_URL, metadata)
     thumbnail = reference_thumbnail_pixmap()
     if thumbnail.isNull():

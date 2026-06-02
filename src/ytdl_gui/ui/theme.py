@@ -150,6 +150,10 @@ def apply_light_theme(app) -> None:
         QTextEdit {{
             min-height: 34px;
         }}
+        QTextEdit#urlInput {{
+            min-height: 20px;
+            max-height: 20px;
+        }}
         #sectionTitle {{
             font-size: 13px;
             font-weight: 700;
