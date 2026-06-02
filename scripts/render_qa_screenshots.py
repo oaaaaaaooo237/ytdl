@@ -53,7 +53,7 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
         history.add(
             HistoryRecord(
                 title,
-                "https://www.youtube.com/watch?v=KYDPpt3eqaQ",
+                "https://www.youtube.com/watch?v=PqQNXB6hhUs",
                 str(data_dir / "downloads" / "sample.mp4"),
                 download_type,
                 summary,
@@ -67,8 +67,8 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
     apply_light_theme(app)
     window = MainWindow(config_store=config, history_store=history, worker_runner=lambda worker: worker.run())
     window.download_page.mode_combo.setCurrentIndex(0)
-    window.apply_analysis_result("https://www.youtube.com/watch?v=KYDPpt3eqaQ", metadata)
-    thumbnail = QPixmap("docs/qa/assets/KYDPpt3eqaQ-thumbnail.jpg")
+    window.apply_analysis_result("https://www.youtube.com/watch?v=PqQNXB6hhUs", metadata)
+    thumbnail = QPixmap("docs/qa/assets/PqQNXB6hhUs-thumbnail.jpg")
     if not thumbnail.isNull():
         window.download_page.set_thumbnail(thumbnail)
     for index, percent in enumerate([68.0, 32.0, 100.0]):

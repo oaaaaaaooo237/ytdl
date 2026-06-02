@@ -67,7 +67,8 @@ def test_download_command_can_write_subtitle_files(tmp_path: Path):
     assert "--write-subs" in command
     assert "--write-auto-subs" in command
     assert "--sub-langs" in command
-    assert "all" in command
+    assert "en.*" in command
+    assert "all" not in command
 
 
 def test_download_command_can_embed_subtitles_with_ffmpeg_location(tmp_path: Path):
@@ -107,6 +108,8 @@ def test_download_command_can_prepare_burn_subtitles_with_ffmpeg_location(tmp_pa
     assert "--write-auto-subs" in command
     assert "--sub-format" in command
     assert "srt/best" in command
+    assert "en.*" in command
+    assert "all" not in command
     assert "--convert-subs" in command
     assert "srt" in command
     assert "--embed-subs" not in command

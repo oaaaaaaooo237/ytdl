@@ -20,6 +20,7 @@ class PlaylistExpansion:
 
 
 PROGRESS_PATTERN = re.compile(r"\[download\]\s+(?P<percent>\d+(?:\.\d+)?)%.*? at (?P<speed>\S+) ETA (?P<eta>\S+)")
+DEFAULT_SUBTITLE_LANGS = "en.*"
 
 
 def parse_progress_line(line: str) -> ProgressEvent:
@@ -97,7 +98,7 @@ class YtdlpCommandBuilder:
             "after_move:filepath",
         ]
         if subtitle_action in {"file", "embed", "burn"}:
-            command.extend(["--write-subs", "--write-auto-subs", "--sub-langs", "all"])
+            command.extend(["--write-subs", "--write-auto-subs", "--sub-langs", DEFAULT_SUBTITLE_LANGS])
         if subtitle_action == "embed":
             command.append("--embed-subs")
         if subtitle_action == "burn":

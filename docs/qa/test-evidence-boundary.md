@@ -5,6 +5,8 @@
 - `scripts/real_download_matrix.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频并分别执行音视频、仅音频、仅视频下载；音视频用真实预览 stream URL。每个 case 写入独立目录，不自动删除下载文件。
 - `scripts/real_full_smoke.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频、提取预览 stream URL、执行真实下载、写入真实历史记录。下载文件保留在本次运行目录，不自动删除。
 - `scripts/real_url_smoke.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频并执行真实下载，但不覆盖预览 stream。每次运行写入独立目录，不自动删除下载文件。
+- `scripts/real_batch_smoke.ps1`：真实分析多个 URL，按配置并发数启动真实下载，验证队列、历史和实际下载文件。默认覆盖普通视频、Shorts 和短视频 3 个真实链接。
+- `scripts/real_subtitle_smoke.ps1`：真实下载字幕文件，并使用项目内 `ffmpeg.exe` 执行字幕烧录。默认使用带自动字幕的 Shorts 链接。
 - `scripts/package_win.ps1` 与 `scripts/smoke_packaged.ps1`：真实打包与打包产物存在性/ bundled `yt-dlp.exe --version` smoke。
 
 ## 非验收单元测试中的 mock/fake
@@ -25,3 +27,4 @@
 - 以后报告“全真通过”时，必须引用全真脚本或真实 GUI/打包运行证据。
 - 使用 mock/fake 的结果只能称为“单元测试通过”或“UI wiring 测试通过”。
 - 真实下载产生的文件不得自动删除；删除前先向用户说明路径和大小并等待确认。
+- 当前主真实测试链接为 `https://www.youtube.com/watch?v=PqQNXB6hhUs`；批量真实测试还覆盖 `https://www.youtube.com/shorts/oXFad1nt6v0` 和 `https://www.youtube.com/watch?v=svoD582Pas4`。

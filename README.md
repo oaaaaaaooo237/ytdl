@@ -59,7 +59,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke_packaged.ps1
 Run the real URL smoke check with the bundled `yt-dlp.exe`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\real_url_smoke.ps1 "https://www.youtube.com/watch?v=KYDPpt3eqaQ"
+powershell -ExecutionPolicy Bypass -File .\scripts\real_url_smoke.ps1 "https://www.youtube.com/watch?v=PqQNXB6hhUs"
+```
+
+Run the real multi-URL batch smoke check:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\real_batch_smoke.ps1
+```
+
+Run the real subtitle download and burn-in smoke check:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\real_subtitle_smoke.ps1
 ```
 
 The package includes `licenses\THIRD_PARTY_NOTICES.txt`. The packaged distribution includes the project-local `ffmpeg.exe` from `.venv\tools\ffmpeg\bin\ffmpeg.exe`.

@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 $Ytdlp = Join-Path $Root "tools\yt-dlp.exe"
-$Url = if ($args.Count -gt 0) { $args[0] } else { "https://www.youtube.com/watch?v=KYDPpt3eqaQ" }
+$Url = if ($args.Count -gt 0) { $args[0] } else { "https://www.youtube.com/watch?v=PqQNXB6hhUs" }
 $RunId = Get-Date -Format "yyyyMMdd-HHmmss"
 $DataDir = Join-Path $Root ".qa-real-smoke\full\$RunId"
 $DownloadDir = Join-Path $DataDir "downloads"

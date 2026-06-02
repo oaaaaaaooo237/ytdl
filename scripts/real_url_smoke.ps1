@@ -6,7 +6,7 @@ $Ytdlp = Join-Path $Root "tools\yt-dlp.exe"
 $RunId = Get-Date -Format "yyyyMMdd-HHmmss"
 $DataDir = Join-Path $Root ".qa-real-smoke\basic\$RunId"
 $DownloadDir = Join-Path $DataDir "downloads"
-$Url = if ($args.Count -gt 0) { $args[0] } else { "https://www.youtube.com/watch?v=KYDPpt3eqaQ" }
+$Url = if ($args.Count -gt 0) { $args[0] } else { "https://www.youtube.com/watch?v=PqQNXB6hhUs" }
 
 if (!(Test-Path $Python)) {
   throw "Missing .venv Python: $Python"
