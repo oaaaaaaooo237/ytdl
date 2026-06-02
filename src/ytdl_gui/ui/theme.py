@@ -194,9 +194,16 @@ def apply_light_theme(app) -> None:
             font-weight: 700;
             background: transparent;
         }}
-        #mutedLabel, #pathDisplay {{
+        #mutedLabel, QLabel#pathDisplay {{
             color: {MUTED_TEXT};
             background: transparent;
+        }}
+        QLineEdit#pathDisplay {{
+            color: {TEXT};
+            background: {SURFACE};
+            border: 1px solid {BORDER};
+            border-radius: 6px;
+            padding: 8px;
         }}
         #optionLabel {{
             color: {TEXT};

@@ -1,4 +1,4 @@
-from PySide6.QtCore import QPoint, QRect, QSignalBlocker, Qt
+from PySide6.QtCore import QPoint, QRect, QSize, QSignalBlocker, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -7,8 +7,10 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QApplication,
+    QStyle,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -43,7 +45,11 @@ class DownloadPage(QWidget):
         self.title_label = QLabel("标题：未分析")
         self.duration_label = QLabel("时长：未分析")
         self.format_summary_label = QLabel("格式：未选择")
-        self.save_folder_label = QLabel("保存位置：未选择")
+        self.save_folder_label = QLineEdit()
+        self.save_folder_label.setObjectName("pathDisplay")
+        self.save_folder_label.setReadOnly(True)
+        self.save_folder_label.setFixedHeight(38)
+        self.save_folder_label.setText("保存位置：未选择")
         self.free_space_label = QLabel("剩余空间：未检测")
         self.free_space_label.setFixedHeight(20)
         self._duration_badge_text = ""
@@ -52,7 +58,6 @@ class DownloadPage(QWidget):
             self.title_label,
             self.duration_label,
             self.format_summary_label,
-            self.save_folder_label,
             self.free_space_label,
         ):
             dynamic_label.setWordWrap(True)
@@ -63,19 +68,25 @@ class DownloadPage(QWidget):
         self.mode_combo = QComboBox()
         self.mode_combo.setObjectName("hiddenModeCombo")
         self.mode_combo.hide()
-        self.audio_checkbox = QCheckBox("下载音频")
+        self.audio_checkbox = QCheckBox("")
         self.audio_checkbox.setObjectName("optionSwitch")
         self.audio_checkbox.setChecked(True)
-        self.video_checkbox = QCheckBox("下载视频")
+        self.video_checkbox = QCheckBox("")
         self.video_checkbox.setObjectName("optionSwitch")
         self.video_checkbox.setChecked(True)
+        self.audio_option_icon = _OptionRowIcon(_standard_icon_pixmap(self, QStyle.StandardPixmap.SP_MediaVolume))
+        self.audio_option_label = _OptionRowLabel("下载音频")
+        self.video_option_icon = _OptionRowIcon(_standard_icon_pixmap(self, QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self.video_option_label = _OptionRowLabel("下载视频")
         self.audio_quality_button = QPushButton("最佳质量")
         self.video_quality_button = QPushButton("最佳质量")
         self.audio_quality_button.setObjectName("qualityPill")
         self.video_quality_button.setObjectName("qualityPill")
         self.mode_combo.addItems(["音频+视频", "仅音频", "仅视频"])
-        self.preview_checkbox = QCheckBox("下载时同步预览播放")
+        self.preview_checkbox = QCheckBox("")
         self.preview_checkbox.setObjectName("optionSwitch")
+        self.preview_option_icon = _OptionRowIcon(_standard_icon_pixmap(self, QStyle.StandardPixmap.SP_MediaPlay))
+        self.preview_option_label = _OptionRowLabel("下载时同步预览播放")
         self.preview_player = PreviewPlayer()
         self.preview_player.setObjectName("compactPreview")
         self.preview_player.setFixedHeight(96)
@@ -101,7 +112,7 @@ class DownloadPage(QWidget):
         analyze_row.addStretch()
         analyze_row.addWidget(self.analyze_button)
         layout.addLayout(analyze_row)
-        layout.addSpacing(8)
+        layout.addSpacing(25)
 
         video_card = QFrame()
         video_card.setObjectName("videoCard")
@@ -122,7 +133,7 @@ class DownloadPage(QWidget):
         detail_layout.addStretch()
         video_layout.addLayout(detail_layout, 1)
         layout.addWidget(video_card)
-        layout.addSpacing(47)
+        layout.addSpacing(30)
 
         lower_block = QVBoxLayout()
         lower_block.setContentsMargins(0, 0, 0, 0)
@@ -130,7 +141,6 @@ class DownloadPage(QWidget):
         lower_block.addWidget(_SectionTitle("2. 保存位置"))
         save_row = QHBoxLayout()
         save_row.setSpacing(10)
-        self.save_folder_label.setObjectName("pathDisplay")
         self.free_space_label.setObjectName("pathDisplay")
         save_row.addWidget(self.save_folder_label, 1)
         save_row.addWidget(self.save_folder_button)
@@ -143,10 +153,24 @@ class DownloadPage(QWidget):
         options_layout = QVBoxLayout(self.options_card)
         options_layout.setContentsMargins(14, 10, 14, 10)
         options_layout.setSpacing(0)
-        options_layout.addLayout(_quality_toggle_row(self.audio_checkbox, self.audio_quality_button))
-        options_layout.addLayout(_quality_toggle_row(self.video_checkbox, self.video_quality_button))
+        options_layout.addLayout(
+            _quality_toggle_row(
+                self.audio_checkbox,
+                self.audio_option_icon,
+                self.audio_option_label,
+                self.audio_quality_button,
+            )
+        )
+        options_layout.addLayout(
+            _quality_toggle_row(
+                self.video_checkbox,
+                self.video_option_icon,
+                self.video_option_label,
+                self.video_quality_button,
+            )
+        )
         options_layout.addLayout(_option_row("下载类型", self.mode_combo))
-        options_layout.addLayout(_option_row("预览播放", self.preview_checkbox))
+        options_layout.addLayout(_preview_toggle_row(self.preview_checkbox, self.preview_option_icon, self.preview_option_label))
         options_layout.addWidget(self.preview_player)
         lower_block.addWidget(self.options_card)
         layout.addLayout(lower_block)
@@ -278,10 +302,42 @@ def _option_row(label_text: str, widget: QWidget) -> QHBoxLayout:
     return row
 
 
-def _quality_toggle_row(toggle: QCheckBox, quality_button: QPushButton) -> QHBoxLayout:
+class _OptionRowIcon(QLabel):
+    def __init__(self, pixmap: QPixmap):
+        super().__init__("")
+        self.setObjectName("optionRowIcon")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedSize(22, 22)
+        self.setPixmap(pixmap)
+
+
+class _OptionRowLabel(QLabel):
+    def __init__(self, text: str):
+        super().__init__(text)
+        self.setObjectName("optionLabel")
+
+
+def _quality_toggle_row(toggle: QCheckBox, icon: QLabel, label: QLabel, quality_button: QPushButton) -> QHBoxLayout:
     row = QHBoxLayout()
     row.setContentsMargins(0, 8, 0, 8)
     row.setSpacing(12)
-    row.addWidget(toggle, 1)
+    row.addWidget(toggle)
+    row.addWidget(icon)
+    row.addWidget(label, 1)
     row.addWidget(quality_button)
     return row
+
+
+def _preview_toggle_row(toggle: QCheckBox, icon: QLabel, label: QLabel) -> QHBoxLayout:
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 8, 0, 8)
+    row.setSpacing(12)
+    row.addWidget(toggle)
+    row.addWidget(icon)
+    row.addWidget(label, 1)
+    row.addStretch()
+    return row
+
+
+def _standard_icon_pixmap(widget: QWidget, standard_icon: QStyle.StandardPixmap) -> QPixmap:
+    return widget.style().standardIcon(standard_icon).pixmap(QSize(18, 18))

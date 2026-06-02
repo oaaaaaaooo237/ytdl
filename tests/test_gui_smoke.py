@@ -6,7 +6,7 @@ from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.ui.theme import apply_light_theme
 from ytdl_gui.history_store import HistoryRecord
 from PySide6.QtGui import QColor, QPixmap
-from PySide6.QtWidgets import QApplication, QLabel, QListView, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QListView, QPushButton
 from PySide6.QtCore import QPoint, QSize, Qt
 
 
@@ -223,7 +223,17 @@ def test_download_page_has_primary_controls(qtbot):
     assert window.download_page.format_summary_label.wordWrap() is True
     assert window.download_page.status_label.wordWrap() is True
     assert combo_items(window.download_page.mode_combo) == ["音频+视频", "仅音频", "仅视频"]
-    assert window.download_page.preview_checkbox.text() == "下载时同步预览播放"
+    assert window.download_page.preview_option_label.text() == "下载时同步预览播放"
+
+
+def test_download_save_location_uses_reference_path_field(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert isinstance(window.download_page.save_folder_label, QLineEdit)
+    assert window.download_page.save_folder_label.isReadOnly()
+    assert window.download_page.save_folder_label.objectName() == "pathDisplay"
+    assert 34 <= window.download_page.save_folder_label.height() <= 42
 
 
 def test_download_thumbnail_uses_reference_visual_size(qtbot):
@@ -259,6 +269,20 @@ def test_download_video_card_height_matches_reference(qtbot):
     assert 190 <= video_card.height() <= 202
 
 
+def test_download_video_card_top_matches_reference(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    video_card = window.download_page.thumbnail_label.parentWidget()
+    video_top = video_card.mapTo(window, QPoint(0, 0)).y()
+
+    assert 214 <= video_top <= 222
+
+
 def test_download_options_and_start_button_match_reference_rows(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
@@ -274,6 +298,22 @@ def test_download_options_and_start_button_match_reference_rows(qtbot):
     assert 134 <= window.download_page.options_card.height() <= 145
     assert 732 <= start_top <= 744
     assert 42 <= window.download_page.start_button.height() <= 48
+
+
+def test_download_preview_switch_aligns_with_reference_option_switches(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    audio_left = window.download_page.audio_checkbox.mapTo(window.download_page.options_card, QPoint(0, 0)).x()
+    video_left = window.download_page.video_checkbox.mapTo(window.download_page.options_card, QPoint(0, 0)).x()
+    preview_left = window.download_page.preview_checkbox.mapTo(window.download_page.options_card, QPoint(0, 0)).x()
+
+    assert abs(audio_left - video_left) <= 2
+    assert abs(preview_left - audio_left) <= 2
 
 
 def test_download_section_titles_keep_compact_height(qtbot):
@@ -324,8 +364,21 @@ def test_download_page_uses_reference_toggle_option_rows(qtbot):
     assert window.download_page.audio_checkbox.objectName() == "optionSwitch"
     assert window.download_page.video_checkbox.objectName() == "optionSwitch"
     assert window.download_page.preview_checkbox.objectName() == "optionSwitch"
-    assert window.download_page.audio_checkbox.text() == "下载音频"
-    assert window.download_page.video_checkbox.text() == "下载视频"
+    assert window.download_page.audio_checkbox.text() == ""
+    assert window.download_page.video_checkbox.text() == ""
+    assert window.download_page.preview_checkbox.text() == ""
+    assert window.download_page.audio_option_label.text() == "下载音频"
+    assert window.download_page.video_option_label.text() == "下载视频"
+    assert window.download_page.preview_option_label.text() == "下载时同步预览播放"
+    assert window.download_page.audio_option_icon.objectName() == "optionRowIcon"
+    assert window.download_page.video_option_icon.objectName() == "optionRowIcon"
+    assert window.download_page.preview_option_icon.objectName() == "optionRowIcon"
+    assert window.download_page.audio_option_icon.text() == ""
+    assert window.download_page.video_option_icon.text() == ""
+    assert window.download_page.preview_option_icon.text() == ""
+    assert window.download_page.audio_option_icon.pixmap() is not None
+    assert window.download_page.video_option_icon.pixmap() is not None
+    assert window.download_page.preview_option_icon.pixmap() is not None
     assert window.download_page.audio_checkbox.isChecked()
     assert window.download_page.video_checkbox.isChecked()
     assert window.download_page.audio_quality_button.text() == "最佳质量"
