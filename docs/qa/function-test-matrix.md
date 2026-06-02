@@ -19,7 +19,7 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Packaged smoke | Bundled yt-dlp reports version | `scripts/smoke_packaged.ps1`, `2026.03.17` | Pass |
 | Packaged startup | Exe opens responsive window | Manual process smoke, title `视频地址提取器` | Pass |
 | Visual diff | Strict pixel comparison with reference crops | `scripts/visual_compare.py`, `docs/qa/visual-diff.json` | Not pass |
-| Navigation visual rail | Left navigation uses visible icon+Chinese-label widgets without ellipsis, duplicate native icons, or scrollbar artifacts | `tests/test_gui_smoke.py::test_navigation_matches_reference_icon_rail`; `tests/test_gui_smoke.py::test_navigation_icon_and_label_do_not_overlap`; refreshed `docs/qa/screenshots/1-download.png` | Pass |
+| Navigation visual rail | Left navigation uses visible icon+Chinese-label widgets without ellipsis, duplicate native text/icons, overlap, or scrollbar artifacts | `tests/test_gui_smoke.py::test_navigation_matches_reference_icon_rail`; `tests/test_gui_smoke.py::test_navigation_custom_widgets_avoid_native_text_duplication`; `tests/test_gui_smoke.py::test_navigation_icon_and_label_do_not_overlap`; refreshed `docs/qa/screenshots/1-download.png` | Pass |
 | Cookies settings | Select and validate cookies.txt from GUI | `tests/test_settings_actions.py` covers choose/validate/clear and path-only storage | Pass |
 | History actions | Search/open folder/clear from GUI | `tests/test_ui_service_wiring.py` covers search/open/clear; history write covered by real smoke | Pass |
 | Preview | Play-while-downloading obtains stream and failure does not block download | `scripts/real_download_matrix.ps1`, `audio_video_360p` loaded a real preview URL while real download completed | Pass |

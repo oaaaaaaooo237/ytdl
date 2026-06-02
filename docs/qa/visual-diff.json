@@ -4,8 +4,8 @@
     "reference_size": "590x883",
     "actual_size": "590x883",
     "compared_size": "590x883",
-    "mean_abs_channel_delta": 23.9435,
-    "exact_pixel_match_percent": 1.1171,
+    "mean_abs_channel_delta": 23.8529,
+    "exact_pixel_match_percent": 1.1227,
     "max_channel_delta": 255
   },
   {
@@ -13,8 +13,8 @@
     "reference_size": "488x883",
     "actual_size": "488x918",
     "compared_size": "488x883",
-    "mean_abs_channel_delta": 10.7641,
-    "exact_pixel_match_percent": 2.284,
+    "mean_abs_channel_delta": 10.6646,
+    "exact_pixel_match_percent": 2.2982,
     "max_channel_delta": 255
   },
   {
@@ -22,8 +22,8 @@
     "reference_size": "535x883",
     "actual_size": "535x906",
     "compared_size": "535x883",
-    "mean_abs_channel_delta": 19.9221,
-    "exact_pixel_match_percent": 1.113,
+    "mean_abs_channel_delta": 19.8317,
+    "exact_pixel_match_percent": 1.1211,
     "max_channel_delta": 255
   }
 ]

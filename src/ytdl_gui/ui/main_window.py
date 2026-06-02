@@ -189,7 +189,8 @@ class MainWindow(QWidget):
         nav.setUniformItemSizes(True)
         for text, standard_icon in NAV_ITEMS:
             icon = self.style().standardIcon(standard_icon)
-            item = QListWidgetItem(text)
+            item = QListWidgetItem("")
+            item.setData(Qt.ItemDataRole.UserRole, text)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item.setSizeHint(QSize(78, 72))
             nav.addItem(item)

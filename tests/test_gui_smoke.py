@@ -23,13 +23,25 @@ def label_texts(widget):
     return [label.text() for label in widget.findChildren(QLabel)]
 
 
+def nav_labels(window):
+    labels = []
+    for index in range(window.nav.count()):
+        item = window.nav.item(index)
+        role_text = item.data(Qt.ItemDataRole.UserRole)
+        if role_text:
+            labels.append(role_text)
+            continue
+        widget = window.nav.itemWidget(item)
+        label = widget.findChild(QLabel, "navItemLabel") if widget else None
+        labels.append(label.text() if label else item.text())
+    return labels
+
+
 def test_main_window_has_chinese_navigation(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    nav_text = [window.nav.item(index).text() for index in range(window.nav.count())]
-
-    assert nav_text == ["下载", "格式", "队列", "历史", "设置", "关于"]
+    assert nav_labels(window) == ["下载", "格式", "队列", "历史", "设置", "关于"]
     assert window.windowTitle() == "视频地址提取器"
     assert window.app_title_label.text() == "视频地址提取器"
     assert window.title_bar.objectName() == "titleBar"
@@ -100,8 +112,19 @@ def test_navigation_uses_full_chinese_label_widgets(qtbot):
         assert widget is not None, item.text()
         label = widget.findChild(QLabel, "navItemLabel")
         assert label is not None, item.text()
-        assert label.text() == item.text()
-        assert label.minimumWidth() >= window.nav.fontMetrics().horizontalAdvance(item.text())
+        assert label.text() == nav_labels(window)[index]
+        assert label.minimumWidth() >= window.nav.fontMetrics().horizontalAdvance(label.text())
+
+
+def test_navigation_custom_widgets_avoid_native_text_duplication(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    for expected, index in zip(["下载", "格式", "队列", "历史", "设置", "关于"], range(window.nav.count())):
+        item = window.nav.item(index)
+        assert item.data(Qt.ItemDataRole.UserRole) == expected
+        assert item.text() == ""
 
 
 def test_navigation_icon_and_label_do_not_overlap(qtbot):
