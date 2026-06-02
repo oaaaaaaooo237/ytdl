@@ -114,6 +114,11 @@ for record in records:
     output_path = Path(record.output_path)
     if "%(title)s" in record.output_path or not output_path.exists():
         raise SystemExit(f"history output path is not an existing real file: {record.output_path}")
+    if record.file_size_bytes != output_path.stat().st_size:
+        raise SystemExit(
+            f"history file size mismatch: title={record.title}; "
+            f"record={record.file_size_bytes}; actual={output_path.stat().st_size}"
+        )
     expected_title = path_match_text(record.title)
     actual_stem = path_match_text(output_path.stem)
     if expected_title and actual_stem and expected_title not in actual_stem and actual_stem not in expected_title:
@@ -130,6 +135,7 @@ for index, record in enumerate(records, start=1):
     print(f"record_{index}_url={record.url}")
     print(f"record_{index}_format={record.format_summary}")
     print(f"record_{index}_output_path={record.output_path}")
+    print(f"record_{index}_file_size_bytes={record.file_size_bytes}")
 '@
 
 $env:YTDL_GUI_ROOT = $Root

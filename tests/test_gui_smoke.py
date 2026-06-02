@@ -6,7 +6,7 @@ from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.ui.theme import apply_light_theme
 from ytdl_gui.history_store import HistoryRecord
 from PySide6.QtGui import QColor, QPixmap
-from PySide6.QtWidgets import QApplication, QLabel, QListView
+from PySide6.QtWidgets import QApplication, QLabel, QListView, QPushButton
 from PySide6.QtCore import QPoint, QSize, Qt
 
 
@@ -464,7 +464,91 @@ def test_queue_page_headers_and_actions(qtbot):
     assert window.queue_page.pause_all_button.text() == "全部暂停"
     assert window.queue_page.clear_completed_button.text() == "清除已完成"
     assert window.queue_page.history_heading.text() == "历史"
-    assert table_headers(window.queue_page.recent_history_table) == ["标题", "格式", "状态", "时间"]
+    assert table_headers(window.queue_page.recent_history_table) == ["标题", "格式", "大小", "状态", "时间", "", ""]
+
+
+def test_queue_history_table_shows_file_size_from_output_path(qtbot, tmp_path):
+    output_path = tmp_path / "demo.mp4"
+    output_path.write_bytes(b"x" * (812 * 1024 * 1024))
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.queue_page.load_history_records(
+        [
+            HistoryRecord(
+                "有大小的视频",
+                "https://example.com",
+                str(output_path),
+                "音频+视频",
+                "1080p60 MP4",
+                "不下载",
+                "finished",
+                "2026-06-01T21:44:42",
+            )
+        ]
+    )
+
+    assert window.queue_page.recent_history_table.item(0, 2).text() == "812.0 MB"
+
+
+def test_queue_history_rows_use_reference_thumbnail_and_action_cells(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.queue_page.load_history_records(
+        [
+            HistoryRecord(
+                "带操作的视频",
+                "https://example.com",
+                "D:/x.mp4",
+                "音频+视频",
+                "1080p60 MP4",
+                "不下载",
+                "finished",
+                "2026-06-01T21:44:42",
+            )
+        ]
+    )
+
+    title_cell = window.queue_page.recent_history_table.cellWidget(0, 0)
+    thumb = title_cell.findChild(QLabel, "queueHistoryThumb") if title_cell else None
+    title = title_cell.findChild(QLabel, "queueHistoryTitle") if title_cell else None
+    folder_cell = window.queue_page.recent_history_table.cellWidget(0, 5)
+    more_cell = window.queue_page.recent_history_table.cellWidget(0, 6)
+    folder_button = folder_cell.findChild(QPushButton, "queueHistoryOpenFolder") if folder_cell else None
+    more_button = more_cell.findChild(QPushButton, "queueHistoryOpenFile") if more_cell else None
+
+    assert isinstance(thumb, QLabel)
+    assert thumb.size() == QSize(34, 34)
+    assert isinstance(title, QLabel)
+    assert title.text() == "带操作的视频"
+    assert isinstance(folder_button, QPushButton)
+    assert isinstance(more_button, QPushButton)
+    assert not folder_button.icon().isNull()
+    assert not more_button.icon().isNull()
+
+    events = []
+    window.queue_page.history_action_requested.connect(lambda action, index: events.append((action, index)))
+    folder_button.click()
+    more_button.click()
+
+    assert events == [("open_folder", 0), ("open_file", 0)]
+
+
+def test_queue_history_title_column_keeps_reference_reading_width(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(535, 883)
+    window.nav.setCurrentRow(2)
+    window.queue_page.load_history_records(
+        [
+            HistoryRecord("Rick Astley - Never Gonna Give You Up", "url", "D:/x.mp4", "音频+视频", "1080p60 MP4", "不下载", "finished", "2026-06-01T21:44:42")
+        ]
+    )
+    window.show()
+    qtbot.wait(50)
+
+    assert window.queue_page.recent_history_table.columnWidth(0) >= 112
 
 
 def test_queue_history_status_uses_completed_badge(qtbot):
@@ -485,7 +569,7 @@ def test_queue_history_status_uses_completed_badge(qtbot):
         ]
     )
 
-    badge_host = window.queue_page.recent_history_table.cellWidget(0, 2)
+    badge_host = window.queue_page.recent_history_table.cellWidget(0, 3)
     badge = badge_host.findChild(QLabel, "statusBadge") if badge_host else None
 
     assert isinstance(badge, QLabel)
@@ -501,6 +585,8 @@ def test_queue_history_footer_exposes_folder_and_search_controls(qtbot):
     assert window.queue_page.history_search.placeholderText() == "搜索历史..."
     assert window.queue_page.open_downloads_button.minimumWidth() >= 150
     assert window.queue_page.history_search.minimumWidth() >= 180
+    assert not window.queue_page.open_downloads_button.icon().isNull()
+    assert window.queue_page.history_search.actions()
 
 
 def test_queue_history_search_filters_recent_records(qtbot):

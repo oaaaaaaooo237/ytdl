@@ -36,30 +36,35 @@ VISUAL_HISTORY_ROWS = [
         "Rick Astley - Never Gonna Give You Up (Official Music Video)",
         "音频+视频",
         "1080p60 MP4",
+        int(812.4 * 1024 * 1024),
         "2026-06-01T10:21:00",
     ),
     (
         "MrBeast - I Built 100 Wells In Africa",
         "音频+视频",
         "1080p60 MP4",
+        int(456.7 * 1024 * 1024),
         "2026-06-01T09:15:00",
     ),
     (
         "Coldplay - Yellow (Official Video)",
         "音频+视频",
         "1080p30 MP4",
+        int(78.3 * 1024 * 1024),
         "2026-05-26T20:42:00",
     ),
     (
         "Linus Tech Tips - $500 Gaming PC",
         "音频+视频",
         "1080p60 MP4",
+        int(932.1 * 1024 * 1024),
         "2026-05-25T19:31:00",
     ),
     (
         "The Slow Mo Guys - Top 100 Shots",
         "音频+视频",
         "1080p120 MP4",
+        int(1.64 * 1024 * 1024 * 1024),
         "2026-05-24T18:05:00",
     ),
 ]
@@ -93,6 +98,18 @@ def reference_thumbnail_pixmap(reference_path: Path = Path("docs/gui-reference.p
     return reference.copy(REFERENCE_THUMBNAIL_CROP)
 
 
+def reference_thumbnail_file(data_dir: Path, reference_path: Path = Path("docs/gui-reference.png")) -> Path:
+    output_path = data_dir / "history-thumb.png"
+    reference = QImage(str(reference_path))
+    if reference.isNull():
+        fallback = Path("docs/qa/assets/PqQNXB6hhUs-thumbnail.jpg")
+        if fallback.exists():
+            return fallback
+        return output_path
+    reference.copy(REFERENCE_THUMBNAIL_CROP).save(str(output_path))
+    return output_path
+
+
 def apply_visual_download_state(window: MainWindow) -> None:
     window.download_page.url_input.setPlainText(VISUAL_SAMPLE_URL)
     window.download_page.set_save_folder(VISUAL_SAVE_DIR)
@@ -115,7 +132,8 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
     )
     history = HistoryStore(data_dir)
     history.clear()
-    for title, download_type, summary, created_at in VISUAL_HISTORY_ROWS:
+    history_thumbnail = reference_thumbnail_file(data_dir)
+    for title, download_type, summary, file_size_bytes, created_at in VISUAL_HISTORY_ROWS:
         history.add(
             HistoryRecord(
                 title,
@@ -126,6 +144,8 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
                 "不下载",
                 "finished",
                 created_at,
+                file_size_bytes=file_size_bytes,
+                thumbnail_path=str(history_thumbnail),
             )
         )
 

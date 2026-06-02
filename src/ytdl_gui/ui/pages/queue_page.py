@@ -1,4 +1,6 @@
-from PySide6.QtCore import Qt, Signal
+from pathlib import Path
+
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
@@ -9,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -21,6 +24,7 @@ from ytdl_gui.ui.widgets import ElidedLabel, PageHeader, display_status
 
 class QueuePage(QWidget):
     task_action_requested = Signal(str, str)
+    history_action_requested = Signal(str, int)
 
     def __init__(self):
         super().__init__()
@@ -58,21 +62,32 @@ class QueuePage(QWidget):
 
         self.history_heading = QLabel("历史")
         self.history_heading.setObjectName("sectionTitle")
-        self.recent_history_table = QTableWidget(0, 4)
+        self.recent_history_table = QTableWidget(0, 7)
         self.recent_history_table.setObjectName("queueHistoryTable")
-        self.recent_history_table.setHorizontalHeaderLabels(["标题", "格式", "状态", "时间"])
-        self.recent_history_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.recent_history_table.setHorizontalHeaderLabels(["标题", "格式", "大小", "状态", "时间", "", ""])
+        history_header = self.recent_history_table.horizontalHeader()
+        history_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        for column, width in {1: 56, 2: 50, 3: 56, 4: 62, 5: 26, 6: 26}.items():
+            history_header.setSectionResizeMode(column, QHeaderView.Fixed)
+            self.recent_history_table.setColumnWidth(column, width)
         self.recent_history_table.verticalHeader().hide()
+        self.recent_history_table.verticalHeader().setDefaultSectionSize(48)
         self.recent_history_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.recent_history_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.recent_history_table.setMinimumHeight(144)
         self.open_downloads_button = QPushButton("打开下载文件夹")
         self.open_downloads_button.setObjectName("queueOpenDownloadsButton")
         self.open_downloads_button.setFixedWidth(150)
+        self.open_downloads_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+        self.open_downloads_button.setIconSize(QSize(15, 15))
         self.history_search = QLineEdit()
         self.history_search.setPlaceholderText("搜索历史...")
         self.history_search.setObjectName("queueHistorySearch")
         self.history_search.setFixedWidth(180)
+        self.history_search.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView),
+            QLineEdit.ActionPosition.TrailingPosition,
+        )
         self.history_search.textChanged.connect(lambda _text: self._render_recent_history())
 
         layout = QVBoxLayout(self)
@@ -232,32 +247,39 @@ class QueuePage(QWidget):
                 widget.deleteLater()
 
     def load_history_records(self, records) -> None:
-        self._recent_history_records = list(records)[-5:]
+        all_records = list(records)
+        start_index = max(len(all_records) - 5, 0)
+        self._recent_history_records = list(enumerate(all_records))[start_index:]
         self._render_recent_history()
 
     def _render_recent_history(self) -> None:
         self.recent_history_table.setRowCount(0)
         query = self.history_search.text().strip().casefold()
         records = [
-            record
-            for record in self._recent_history_records
+            (record_index, record)
+            for record_index, record in self._recent_history_records
             if not query
             or query in record.title.casefold()
             or query in record.format_summary.casefold()
             or query in record.created_at.casefold()
         ]
-        for record in records:
+        for record_index, record in records:
             row = self.recent_history_table.rowCount()
             self.recent_history_table.insertRow(row)
+            self.recent_history_table.setRowHeight(row, 48)
             values = [
                 record.title,
                 record.format_summary,
+                _format_history_size(record),
                 display_status(record.status),
                 record.created_at,
             ]
             for column, value in enumerate(values):
-                if column == 2:
-                    self.recent_history_table.setItem(row, column, QTableWidgetItem(str(value)))
+                self.recent_history_table.setItem(row, column, QTableWidgetItem(str(value)))
+                if column == 0:
+                    self.recent_history_table.setCellWidget(row, column, _history_title_cell(record))
+                    continue
+                if column == 3:
                     host = QWidget()
                     host_layout = QHBoxLayout(host)
                     host_layout.setContentsMargins(0, 0, 0, 0)
@@ -270,7 +292,26 @@ class QueuePage(QWidget):
                     host_layout.addStretch()
                     self.recent_history_table.setCellWidget(row, column, host)
                     continue
-                self.recent_history_table.setItem(row, column, QTableWidgetItem(str(value)))
+            self.recent_history_table.setCellWidget(
+                row,
+                5,
+                _history_action_cell(
+                    self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon),
+                    "queueHistoryOpenFolder",
+                    "打开所在文件夹",
+                    lambda _checked=False, index=record_index: self.history_action_requested.emit("open_folder", index),
+                ),
+            )
+            self.recent_history_table.setCellWidget(
+                row,
+                6,
+                _history_action_cell(
+                    self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon),
+                    "queueHistoryOpenFile",
+                    "打开文件",
+                    lambda _checked=False, index=record_index: self.history_action_requested.emit("open_file", index),
+                ),
+            )
 
 
 def _should_show_retry(status: str) -> bool:
@@ -283,3 +324,92 @@ def _should_show_retry(status: str) -> bool:
         "已取消",
         "已暂停",
     }
+
+
+def _format_history_size(record) -> str:
+    stored_size = getattr(record, "file_size_bytes", 0)
+    try:
+        size = int(stored_size)
+    except (TypeError, ValueError):
+        size = 0
+    if size <= 0:
+        size = _path_file_size(getattr(record, "output_path", ""))
+    return _human_file_size(size) if size > 0 else "-"
+
+
+def _path_file_size(path: str) -> int:
+    try:
+        candidate = Path(path)
+        if not candidate.is_file():
+            return 0
+        return candidate.stat().st_size
+    except OSError:
+        return 0
+
+
+def _human_file_size(size: int) -> str:
+    gigabyte = 1024 * 1024 * 1024
+    megabyte = 1024 * 1024
+    if size >= gigabyte:
+        return f"{size / gigabyte:.2f} GB"
+    if size >= megabyte:
+        return f"{size / megabyte:.1f} MB"
+    return f"{max(size, 0) / 1024:.1f} KB"
+
+
+def _history_title_cell(record) -> QWidget:
+    host = QWidget()
+    host.setObjectName("queueHistoryTitleCell")
+    layout = QHBoxLayout(host)
+    layout.setContentsMargins(4, 4, 2, 4)
+    layout.setSpacing(6)
+
+    thumb = QLabel()
+    thumb.setObjectName("queueHistoryThumb")
+    thumb.setFixedSize(34, 34)
+    thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    thumbnail = _history_thumbnail(record, thumb.size())
+    if thumbnail is not None:
+        thumb.setPixmap(thumbnail)
+    else:
+        thumb.setText("▶")
+
+    title = QLabel(str(record.title))
+    title.setObjectName("queueHistoryTitle")
+    title.setWordWrap(True)
+    title.setMaximumHeight(40)
+
+    layout.addWidget(thumb)
+    layout.addWidget(title, 1)
+    return host
+
+
+def _history_thumbnail(record, size: QSize) -> QPixmap | None:
+    thumbnail_path = getattr(record, "thumbnail_path", "")
+    if not thumbnail_path:
+        return None
+    pixmap = QPixmap(str(thumbnail_path))
+    if pixmap.isNull():
+        return None
+    return pixmap.scaled(
+        size,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+
+
+def _history_action_cell(icon, object_name: str, tooltip: str, callback) -> QWidget:
+    host = QWidget()
+    host.setObjectName("queueHistoryActionCell")
+    layout = QHBoxLayout(host)
+    layout.setContentsMargins(0, 0, 0, 0)
+    button = QPushButton()
+    button.setObjectName(object_name)
+    button.setProperty("queueHistoryAction", True)
+    button.setFixedSize(26, 26)
+    button.setIcon(icon)
+    button.setIconSize(QSize(14, 14))
+    button.setToolTip(tooltip)
+    button.clicked.connect(callback)
+    layout.addWidget(button, 0, Qt.AlignmentFlag.AlignCenter)
+    return host

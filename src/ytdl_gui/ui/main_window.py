@@ -422,6 +422,7 @@ class MainWindow(QWidget):
         self.history_page.clear_button.clicked.connect(self.clear_history)
         self.history_page.open_folder_button.clicked.connect(self.open_download_folder)
         self.queue_page.open_downloads_button.clicked.connect(self.open_download_folder)
+        self.queue_page.history_action_requested.connect(self.handle_history_action)
         self.history_page.history_action_requested.connect(self.handle_history_action)
 
     def connect_queue_actions(self) -> None:
@@ -945,15 +946,17 @@ class MainWindow(QWidget):
         if not self.history_store:
             return
         context = self._download_context_by_task.get(task_id or "", {})
+        output_path = str(context.get("output_path") or self._output_template())
         record = HistoryRecord(
             title=str(context.get("title") or self.analyzed_metadata.get("title") or "未命名视频"),
             url=str(context.get("url") or self.analyzed_url),
-            output_path=str(context.get("output_path") or self._output_template()),
+            output_path=output_path,
             download_type=str(context.get("download_type") or self.download_page.mode_combo.currentText()),
             format_summary=str(context.get("format_summary") or self.selected_format_summary),
             subtitle_behavior=str(context.get("subtitle_behavior") or self.formats_page.subtitle_combo.currentText()),
             status="finished",
             created_at=datetime.now().isoformat(timespec="seconds"),
+            file_size_bytes=_file_size_bytes(output_path),
         )
         self.history_store.add(record)
         records = self.history_store.list()
@@ -1105,6 +1108,16 @@ def _thumbnail_url(metadata: dict) -> str:
             if isinstance(item, dict) and isinstance(item.get("url"), str):
                 return item["url"]
     return ""
+
+
+def _file_size_bytes(path: str) -> int:
+    try:
+        candidate = Path(path)
+        if not candidate.is_file():
+            return 0
+        return candidate.stat().st_size
+    except OSError:
+        return 0
 
 
 def _resolution_value(text: str) -> int | None:

@@ -230,6 +230,24 @@ def apply_light_theme(app) -> None:
             font-weight: 700;
             background: transparent;
         }}
+        #queueHistoryTitleCell, #queueHistoryActionCell {{
+            background: transparent;
+        }}
+        #queueHistoryThumb {{
+            background: #dfeaf2;
+            border-radius: 4px;
+            color: #ffffff;
+            font-weight: 700;
+        }}
+        #queueHistoryTitle {{
+            font-size: 11px;
+            background: transparent;
+        }}
+        QPushButton[queueHistoryAction="true"] {{
+            min-width: 0;
+            padding: 0;
+            border-radius: 5px;
+        }}
         #toolbarButton {{
             min-width: 88px;
         }}

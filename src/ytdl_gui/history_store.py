@@ -16,6 +16,8 @@ class HistoryRecord:
     subtitle_behavior: str
     status: str
     created_at: str
+    file_size_bytes: int = 0
+    thumbnail_path: str = ""
 
 
 class HistoryStore:

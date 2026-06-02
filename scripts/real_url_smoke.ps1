@@ -70,6 +70,7 @@ print(f"status={window.download_page.status_label.text()}")
 print(f"queue_status={window.queue_page.table.item(0, 1).text()}")
 print(f"history_count={len(records)}")
 print(f"history_output_path={records[0].output_path if records else ''}")
+print(f"history_file_size_bytes={records[0].file_size_bytes if records else 0}")
 print(f"downloaded_files={len(files)}")
 print(f"downloaded_bytes={sum(path.stat().st_size for path in files)}")
 print(f"download_dir={download_dir}")
@@ -80,6 +81,11 @@ if len(records) != 1:
     raise SystemExit("history was not written")
 if "%(title)s" in records[0].output_path or not Path(records[0].output_path).exists():
     raise SystemExit(f"history output path is not an existing real file: {records[0].output_path}")
+if records[0].file_size_bytes != Path(records[0].output_path).stat().st_size:
+    raise SystemExit(
+        f"history file size mismatch: record={records[0].file_size_bytes} "
+        f"actual={Path(records[0].output_path).stat().st_size}"
+    )
 if not files:
     raise SystemExit("downloaded file missing")
 '@

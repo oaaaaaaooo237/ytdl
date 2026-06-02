@@ -251,12 +251,17 @@ def test_start_download_uses_injected_popen_updates_queue_and_history(qtbot, app
 
 
 def test_finished_download_history_uses_actual_output_path(qtbot, app_data_dir: Path):
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
+    output_file = download_dir / "Demo Video.mp4"
+    output_file.write_bytes(b"x" * 1536)
+
     class FakeStdout:
         def __iter__(self):
             return iter(
                 [
                     "[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n",
-                    "D:/Downloads/Demo Video.mp4\n",
+                    f"{output_file}\n",
                 ]
             )
 
@@ -272,8 +277,6 @@ def test_finished_download_history_uses_actual_output_path(qtbot, app_data_dir: 
         def wait(self):
             return 0
 
-    download_dir = app_data_dir / "downloads"
-    download_dir.mkdir()
     config = ConfigStore(app_data_dir)
     config.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
     history = HistoryStore(app_data_dir)
@@ -297,7 +300,8 @@ def test_finished_download_history_uses_actual_output_path(qtbot, app_data_dir: 
     window.download_page.start_button.click()
 
     records = history.list()
-    assert records[0].output_path == "D:/Downloads/Demo Video.mp4"
+    assert records[0].output_path == str(output_file)
+    assert records[0].file_size_bytes == 1536
     assert "%(title)s" not in records[0].output_path
 
 
