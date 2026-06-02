@@ -53,10 +53,13 @@ class DownloadPage(QWidget):
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumbnail_label.setFixedSize(188, 112)
         self.mode_combo = QComboBox()
+        self.mode_combo.setObjectName("hiddenModeCombo")
         self.mode_combo.hide()
         self.audio_checkbox = QCheckBox("下载音频")
+        self.audio_checkbox.setObjectName("optionSwitch")
         self.audio_checkbox.setChecked(True)
         self.video_checkbox = QCheckBox("下载视频")
+        self.video_checkbox.setObjectName("optionSwitch")
         self.video_checkbox.setChecked(True)
         self.audio_quality_button = QPushButton("最佳质量")
         self.video_quality_button = QPushButton("最佳质量")
@@ -64,6 +67,7 @@ class DownloadPage(QWidget):
         self.video_quality_button.setObjectName("qualityPill")
         self.mode_combo.addItems(["音频+视频", "仅音频", "仅视频"])
         self.preview_checkbox = QCheckBox("下载时同步预览播放")
+        self.preview_checkbox.setObjectName("optionSwitch")
         self.preview_player = PreviewPlayer()
         self.preview_player.setObjectName("compactPreview")
         self.preview_player.setFixedHeight(96)
@@ -193,7 +197,7 @@ class _SectionTitle(QLabel):
 
 def _option_row(label_text: str, widget: QWidget) -> QHBoxLayout:
     row = QHBoxLayout()
-    if widget.isHidden():
+    if widget.objectName() == "hiddenModeCombo":
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
         return row

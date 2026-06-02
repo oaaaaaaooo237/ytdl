@@ -222,12 +222,34 @@ def test_download_page_uses_reference_toggle_option_rows(qtbot):
     qtbot.addWidget(window)
 
     assert window.download_page.mode_combo.isHidden()
+    assert window.download_page.audio_checkbox.objectName() == "optionSwitch"
+    assert window.download_page.video_checkbox.objectName() == "optionSwitch"
+    assert window.download_page.preview_checkbox.objectName() == "optionSwitch"
     assert window.download_page.audio_checkbox.text() == "下载音频"
     assert window.download_page.video_checkbox.text() == "下载视频"
     assert window.download_page.audio_checkbox.isChecked()
     assert window.download_page.video_checkbox.isChecked()
     assert window.download_page.audio_quality_button.text() == "最佳质量"
     assert window.download_page.video_quality_button.text() == "最佳质量"
+
+
+def test_download_preview_toggle_is_visible_at_reference_size(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    options_card = window.download_page.preview_checkbox.parentWidget()
+    toggle_top = window.download_page.preview_checkbox.mapTo(options_card, QPoint(0, 0)).y()
+    toggle_bottom = window.download_page.preview_checkbox.mapTo(
+        options_card,
+        QPoint(0, window.download_page.preview_checkbox.height()),
+    ).y()
+
+    assert window.download_page.preview_checkbox.isVisible()
+    assert 0 <= toggle_top < toggle_bottom <= options_card.height()
 
 
 def test_formats_page_exposes_format_preferences(qtbot):

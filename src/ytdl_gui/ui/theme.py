@@ -271,5 +271,19 @@ def apply_light_theme(app) -> None:
         QCheckBox {{
             background: transparent;
         }}
+        QCheckBox#optionSwitch {{
+            spacing: 10px;
+        }}
+        QCheckBox#optionSwitch::indicator {{
+            width: 32px;
+            height: 18px;
+            border-radius: 9px;
+            border: 1px solid #aab5bf;
+            background: #aab5bf;
+        }}
+        QCheckBox#optionSwitch::indicator:checked {{
+            border-color: {TEAL};
+            background: {TEAL};
+        }}
         """
     )
