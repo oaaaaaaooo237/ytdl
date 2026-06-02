@@ -1,5 +1,5 @@
-from PySide6.QtCore import QSignalBlocker, Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QPoint, QRect, QSignalBlocker, Qt
+from PySide6.QtGui import QColor, QPainter, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -40,6 +40,7 @@ class DownloadPage(QWidget):
         self.duration_label = QLabel("时长：未分析")
         self.format_summary_label = QLabel("格式：未选择")
         self.save_folder_label = QLabel("保存位置：未选择")
+        self._duration_badge_text = ""
         for dynamic_label in (
             self.status_label,
             self.title_label,
@@ -71,8 +72,10 @@ class DownloadPage(QWidget):
         self.preview_player = PreviewPlayer()
         self.preview_player.setObjectName("compactPreview")
         self.preview_player.setFixedHeight(96)
+        self.preview_player.hide()
         self.audio_checkbox.toggled.connect(self._sync_mode_from_toggles)
         self.video_checkbox.toggled.connect(self._sync_mode_from_toggles)
+        self.preview_checkbox.toggled.connect(self.preview_player.setVisible)
         self.mode_combo.currentIndexChanged.connect(self._sync_toggles_from_mode)
 
         layout = QVBoxLayout(self)
@@ -118,9 +121,9 @@ class DownloadPage(QWidget):
         layout.addLayout(save_row)
 
         layout.addWidget(_SectionTitle("3. 选项"))
-        options_card = QFrame()
-        options_card.setObjectName("optionsCard")
-        options_layout = QVBoxLayout(options_card)
+        self.options_card = QFrame()
+        self.options_card.setObjectName("optionsCard")
+        options_layout = QVBoxLayout(self.options_card)
         options_layout.setContentsMargins(14, 10, 14, 10)
         options_layout.setSpacing(0)
         options_layout.addLayout(_quality_toggle_row(self.audio_checkbox, self.audio_quality_button))
@@ -128,9 +131,9 @@ class DownloadPage(QWidget):
         options_layout.addLayout(_option_row("下载类型", self.mode_combo))
         options_layout.addLayout(_option_row("预览播放", self.preview_checkbox))
         options_layout.addWidget(self.preview_player)
-        layout.addWidget(options_card)
+        layout.addWidget(self.options_card)
 
-        layout.addStretch()
+        layout.addSpacing(60)
         layout.addWidget(self.start_button)
 
     def choose_folder(self) -> str:
@@ -173,6 +176,7 @@ class DownloadPage(QWidget):
         self.save_folder_label.setText(path)
 
     def show_analysis_result(self, title: str, duration_text: str, format_summary: str) -> None:
+        self._duration_badge_text = duration_text
         self.title_label.setText(f"标题：{title}")
         self.duration_label.setText(f"时长：{duration_text}")
         self.format_summary_label.setText(f"格式：{format_summary}")
@@ -180,13 +184,53 @@ class DownloadPage(QWidget):
     def set_thumbnail(self, pixmap: QPixmap) -> None:
         if pixmap.isNull():
             return
-        self.thumbnail_label.setPixmap(
-            pixmap.scaled(
-                self.thumbnail_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
+        composed = pixmap.scaled(
+            self.thumbnail_label.size(),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        composed = self._thumbnail_with_overlay(composed)
+        self.thumbnail_label.setPixmap(composed)
+        self.thumbnail_label.setProperty("hasPreviewOverlay", True)
+        self.thumbnail_label.setProperty("durationBadge", self._duration_badge_text)
+
+    def _thumbnail_with_overlay(self, pixmap: QPixmap) -> QPixmap:
+        composed = QPixmap(pixmap)
+        painter = QPainter(composed)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        center = composed.rect().center()
+        radius = 28
+        painter.setBrush(QColor(0, 0, 0, 130))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(center, radius, radius)
+
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawPolygon(
+            QPolygon(
+                [
+                    QPoint(center.x() - 8, center.y() - 13),
+                    QPoint(center.x() - 8, center.y() + 13),
+                    QPoint(center.x() + 14, center.y()),
+                ]
             )
         )
+
+        if self._duration_badge_text:
+            badge_width = max(42, painter.fontMetrics().horizontalAdvance(self._duration_badge_text) + 12)
+            badge = QRect(
+                composed.width() - badge_width - 7,
+                composed.height() - 27,
+                badge_width,
+                20,
+            )
+            painter.setBrush(QColor(0, 0, 0, 185))
+            painter.drawRoundedRect(badge, 4, 4)
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, self._duration_badge_text)
+
+        painter.end()
+        return composed
 
 
 class _SectionTitle(QLabel):

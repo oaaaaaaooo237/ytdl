@@ -268,6 +268,13 @@ def apply_light_theme(app) -> None:
             padding: 7px;
             font-weight: 600;
         }}
+        #statusBadge {{
+            color: #166534;
+            background: #dcfce7;
+            border-radius: 9px;
+            padding: 2px 8px;
+            font-size: 11px;
+        }}
         QCheckBox {{
             background: transparent;
         }}

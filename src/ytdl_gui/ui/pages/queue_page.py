@@ -49,9 +49,10 @@ class QueuePage(QWidget):
         self.scroll_area.setWidget(self.card_host)
 
         actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
         actions.addWidget(self.pause_all_button)
         actions.addWidget(self.clear_completed_button)
-        actions.addStretch()
 
         self.history_heading = QLabel("历史")
         self.history_heading.setObjectName("sectionTitle")
@@ -67,8 +68,12 @@ class QueuePage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
-        layout.addWidget(PageHeader("队列", "查看待处理、下载中和已完成任务。"))
-        layout.addLayout(actions)
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(12)
+        header_row.addWidget(PageHeader("队列", "查看待处理、下载中和已完成任务。"), 1)
+        header_row.addLayout(actions)
+        layout.addLayout(header_row)
         layout.addWidget(self.scroll_area, 2)
         layout.addWidget(self.history_heading)
         layout.addWidget(self.recent_history_table, 1)
@@ -220,6 +225,20 @@ class QueuePage(QWidget):
                 record.created_at,
             ]
             for column, value in enumerate(values):
+                if column == 2:
+                    self.recent_history_table.setItem(row, column, QTableWidgetItem(str(value)))
+                    host = QWidget()
+                    host_layout = QHBoxLayout(host)
+                    host_layout.setContentsMargins(0, 0, 0, 0)
+                    badge = QLabel(str(value))
+                    badge.setObjectName("statusBadge")
+                    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    badge.setMaximumHeight(22)
+                    host_layout.addStretch()
+                    host_layout.addWidget(badge)
+                    host_layout.addStretch()
+                    self.recent_history_table.setCellWidget(row, column, host)
+                    continue
                 self.recent_history_table.setItem(row, column, QTableWidgetItem(str(value)))
 
 

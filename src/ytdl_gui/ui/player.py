@@ -52,6 +52,7 @@ class PreviewPlayer(QWidget):
         layout.addWidget(self.volume)
 
     def load_url(self, url: str) -> None:
+        self.show()
         if not url:
             self.show_unavailable()
             return
@@ -70,6 +71,7 @@ class PreviewPlayer(QWidget):
         self.status.setText("预览已暂停")
 
     def show_unavailable(self) -> None:
+        self.show()
         self.player.stop()
         self.state = PreviewState.UNAVAILABLE
         self.status.setText(preview_failure_message(PreviewState.UNAVAILABLE))

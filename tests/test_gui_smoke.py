@@ -5,6 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.ui.theme import apply_light_theme
 from ytdl_gui.history_store import HistoryRecord
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QListView
 from PySide6.QtCore import QPoint, QSize, Qt
 
@@ -252,6 +253,46 @@ def test_download_preview_toggle_is_visible_at_reference_size(qtbot):
     assert 0 <= toggle_top < toggle_bottom <= options_card.height()
 
 
+def test_download_preview_controls_are_hidden_until_enabled(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    assert window.download_page.preview_player.isHidden()
+
+    window.download_page.preview_checkbox.setChecked(True)
+    qtbot.wait(50)
+
+    assert window.download_page.preview_player.isVisible()
+
+
+def test_download_start_button_stays_near_options_card(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    gap = window.download_page.start_button.geometry().top() - window.download_page.options_card.geometry().bottom()
+
+    assert 40 <= gap <= 75
+
+
+def test_download_thumbnail_renders_play_overlay_and_duration_badge(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    thumbnail = QPixmap(320, 180)
+    thumbnail.fill(QColor("#336699"))
+
+    window.download_page.show_analysis_result("Demo", "03:33", "720p mp4")
+    window.download_page.set_thumbnail(thumbnail)
+
+    assert window.download_page.thumbnail_label.property("hasPreviewOverlay") is True
+    assert window.download_page.thumbnail_label.property("durationBadge") == "03:33"
+
+
 def test_formats_page_exposes_format_preferences(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
@@ -326,6 +367,48 @@ def test_queue_page_headers_and_actions(qtbot):
     assert window.queue_page.clear_completed_button.text() == "清除已完成"
     assert window.queue_page.history_heading.text() == "历史"
     assert table_headers(window.queue_page.recent_history_table) == ["标题", "格式", "状态", "时间"]
+
+
+def test_queue_history_status_uses_completed_badge(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.queue_page.load_history_records(
+        [
+            HistoryRecord(
+                "測試標題",
+                "https://example.com",
+                "D:/x.mp4",
+                "音频+视频",
+                "360p mp4",
+                "不下载",
+                "finished",
+                "2026-06-01T21:44:42",
+            )
+        ]
+    )
+
+    badge_host = window.queue_page.recent_history_table.cellWidget(0, 2)
+    badge = badge_host.findChild(QLabel, "statusBadge") if badge_host else None
+
+    assert isinstance(badge, QLabel)
+    assert badge.text() == "已完成"
+    assert badge.maximumHeight() <= 24
+
+
+def test_queue_toolbar_aligns_with_header_at_reference_size(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(535, 883)
+    window.nav.setCurrentRow(2)
+    window.show()
+    qtbot.wait(50)
+
+    title = next(label for label in window.queue_page.findChildren(QLabel) if label.text() == "队列")
+    title_top = title.mapTo(window.queue_page, QPoint(0, 0)).y()
+    button_top = window.queue_page.pause_all_button.mapTo(window.queue_page, QPoint(0, 0)).y()
+
+    assert button_top <= title_top + 16
 
 
 def test_queue_card_actions_fit_compact_width(qtbot):
