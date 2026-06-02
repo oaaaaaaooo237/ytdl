@@ -38,3 +38,4 @@ def test_apply_visual_download_state_sets_reference_input_and_save_path(qtbot):
 
     assert window.download_page.url_input.toPlainText() == VISUAL_SAMPLE_URL
     assert window.download_page.save_folder_label.text() == VISUAL_SAVE_DIR
+    assert window.download_page.free_space_label.text() == "剩余空间：126.8 GB"

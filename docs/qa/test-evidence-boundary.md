@@ -5,7 +5,7 @@
 - `scripts/real_download_matrix.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频并分别执行音视频、仅音频、仅视频下载；音视频用真实预览 stream URL。每个 case 写入独立目录，不自动删除下载文件。
 - `scripts/real_full_smoke.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频、提取预览 stream URL、执行真实下载、写入真实历史记录。下载文件保留在本次运行目录，不自动删除。
 - `scripts/real_url_smoke.ps1`：真实调用 `tools/yt-dlp.exe` 分析视频并执行真实下载，但不覆盖预览 stream。每次运行写入独立目录，不自动删除下载文件。
-- `scripts/real_batch_smoke.ps1`：真实分析多个 URL，按配置并发数启动真实下载，验证队列、历史和实际下载文件。默认覆盖普通视频、Shorts 和短视频 3 个真实链接。
+- `scripts/real_batch_smoke.ps1`：真实分析多个 URL，按配置并发数启动真实下载，验证队列、历史、实际下载文件，并检查历史记录标题与 output_path 文件名匹配。默认覆盖普通视频、Shorts 和短视频 3 个真实链接。
 - `scripts/real_subtitle_smoke.ps1`：真实下载字幕文件，并使用项目内 `ffmpeg.exe` 执行字幕烧录。默认使用带自动字幕的 Shorts 链接。
 - `scripts/package_win.ps1` 与 `scripts/smoke_packaged.ps1`：真实打包与打包产物存在性/ bundled `yt-dlp.exe --version` smoke。
 

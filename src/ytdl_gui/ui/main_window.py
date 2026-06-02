@@ -189,7 +189,7 @@ class MainWindow(QWidget):
     def _build_navigation(self) -> QListWidget:
         nav = QListWidget()
         nav.setObjectName("navRail")
-        nav.setFixedWidth(90)
+        nav.setFixedWidth(82)
         nav.setViewMode(QListView.ViewMode.ListMode)
         nav.setMovement(QListView.Movement.Static)
         nav.setFlow(QListView.Flow.TopToBottom)
@@ -198,14 +198,14 @@ class MainWindow(QWidget):
         nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         nav.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         nav.setIconSize(QSize(20, 20))
-        nav.setGridSize(QSize(78, 72))
+        nav.setGridSize(QSize(70, 72))
         nav.setUniformItemSizes(True)
         for text, standard_icon in NAV_ITEMS:
             icon = self.style().standardIcon(standard_icon)
             item = QListWidgetItem("")
             item.setData(Qt.ItemDataRole.UserRole, text)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item.setSizeHint(QSize(78, 72))
+            item.setSizeHint(QSize(70, 72))
             nav.addItem(item)
             nav.setItemWidget(item, self._build_navigation_item_widget(text, icon))
         return nav
@@ -758,6 +758,7 @@ class MainWindow(QWidget):
             cookies_path=self._cookies_path(),
             subtitle_action=subtitle_action,
             ffmpeg_path=ffmpeg_path,
+            expected_title=title,
         )
         self._download_requests_by_task[task_id] = request
         self._download_context_by_task[task_id] = {

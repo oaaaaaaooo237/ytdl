@@ -151,6 +151,7 @@ class DownloadRequest:
     cookies_path: Path | None = None
     subtitle_action: str = "none"
     ffmpeg_path: Path | None = None
+    expected_title: str = ""
 
 
 @dataclass(frozen=True)
@@ -226,7 +227,12 @@ class DownloadWorker(QObject):
         if self._canceled:
             self.failed.emit("下载已取消。")
         elif return_code == 0:
-            resolved_output_path = _resolve_output_path(output_path, self.request.output_template, before_files)
+            resolved_output_path = _resolve_output_path(
+                output_path,
+                self.request.output_template,
+                before_files,
+                expected_title=self.request.expected_title,
+            )
             if self.request.subtitle_action == "burn":
                 burned_output_path = self._burn_subtitle(resolved_output_path, before_files)
                 if burned_output_path:
@@ -278,7 +284,12 @@ def _snapshot_output_files(output_dir: Path) -> set[Path]:
     return {path for path in output_dir.iterdir() if path.is_file()}
 
 
-def _resolve_output_path(printed_path: str, output_template: Path, before_files: set[Path]) -> str:
+def _resolve_output_path(
+    printed_path: str,
+    output_template: Path,
+    before_files: set[Path],
+    expected_title: str = "",
+) -> str:
     if printed_path and Path(printed_path).exists():
         return printed_path
     output_dir = output_template.parent
@@ -289,7 +300,23 @@ def _resolve_output_path(printed_path: str, output_template: Path, before_files:
     candidates = media_files or new_files
     if not candidates:
         return printed_path
+    if expected_title:
+        matching_candidates = [path for path in candidates if _title_matches_path(expected_title, path)]
+        if matching_candidates:
+            return str(max(matching_candidates, key=lambda path: path.stat().st_mtime))
     return str(max(candidates, key=lambda path: path.stat().st_mtime))
+
+
+def _title_matches_path(expected_title: str, path: Path) -> bool:
+    expected = _path_match_text(expected_title)
+    actual = _path_match_text(path.stem)
+    if not expected or not actual:
+        return False
+    return expected in actual or actual in expected
+
+
+def _path_match_text(value: str) -> str:
+    return "".join(character.casefold() for character in value if character.isalnum())
 
 
 SUBTITLE_SUFFIXES = {".ass", ".srt", ".vtt"}

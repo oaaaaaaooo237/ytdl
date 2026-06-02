@@ -103,6 +103,13 @@ def test_navigation_icon_labels_have_stable_width(qtbot):
     assert window.nav.viewport().width() >= widest_label + window.nav.iconSize().width() + 24
 
 
+def test_navigation_width_matches_reference_window(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.nav.width() == 82
+
+
 def test_navigation_uses_full_chinese_label_widgets(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
@@ -210,6 +217,7 @@ def test_download_page_has_primary_controls(qtbot):
     assert window.download_page.paste_button.text() == "粘贴"
     assert window.download_page.save_folder_button.text() == "浏览"
     assert window.download_page.start_button.text() == "开始下载"
+    assert window.download_page.free_space_label.text().startswith("剩余空间")
     assert window.download_page.start_button.objectName() == "primaryButton"
     assert window.download_page.title_label.wordWrap() is True
     assert window.download_page.format_summary_label.wordWrap() is True
@@ -225,7 +233,7 @@ def test_download_thumbnail_uses_reference_visual_size(qtbot):
     assert window.download_page.thumbnail_label.size() == QSize(198, 170)
 
 
-def test_download_content_starts_near_reference_y(qtbot):
+def test_download_url_row_starts_near_reference_y(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
     qtbot.addWidget(window)
@@ -233,10 +241,9 @@ def test_download_content_starts_near_reference_y(qtbot):
     window.show()
     qtbot.wait(50)
 
-    title = next(label for label in window.download_page.findChildren(QLabel) if label.text() == "1. 输入视频地址")
-    title_top = title.mapTo(window, QPoint(0, 0)).y()
+    url_top = window.download_page.url_input.mapTo(window, QPoint(0, 0)).y()
 
-    assert 96 <= title_top <= 110
+    assert 106 <= url_top <= 114
 
 
 def test_download_video_card_height_matches_reference(qtbot):
@@ -249,7 +256,45 @@ def test_download_video_card_height_matches_reference(qtbot):
 
     video_card = window.download_page.thumbnail_label.parentWidget()
 
-    assert 180 <= video_card.height() <= 195
+    assert 190 <= video_card.height() <= 202
+
+
+def test_download_options_and_start_button_match_reference_rows(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(590, 883)
+    window.show()
+    qtbot.wait(50)
+
+    options_top = window.download_page.options_card.mapTo(window, QPoint(0, 0)).y()
+    start_top = window.download_page.start_button.mapTo(window, QPoint(0, 0)).y()
+
+    assert 566 <= options_top <= 576
+    assert 134 <= window.download_page.options_card.height() <= 145
+    assert 732 <= start_top <= 744
+    assert 42 <= window.download_page.start_button.height() <= 48
+
+
+def test_download_section_titles_keep_compact_height(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    titles = [
+        label
+        for label in window.download_page.findChildren(QLabel)
+        if label.text().startswith(("1.", "2.", "3."))
+    ]
+
+    assert titles
+    assert all(title.maximumHeight() <= 24 for title in titles)
+
+
+def test_download_free_space_row_keeps_compact_height(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.download_page.free_space_label.maximumHeight() <= 24
 
 
 def test_download_url_input_height_matches_reference(qtbot):

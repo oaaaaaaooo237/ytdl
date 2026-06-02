@@ -90,6 +90,7 @@ def reference_thumbnail_pixmap(reference_path: Path = Path("docs/gui-reference.p
 def apply_visual_download_state(window: MainWindow) -> None:
     window.download_page.url_input.setPlainText(VISUAL_SAMPLE_URL)
     window.download_page.set_save_folder(VISUAL_SAVE_DIR)
+    window.download_page.set_free_space("剩余空间：126.8 GB")
     window.download_page.analyze_button.setFocus()
 
 

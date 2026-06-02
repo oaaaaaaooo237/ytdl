@@ -107,10 +107,17 @@ if {record.url for record in records} != set(urls):
 if len(files) < len(urls):
     raise SystemExit(f"downloaded files {len(files)}, expected at least {len(urls)}")
 
+def path_match_text(value):
+    return "".join(character.casefold() for character in value if character.isalnum())
+
 for record in records:
     output_path = Path(record.output_path)
     if "%(title)s" in record.output_path or not output_path.exists():
         raise SystemExit(f"history output path is not an existing real file: {record.output_path}")
+    expected_title = path_match_text(record.title)
+    actual_stem = path_match_text(output_path.stem)
+    if expected_title and actual_stem and expected_title not in actual_stem and actual_stem not in expected_title:
+        raise SystemExit(f"history output path does not match record title: title={record.title}; output={record.output_path}")
 
 print(f"url_count={len(urls)}")
 print(f"queue_rows={window.queue_page.table.rowCount()}")

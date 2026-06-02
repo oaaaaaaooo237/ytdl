@@ -348,6 +348,47 @@ def test_download_worker_falls_back_to_new_existing_file_when_printed_path_is_st
     assert events["failed"] == []
 
 
+def test_download_worker_fallback_prefers_file_matching_expected_title(tmp_path: Path):
+    expected_path = tmp_path / "Expected Video.m4a"
+    other_path = tmp_path / "Other Video.m4a"
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(["[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n"])
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def __init__(self):
+            expected_path.write_bytes(b"expected")
+            other_path.write_bytes(b"other")
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            other_path.touch()
+            return 0
+
+    request = DownloadRequest(
+        url="https://www.youtube.com/watch?v=expected",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        output_template=tmp_path / "%(title)s.%(ext)s",
+        format_id="18",
+        expected_title="Expected Video",
+    )
+    worker = DownloadWorker(request, popen_factory=lambda command, **kwargs: FakeProcess())
+    events = collect_download_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == [str(expected_path)]
+    assert events["failed"] == []
+
+
 def test_download_worker_burns_downloaded_subtitle_to_new_output(tmp_path: Path):
     media_path = tmp_path / "Demo Video.mp4"
     subtitle_path = tmp_path / "Demo Video.en.srt"

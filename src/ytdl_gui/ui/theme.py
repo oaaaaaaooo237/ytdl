@@ -140,6 +140,9 @@ def apply_light_theme(app) -> None:
             background: {TEAL_DARK};
             border-color: {TEAL_DARK};
         }}
+        QPushButton[largePrimary="true"] {{
+            min-height: 28px;
+        }}
         QLineEdit, QTextEdit, QComboBox, QSpinBox {{
             border: 1px solid {BORDER};
             border-radius: 6px;
