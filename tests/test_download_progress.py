@@ -250,6 +250,57 @@ def test_start_download_uses_injected_popen_updates_queue_and_history(qtbot, app
     assert "cookies" not in history.path.read_text(encoding="utf-8").lower()
 
 
+def test_finished_download_history_uses_actual_output_path(qtbot, app_data_dir: Path):
+    class FakeStdout:
+        def __iter__(self):
+            return iter(
+                [
+                    "[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n",
+                    "D:/Downloads/Demo Video.mp4\n",
+                ]
+            )
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
+    config = ConfigStore(app_data_dir)
+    config.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    history = HistoryStore(app_data_dir)
+    window = MainWindow(
+        config_store=config,
+        history_store=history,
+        download_popen_factory=lambda command, **kwargs: FakeProcess(),
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "formats": [
+                {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}
+            ],
+        },
+    )
+
+    window.download_page.start_button.click()
+
+    records = history.list()
+    assert records[0].output_path == "D:/Downloads/Demo Video.mp4"
+    assert "%(title)s" not in records[0].output_path
+
+
 def test_start_download_rejects_missing_output_folder_before_starting_worker(qtbot, app_data_dir: Path):
     missing_folder = app_data_dir / "missing-downloads"
     messages: list[tuple[str, str]] = []

@@ -21,6 +21,9 @@ import os
 from pathlib import Path
 import sys
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
@@ -114,6 +117,8 @@ for case in cases:
         raise SystemExit(f"{case['name']} queue did not finish: {queue_status}")
     if len(records) != 1:
         raise SystemExit(f"{case['name']} history count {len(records)}")
+    if "%(title)s" in records[0].output_path or not Path(records[0].output_path).exists():
+        raise SystemExit(f"{case['name']} history output path is not an existing real file: {records[0].output_path}")
     if not files or downloaded_bytes <= 0:
         raise SystemExit(f"{case['name']} downloaded file missing")
     if case["preview"] and window.download_page.preview_player.state != PreviewState.LOADING:
@@ -126,6 +131,7 @@ for case in cases:
             "summary": window.selected_format_summary,
             "queue_status": queue_status,
             "history_count": len(records),
+            "history_output_path": records[0].output_path,
             "downloaded_files": len(files),
             "downloaded_bytes": downloaded_bytes,
             "download_dir": str(download_dir),
@@ -137,7 +143,8 @@ for case in cases:
 for result in results:
     print(
         "case={name}; format_id={format_id}; summary={summary}; queue_status={queue_status}; "
-        "history_count={history_count}; downloaded_files={downloaded_files}; downloaded_bytes={downloaded_bytes}; "
+        "history_count={history_count}; history_output_path={history_output_path}; "
+        "downloaded_files={downloaded_files}; downloaded_bytes={downloaded_bytes}; "
         "preview_loaded={preview_loaded}; preview_url_length={preview_url_length}; download_dir={download_dir}".format(**result)
     )
 '@
@@ -147,3 +154,6 @@ $env:YTDL_GUI_SMOKE_DATA = $DataDir
 $env:YTDL_GUI_SMOKE_URL = $Url
 
 $SmokeCode | & $Python -
+if ($LASTEXITCODE -ne 0) {
+  exit $LASTEXITCODE
+}

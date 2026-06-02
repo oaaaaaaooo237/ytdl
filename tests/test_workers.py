@@ -5,6 +5,8 @@ from ytdl_gui.ytdlp_runner import AnalysisFailureKind
 from ytdl_gui.workers import (
     AnalysisRequest,
     AnalysisWorker,
+    DownloadRequest,
+    DownloadWorker,
     PlaylistProbeRequest,
     PlaylistProbeWorker,
     PreviewUrlRequest,
@@ -40,6 +42,13 @@ def collect_preview_signals(worker: PreviewUrlWorker) -> dict[str, list[str]]:
 def collect_playlist_probe_signals(worker: PlaylistProbeWorker) -> dict[str, list[object]]:
     events: dict[str, list[object]] = {"finished": [], "failed": []}
     worker.finished.connect(lambda payload: events["finished"].append(payload))
+    worker.failed.connect(lambda message: events["failed"].append(message))
+    return events
+
+
+def collect_download_signals(worker: DownloadWorker) -> dict[str, list[str]]:
+    events: dict[str, list[str]] = {"finished": [], "failed": []}
+    worker.finished.connect(lambda output_path: events["finished"].append(output_path))
     worker.failed.connect(lambda message: events["failed"].append(message))
     return events
 
@@ -255,3 +264,85 @@ def test_preview_url_worker_reports_unavailable_without_sensitive_details(tmp_pa
 
     assert events["finished"] == []
     assert events["failed"] == ["预览不可用"]
+
+
+def test_download_worker_emits_actual_output_path_from_ytdlp_print(tmp_path: Path):
+    output_path = tmp_path / "Demo Video.mp4"
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(
+                [
+                    "[download]  50.0% of 10.00MiB at 1.00MiB/s ETA 00:05\n",
+                    str(output_path) + "\n",
+                ]
+            )
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    request = DownloadRequest(
+        url="https://www.youtube.com/watch?v=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        output_template=tmp_path / "%(title)s.%(ext)s",
+        format_id="18",
+    )
+    worker = DownloadWorker(request, popen_factory=lambda command, **kwargs: FakeProcess())
+    events = collect_download_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == [str(output_path)]
+    assert events["failed"] == []
+
+
+def test_download_worker_falls_back_to_new_existing_file_when_printed_path_is_stale(tmp_path: Path):
+    stale_path = tmp_path / "Demo Video.mp4"
+    actual_path = tmp_path / "Demo ⧸ Video.mp4"
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(
+                [
+                    "[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n",
+                    str(stale_path) + "\n",
+                ]
+            )
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def __init__(self):
+            actual_path.write_bytes(b"media")
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    request = DownloadRequest(
+        url="https://www.youtube.com/watch?v=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        output_template=tmp_path / "%(title)s.%(ext)s",
+        format_id="18",
+    )
+    worker = DownloadWorker(request, popen_factory=lambda command, **kwargs: FakeProcess())
+    events = collect_download_signals(worker)
+
+    worker.run()
+
+    assert events["finished"] == [str(actual_path)]
+    assert events["failed"] == []

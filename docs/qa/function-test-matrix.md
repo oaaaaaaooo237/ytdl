@@ -13,6 +13,7 @@ Test URL: `https://www.youtube.com/watch?v=KYDPpt3eqaQ`
 | Queue | Progress reaches completed state | `scripts/real_download_matrix.ps1`, all matrix cases `queue_status=已完成` | Pass |
 | Queue thumbnails | Queue cards can show the analyzed video thumbnail instead of a placeholder | `tests/test_queue_controls_gui.py::test_queue_card_can_render_thumbnail`; `tests/test_queue_controls_gui.py::test_main_window_adds_analysis_thumbnail_to_queue_card`; refreshed `docs/qa/screenshots/3-queue.png` | Pass |
 | History | Finished download writes history | `scripts/real_download_matrix.ps1`, all matrix cases `history_count=1` | Pass |
+| History output path | Finished download history records the real file emitted by yt-dlp, not the output template | `tests/test_download_progress.py::test_finished_download_history_uses_actual_output_path`; `tests/test_workers.py::test_download_worker_emits_actual_output_path_from_ytdlp_print`; `scripts/real_url_smoke.ps1` printed an existing `history_output_path` under `.qa-real-smoke/basic/20260602-192939` | Pass |
 | History missing files | Opening a moved/deleted history file shows Chinese confirmation and offers last known folder | `tests/test_ui_service_wiring.py::test_history_open_missing_file_offers_last_known_folder` | Pass |
 | Packaging | Build Win11 x64 dist folder | `scripts/package_win.ps1` | Pass |
 | Packaged smoke | Bundled yt-dlp reports version | `scripts/smoke_packaged.ps1`, `2026.03.17` | Pass |

@@ -161,7 +161,7 @@ class PreviewUrlRequest:
 
 class DownloadWorker(QObject):
     progress = Signal(object)
-    finished = Signal()
+    finished = Signal(str)
     failed = Signal(str)
 
     def __init__(self, request: DownloadRequest, popen_factory: PopenFactory | None = None):
@@ -178,6 +178,7 @@ class DownloadWorker(QObject):
 
     @Slot()
     def run(self) -> None:
+        before_files = _snapshot_output_files(self.request.output_template.parent)
         command = YtdlpCommandBuilder(self.request.ytdlp_path).download_command(
             self.request.url,
             self.request.output_template,
@@ -200,20 +201,54 @@ class DownloadWorker(QObject):
             self.failed.emit("启动 yt-dlp 下载失败，请稍后重试。")
             return
 
+        output_path = ""
         stdout = getattr(self._process, "stdout", None)
         if stdout is not None:
             for line in stdout:
                 if self._canceled:
                     break
-                self.progress.emit(parse_progress_line(line.strip()))
+                text = line.strip()
+                event = parse_progress_line(text)
+                self.progress.emit(event)
+                if event.percent is None and _looks_like_output_path(text):
+                    output_path = text
 
         return_code = self._process.wait()
         if self._canceled:
             self.failed.emit("下载已取消。")
         elif return_code == 0:
-            self.finished.emit()
+            self.finished.emit(_resolve_output_path(output_path, self.request.output_template, before_files))
         else:
             self.failed.emit(f"yt-dlp 下载失败，退出码 {return_code}")
+
+
+def _snapshot_output_files(output_dir: Path) -> set[Path]:
+    if not output_dir.exists():
+        return set()
+    return {path for path in output_dir.iterdir() if path.is_file()}
+
+
+def _resolve_output_path(printed_path: str, output_template: Path, before_files: set[Path]) -> str:
+    if printed_path and Path(printed_path).exists():
+        return printed_path
+    output_dir = output_template.parent
+    if not output_dir.exists():
+        return printed_path
+    new_files = [path for path in output_dir.iterdir() if path.is_file() and path not in before_files]
+    media_files = [path for path in new_files if path.suffix.casefold() not in {".vtt", ".srt", ".ass", ".json", ".part"}]
+    candidates = media_files or new_files
+    if not candidates:
+        return printed_path
+    return str(max(candidates, key=lambda path: path.stat().st_mtime))
+
+
+def _looks_like_output_path(text: str) -> bool:
+    if not text:
+        return False
+    lower = text.casefold()
+    if "cookies" in lower or lower.startswith("["):
+        return False
+    return bool(Path(text).suffix)
 
 
 class PreviewUrlWorker(QObject):

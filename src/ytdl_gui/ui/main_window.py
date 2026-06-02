@@ -814,7 +814,7 @@ class MainWindow(QWidget):
         )
         self._download_workers_by_task[task_id] = worker
         worker.progress.connect(lambda event, task=task_id: self.update_download_progress(task, event))
-        worker.finished.connect(lambda task=task_id: self.finish_download(task))
+        worker.finished.connect(lambda output_path, task=task_id: self.finish_download(task, output_path))
         worker.failed.connect(lambda message, task=task_id: self.fail_download(task, message))
         self._worker_runner(worker)
 
@@ -823,9 +823,11 @@ class MainWindow(QWidget):
             return
         self.queue_page.update_task(task_id, status="下载中", progress=event.percent, speed=event.speed, eta=event.eta)
 
-    def finish_download(self, task_id: str) -> None:
+    def finish_download(self, task_id: str, output_path: str = "") -> None:
         self._download_workers_by_task.pop(task_id, None)
         self._download_task_states[task_id] = "finished"
+        if output_path:
+            self._download_context_by_task.setdefault(task_id, {})["output_path"] = output_path
         self.queue_page.update_task(task_id, status="已完成", progress=100.0, speed="", eta="00:00")
         self.download_page.set_status("下载完成。")
         self.record_finished_download(task_id)
@@ -926,7 +928,7 @@ class MainWindow(QWidget):
         record = HistoryRecord(
             title=str(context.get("title") or self.analyzed_metadata.get("title") or "未命名视频"),
             url=str(context.get("url") or self.analyzed_url),
-            output_path=str(self._output_template()),
+            output_path=str(context.get("output_path") or self._output_template()),
             download_type=str(context.get("download_type") or self.download_page.mode_combo.currentText()),
             format_summary=str(context.get("format_summary") or self.selected_format_summary),
             subtitle_behavior=str(context.get("subtitle_behavior") or self.formats_page.subtitle_combo.currentText()),

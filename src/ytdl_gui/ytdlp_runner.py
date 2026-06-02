@@ -93,6 +93,8 @@ class YtdlpCommandBuilder:
             format_id,
             "-o",
             str(output_template),
+            "--print",
+            "after_move:filepath",
         ]
         if subtitle_action in {"file", "embed"}:
             command.extend(["--write-subs", "--write-auto-subs", "--sub-langs", "all"])

@@ -48,6 +48,8 @@ def test_download_command_uses_output_path_and_format(tmp_path: Path):
     assert str(output) in command
     assert "--cookies" in command
     assert str(cookies) in command
+    assert "--print" in command
+    assert "after_move:filepath" in command
 
 
 def test_download_command_can_write_subtitle_files(tmp_path: Path):
