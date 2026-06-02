@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QStyle,
     QVBoxLayout,
@@ -137,7 +139,7 @@ class MainWindow(QWidget):
             self.about_page,
         ]
         for page in pages:
-            self.stack.addWidget(page)
+            self.stack.addWidget(self._scroll_page(page))
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
@@ -172,6 +174,17 @@ class MainWindow(QWidget):
         self.connect_update_actions()
         self.connect_format_actions()
         self.connect_about_actions()
+
+    def _scroll_page(self, page: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        scroll.setMinimumSize(0, 0)
+        scroll.setWidget(page)
+        return scroll
 
     def _build_navigation(self) -> QListWidget:
         nav = QListWidget()

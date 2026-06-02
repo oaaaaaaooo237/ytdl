@@ -1,9 +1,12 @@
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -58,6 +61,35 @@ class ErrorPanel(QWidget):
     def show_message(self, message: str) -> None:
         self.label.setText(message)
         self.show()
+
+
+class ElidedLabel(QLabel):
+    def __init__(self, text: str = ""):
+        super().__init__(text)
+        self.setWordWrap(False)
+        self.setToolTip(text)
+        self.setMaximumHeight(self.fontMetrics().height() + 4)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt API casing
+        super().setText(text)
+        self.setToolTip(text)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API casing
+        painter = QPainter(self)
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        text = self.fontMetrics().elidedText(
+            self.text(),
+            Qt.TextElideMode.ElideRight,
+            self.width(),
+        )
+        painter.drawText(self.rect(), self.alignment() | Qt.AlignmentFlag.AlignVCenter, text)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API casing
+        return QSize(80, self.fontMetrics().height() + 4)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API casing
+        return QSize(0, self.fontMetrics().height() + 4)
 
 
 def display_status(status: str) -> str:

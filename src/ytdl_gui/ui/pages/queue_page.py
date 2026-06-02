@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtWidgets import QHeaderView
 
-from ytdl_gui.ui.widgets import PageHeader, display_status
+from ytdl_gui.ui.widgets import ElidedLabel, PageHeader, display_status
 
 
 class QueuePage(QWidget):
@@ -43,6 +44,8 @@ class QueuePage(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setMaximumHeight(340)
+        self.scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.scroll_area.setWidget(self.card_host)
 
         actions = QHBoxLayout()
@@ -123,9 +126,8 @@ class QueuePage(QWidget):
             )
 
         content = QVBoxLayout()
-        title_label = QLabel(title)
+        title_label = ElidedLabel(title)
         title_label.setObjectName("queueTitle")
-        title_label.setWordWrap(True)
         progress = QProgressBar()
         progress.setRange(0, 1000)
         progress.setValue(0)
@@ -161,6 +163,7 @@ class QueuePage(QWidget):
         self.card_layout.insertWidget(max(self.card_layout.count() - 1, 0), card)
         self._task_cards[task_id] = {
             "card": card,
+            "title": title_label,
             "progress": progress,
             "meta": meta,
             "thumb": thumb,

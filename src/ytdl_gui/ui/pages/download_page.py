@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -53,11 +53,23 @@ class DownloadPage(QWidget):
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumbnail_label.setFixedSize(188, 112)
         self.mode_combo = QComboBox()
+        self.mode_combo.hide()
+        self.audio_checkbox = QCheckBox("下载音频")
+        self.audio_checkbox.setChecked(True)
+        self.video_checkbox = QCheckBox("下载视频")
+        self.video_checkbox.setChecked(True)
+        self.audio_quality_button = QPushButton("最佳质量")
+        self.video_quality_button = QPushButton("最佳质量")
+        self.audio_quality_button.setObjectName("qualityPill")
+        self.video_quality_button.setObjectName("qualityPill")
         self.mode_combo.addItems(["音频+视频", "仅音频", "仅视频"])
         self.preview_checkbox = QCheckBox("下载时同步预览播放")
         self.preview_player = PreviewPlayer()
         self.preview_player.setObjectName("compactPreview")
         self.preview_player.setFixedHeight(96)
+        self.audio_checkbox.toggled.connect(self._sync_mode_from_toggles)
+        self.video_checkbox.toggled.connect(self._sync_mode_from_toggles)
+        self.mode_combo.currentIndexChanged.connect(self._sync_toggles_from_mode)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 18)
@@ -107,6 +119,8 @@ class DownloadPage(QWidget):
         options_layout = QVBoxLayout(options_card)
         options_layout.setContentsMargins(14, 10, 14, 10)
         options_layout.setSpacing(0)
+        options_layout.addLayout(_quality_toggle_row(self.audio_checkbox, self.audio_quality_button))
+        options_layout.addLayout(_quality_toggle_row(self.video_checkbox, self.video_quality_button))
         options_layout.addLayout(_option_row("下载类型", self.mode_combo))
         options_layout.addLayout(_option_row("预览播放", self.preview_checkbox))
         options_layout.addWidget(self.preview_player)
@@ -117,6 +131,25 @@ class DownloadPage(QWidget):
 
     def choose_folder(self) -> str:
         return QFileDialog.getExistingDirectory(self, "选择保存位置")
+
+    def _sync_mode_from_toggles(self) -> None:
+        audio = self.audio_checkbox.isChecked()
+        video = self.video_checkbox.isChecked()
+        if not audio and not video:
+            sender = self.sender()
+            restore = self.video_checkbox if sender is self.audio_checkbox else self.audio_checkbox
+            with QSignalBlocker(restore):
+                restore.setChecked(True)
+            audio = self.audio_checkbox.isChecked()
+            video = self.video_checkbox.isChecked()
+        index = 0 if audio and video else 1 if audio else 2
+        with QSignalBlocker(self.mode_combo):
+            self.mode_combo.setCurrentIndex(index)
+
+    def _sync_toggles_from_mode(self, index: int) -> None:
+        with QSignalBlocker(self.audio_checkbox), QSignalBlocker(self.video_checkbox):
+            self.audio_checkbox.setChecked(index in {0, 1})
+            self.video_checkbox.setChecked(index in {0, 2})
 
     def paste_from_clipboard(self) -> None:
         text = QApplication.clipboard().text().strip()
@@ -160,6 +193,10 @@ class _SectionTitle(QLabel):
 
 def _option_row(label_text: str, widget: QWidget) -> QHBoxLayout:
     row = QHBoxLayout()
+    if widget.isHidden():
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        return row
     row.setContentsMargins(0, 8, 0, 8)
     row.setSpacing(12)
     label = QLabel(label_text)
@@ -167,4 +204,13 @@ def _option_row(label_text: str, widget: QWidget) -> QHBoxLayout:
     label.setFixedWidth(88)
     row.addWidget(label)
     row.addWidget(widget, 1)
+    return row
+
+
+def _quality_toggle_row(toggle: QCheckBox, quality_button: QPushButton) -> QHBoxLayout:
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 8, 0, 8)
+    row.setSpacing(12)
+    row.addWidget(toggle, 1)
+    row.addWidget(quality_button)
     return row

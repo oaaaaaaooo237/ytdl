@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QRect
 from PySide6.QtGui import QImage
 
 
@@ -38,11 +38,13 @@ def compare_page(reference: Path, actual: Path, page: str) -> VisualDiff:
         raise ValueError(f"未知页面：{page}")
 
     crop = reference_image.copy(REFERENCE_CROPS[page]).convertToFormat(QImage.Format.Format_RGBA8888)
-    scaled_actual = actual_image.scaled(
-        crop.size(),
-        Qt.AspectRatioMode.IgnoreAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    ).convertToFormat(QImage.Format.Format_RGBA8888)
+    if actual_image.size() != crop.size():
+        raise ValueError(
+            "截图尺寸不一致："
+            f"{page} reference={crop.width()}x{crop.height()} "
+            f"actual={actual_image.width()}x{actual_image.height()}"
+        )
+    compared_actual = actual_image.convertToFormat(QImage.Format.Format_RGBA8888)
 
     total_delta = 0
     max_delta = 0
@@ -54,7 +56,7 @@ def compare_page(reference: Path, actual: Path, page: str) -> VisualDiff:
     for y in range(height):
         for x in range(width):
             reference_color = crop.pixelColor(x, y)
-            actual_color = scaled_actual.pixelColor(x, y)
+            actual_color = compared_actual.pixelColor(x, y)
             deltas = (
                 abs(reference_color.red() - actual_color.red()),
                 abs(reference_color.green() - actual_color.green()),

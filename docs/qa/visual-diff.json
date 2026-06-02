@@ -4,26 +4,26 @@
     "reference_size": "590x883",
     "actual_size": "590x883",
     "compared_size": "590x883",
-    "mean_abs_channel_delta": 24.7521,
-    "exact_pixel_match_percent": 1.1145,
+    "mean_abs_channel_delta": 24.7646,
+    "exact_pixel_match_percent": 1.1751,
     "max_channel_delta": 255
   },
   {
     "page": "formats",
     "reference_size": "488x883",
-    "actual_size": "488x918",
+    "actual_size": "488x883",
     "compared_size": "488x883",
-    "mean_abs_channel_delta": 10.6646,
-    "exact_pixel_match_percent": 2.2982,
+    "mean_abs_channel_delta": 11.9608,
+    "exact_pixel_match_percent": 1.7816,
     "max_channel_delta": 255
   },
   {
     "page": "queue",
     "reference_size": "535x883",
-    "actual_size": "535x906",
+    "actual_size": "535x883",
     "compared_size": "535x883",
-    "mean_abs_channel_delta": 20.9591,
-    "exact_pixel_match_percent": 1.1086,
+    "mean_abs_channel_delta": 20.1149,
+    "exact_pixel_match_percent": 1.4437,
     "max_channel_delta": 255
   }
 ]

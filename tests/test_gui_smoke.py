@@ -4,8 +4,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.ui.theme import apply_light_theme
+from ytdl_gui.history_store import HistoryRecord
 from PySide6.QtWidgets import QApplication, QLabel, QListView
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QSize, Qt
 
 
 def combo_items(combo):
@@ -142,6 +143,63 @@ def test_navigation_icon_and_label_do_not_overlap(qtbot):
         assert icon_label.geometry().bottom() + 2 <= text_label.geometry().top(), window.nav.item(index).text()
 
 
+def test_reference_screenshot_sizes_do_not_expand_to_page_minimums(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.apply_analysis_result(
+        "https://www.youtube.com/watch?v=PqQNXB6hhUs",
+        {
+            "title": "紐約陣容剋制？馬刺天賦碾壓！",
+            "duration": 540,
+            "formats": [
+                {"format_id": str(index), "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a.40.2", "fps": 30}
+                for index in range(60)
+            ],
+        },
+    )
+    for index in range(3):
+        window.queue_page.add_task(f"qa-task-{index}", "紐約陣容剋制？馬刺天賦碾壓！馬刺VS尼克，冠軍賽超強前瞻！")
+    records = [
+        HistoryRecord("測試標題", "https://example.com", "D:/x.mp4", "音频+视频", "360p mp4", "不下载", "finished", "2026-06-01T21:44:42")
+        for _index in range(4)
+    ]
+    window.queue_page.load_history_records(records)
+    expected_sizes = {
+        0: QSize(590, 883),
+        1: QSize(488, 883),
+        2: QSize(535, 883),
+    }
+
+    window.show()
+    for index, size in expected_sizes.items():
+        window.nav.setCurrentRow(index)
+        window.resize(size)
+        qtbot.wait(50)
+        assert window.size() == size
+
+
+def test_stack_size_hint_fits_reference_body_height_after_qa_content(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.apply_analysis_result(
+        "https://www.youtube.com/watch?v=PqQNXB6hhUs",
+        {
+            "title": "紐約陣容剋制？馬刺天賦碾壓！",
+            "duration": 540,
+            "formats": [
+                {"format_id": str(index), "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a.40.2", "fps": 30}
+                for index in range(60)
+            ],
+        },
+    )
+    for index in range(3):
+        window.queue_page.add_task(f"qa-task-{index}", "紐約陣容剋制？馬刺天賦碾壓！馬刺VS尼克，冠軍賽超強前瞻！")
+
+    assert window.stack.sizeHint().height() <= 791
+
+
 def test_download_page_has_primary_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
@@ -157,6 +215,19 @@ def test_download_page_has_primary_controls(qtbot):
     assert window.download_page.status_label.wordWrap() is True
     assert combo_items(window.download_page.mode_combo) == ["音频+视频", "仅音频", "仅视频"]
     assert window.download_page.preview_checkbox.text() == "下载时同步预览播放"
+
+
+def test_download_page_uses_reference_toggle_option_rows(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.download_page.mode_combo.isHidden()
+    assert window.download_page.audio_checkbox.text() == "下载音频"
+    assert window.download_page.video_checkbox.text() == "下载视频"
+    assert window.download_page.audio_checkbox.isChecked()
+    assert window.download_page.video_checkbox.isChecked()
+    assert window.download_page.audio_quality_button.text() == "最佳质量"
+    assert window.download_page.video_quality_button.text() == "最佳质量"
 
 
 def test_formats_page_exposes_format_preferences(qtbot):
@@ -196,6 +267,34 @@ def test_formats_page_exposes_format_preferences(qtbot):
     ]
 
 
+def test_formats_page_uses_reference_resolution_rows(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.formats_page.resolution_combo.isHidden()
+    assert len(window.formats_page.resolution_buttons) >= 6
+    labels = [button.text() for button in window.formats_page.resolution_buttons]
+    assert "1080p (FHD)" in labels
+    assert "720p (HD)" in labels
+    assert window.formats_page.reset_button.text() == "重置默认"
+    assert window.formats_page.apply_button.text() == "应用选择"
+    assert window.formats_page.resolution_buttons[0].isChecked()
+
+
+def test_formats_apply_button_visible_without_scrolling_at_reference_size(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(488, 883)
+    window.nav.setCurrentRow(1)
+    window.show()
+    qtbot.wait(50)
+
+    button_bottom = window.formats_page.apply_button.mapTo(window, QPoint(0, window.formats_page.apply_button.height())).y()
+
+    assert button_bottom <= window.bottom_status_bar.geometry().top() - 8
+
+
 def test_queue_page_headers_and_actions(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
@@ -224,6 +323,36 @@ def test_queue_card_actions_fit_compact_width(qtbot):
 
     assert button_right <= viewport.width()
     assert retry_button.isHidden()
+
+
+def test_queue_card_title_is_single_line_with_full_text_tooltip(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    long_title = "紐約陣容剋制？馬刺天賦碾壓！馬刺VS尼克，冠軍賽超強前瞻！#victorwembanyama"
+
+    window.queue_page.add_task("task-long-title", long_title)
+    title_label = window.queue_page._task_cards["task-long-title"]["title"]
+
+    assert title_label.toolTip() == long_title
+    assert title_label.wordWrap() is False
+    assert title_label.maximumHeight() <= title_label.fontMetrics().height() + 4
+
+
+def test_queue_history_stays_close_below_task_cards(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(535, 883)
+    window.nav.setCurrentRow(2)
+    for index in range(3):
+        window.queue_page.add_task(f"task-{index}", "紐約陣容剋制？馬刺天賦碾壓！馬刺VS尼克，冠軍賽超強前瞻！")
+    window.show()
+    qtbot.wait(50)
+
+    last_card = window.queue_page._task_cards["task-2"]["card"]
+    card_bottom = last_card.mapTo(window.queue_page, QPoint(0, last_card.height())).y()
+    history_top = window.queue_page.history_heading.geometry().top()
+
+    assert 0 <= history_top - card_bottom <= 48
 
 
 def test_settings_page_has_ffmpeg_and_cookies_controls(qtbot):
