@@ -20,7 +20,7 @@
 - `tests/test_ytdlp_update.py`：用假下载文件和禁止网络 monkeypatch 验证更新状态机、回滚和非阻塞安全规则。
 - `tests/test_ui_service_wiring.py`：用假 `QApplication`/`MainWindow` 验证 app bootstrap 注入。
 - `tests/test_queue_controls_gui.py`：用同步/收集式 worker runner 验证队列按钮 wiring，不执行真实下载。
-- `scripts/render_qa_screenshots.py`：使用已保存的真实分析 metadata 生成视觉截图，不执行实时网络分析或下载。
+- `scripts/render_qa_screenshots.py`：使用已保存的真实分析 metadata 中的格式列表，并覆盖为稳定视觉样本生成截图；不执行实时网络分析或下载，不作为全真验收证据。
 
 ## 报告规则
 

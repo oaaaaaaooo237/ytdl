@@ -9,7 +9,7 @@ from pathlib import Path
 os.environ.setdefault("QT_SCALE_FACTOR", "1")
 os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "0")
 
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QRect, QTimer
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -28,9 +28,66 @@ QA_SCREENSHOT_SIZES = {
     "about": (590, 883),
 }
 
+REFERENCE_THUMBNAIL_CROP = QRect(126, 255, 198, 170)
+VISUAL_SAMPLE_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+VISUAL_HISTORY_ROWS = [
+    (
+        "Rick Astley - Never Gonna Give You Up (Official Music Video)",
+        "音频+视频",
+        "1080p60 MP4",
+        "2026-06-01T10:21:00",
+    ),
+    (
+        "MrBeast - I Built 100 Wells In Africa",
+        "音频+视频",
+        "1080p60 MP4",
+        "2026-06-01T09:15:00",
+    ),
+    (
+        "Coldplay - Yellow (Official Video)",
+        "音频+视频",
+        "1080p30 MP4",
+        "2026-05-26T20:42:00",
+    ),
+    (
+        "Linus Tech Tips - $500 Gaming PC",
+        "音频+视频",
+        "1080p60 MP4",
+        "2026-05-25T19:31:00",
+    ),
+]
+
+
+def visual_metadata_fixture(metadata: dict) -> dict:
+    visual_metadata = dict(metadata)
+    visual_metadata.update(
+        {
+            "id": "dQw4w9WgXcQ",
+            "display_id": "dQw4w9WgXcQ",
+            "title": "Rick Astley - Never Gonna Give You Up (Official Music Video)",
+            "fulltitle": "Rick Astley - Never Gonna Give You Up (Official Music Video)",
+            "uploader": "Rick Astley",
+            "channel": "Rick Astley",
+            "duration": 213,
+            "duration_string": "3:33",
+            "view_count": 1450123456,
+            "upload_date": "20091025",
+            "webpage_url": VISUAL_SAMPLE_URL,
+            "original_url": VISUAL_SAMPLE_URL,
+        }
+    )
+    return visual_metadata
+
+
+def reference_thumbnail_pixmap(reference_path: Path = Path("docs/gui-reference.png")) -> QPixmap:
+    reference = QPixmap(str(reference_path))
+    if reference.isNull():
+        return QPixmap()
+    return reference.copy(REFERENCE_THUMBNAIL_CROP)
+
 
 def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) -> None:
-    metadata = _read_metadata(metadata_path)
+    metadata = visual_metadata_fixture(_read_metadata(metadata_path))
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,16 +101,11 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
     )
     history = HistoryStore(data_dir)
     history.clear()
-    for title, download_type, summary, created_at in [
-        (metadata.get("title") or "测试视频", "音频+视频", "360p mp4", "2026-06-01T21:44:42"),
-        ("仅音频测试", "仅音频", "音频 m4a 129kbps", "2026-06-01T21:45:20"),
-        ("仅视频测试", "仅视频", "144p mp4 无音频", "2026-06-01T21:46:10"),
-        ("历史样例", "音频+视频", "720p mp4", "2026-05-31T13:30:00"),
-    ]:
+    for title, download_type, summary, created_at in VISUAL_HISTORY_ROWS:
         history.add(
             HistoryRecord(
                 title,
-                "https://www.youtube.com/watch?v=PqQNXB6hhUs",
+                VISUAL_SAMPLE_URL,
                 str(data_dir / "downloads" / "sample.mp4"),
                 download_type,
                 summary,
@@ -67,8 +119,10 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
     apply_light_theme(app)
     window = MainWindow(config_store=config, history_store=history, worker_runner=lambda worker: worker.run())
     window.download_page.mode_combo.setCurrentIndex(0)
-    window.apply_analysis_result("https://www.youtube.com/watch?v=PqQNXB6hhUs", metadata)
-    thumbnail = QPixmap("docs/qa/assets/PqQNXB6hhUs-thumbnail.jpg")
+    window.apply_analysis_result(VISUAL_SAMPLE_URL, metadata)
+    thumbnail = reference_thumbnail_pixmap()
+    if thumbnail.isNull():
+        thumbnail = QPixmap("docs/qa/assets/PqQNXB6hhUs-thumbnail.jpg")
     if not thumbnail.isNull():
         window.download_page.set_thumbnail(thumbnail)
     for index, percent in enumerate([68.0, 32.0, 100.0]):
