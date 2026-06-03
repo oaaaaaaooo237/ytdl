@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtWidgets import QHeaderView
 
-from ytdl_gui.ui.widgets import ElidedLabel, PageHeader, display_status
+from ytdl_gui.ui.widgets import ElidedLabel, display_status
 
 
 class QueuePage(QWidget):
@@ -60,6 +60,9 @@ class QueuePage(QWidget):
         actions.addWidget(self.pause_all_button)
         actions.addWidget(self.clear_completed_button)
 
+        self.queue_heading = QLabel()
+        self.queue_heading.setObjectName("queueHeaderTitle")
+        self._update_queue_heading()
         self.history_heading = QLabel("历史")
         self.history_heading.setObjectName("sectionTitle")
         self.recent_history_table = QTableWidget(0, 7)
@@ -91,12 +94,12 @@ class QueuePage(QWidget):
         self.history_search.textChanged.connect(lambda _text: self._render_recent_history())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 22)
+        layout.setContentsMargins(16, 20, 16, 22)
         layout.setSpacing(10)
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(12)
-        header_row.addWidget(PageHeader("队列"), 1)
+        header_row.addWidget(self.queue_heading, 1)
         header_row.addLayout(actions)
         layout.addLayout(header_row)
         layout.addWidget(self.scroll_area, 2)
@@ -119,6 +122,7 @@ class QueuePage(QWidget):
         for column, value in enumerate(values):
             self.table.setItem(row, column, QTableWidgetItem(value))
         self._add_task_card(task_id, title, status, thumbnail)
+        self._update_queue_heading()
 
     def update_task(self, task_id: str, status: str | None = None, progress=None, speed: str = "", eta: str = "") -> None:
         row = self._row_for_task(task_id)
@@ -151,7 +155,7 @@ class QueuePage(QWidget):
 
         thumb = QLabel("视频")
         thumb.setObjectName("queueThumb")
-        thumb.setFixedSize(84, 54)
+        thumb.setFixedSize(80, 64)
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if thumbnail is not None and not thumbnail.isNull():
             thumb.setText("")
@@ -175,20 +179,28 @@ class QueuePage(QWidget):
         content.addWidget(progress)
         content.addWidget(meta)
 
-        pause = QPushButton("暂停")
-        cancel = QPushButton("取消")
-        retry = QPushButton("重试")
+        pause = _queue_action_button(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause),
+            "暂停",
+        )
+        cancel = _queue_action_button(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton),
+            "取消",
+        )
+        retry = _queue_action_button(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+            "重试",
+        )
         pause.setObjectName(f"queue-pause-{task_id}")
         cancel.setObjectName(f"queue-cancel-{task_id}")
         retry.setObjectName(f"queue-retry-{task_id}")
         for button in (pause, cancel, retry):
             button.setProperty("queueAction", True)
-            button.setFixedSize(58, 30)
         retry.setVisible(_should_show_retry(status))
         pause.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "pause"))
         cancel.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "cancel"))
         retry.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "retry"))
-        actions = QVBoxLayout()
+        actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(6)
         actions.addWidget(pause)
@@ -245,6 +257,11 @@ class QueuePage(QWidget):
             if isinstance(widget, QWidget):
                 self.card_layout.removeWidget(widget)
                 widget.deleteLater()
+        self._update_queue_heading()
+
+    def _update_queue_heading(self) -> None:
+        count = self.table.rowCount()
+        self.queue_heading.setText(f"下载队列 ({count})")
 
     def load_history_records(self, records) -> None:
         all_records = list(records)
@@ -413,3 +430,12 @@ def _history_action_cell(icon, object_name: str, tooltip: str, callback) -> QWid
     button.clicked.connect(callback)
     layout.addWidget(button, 0, Qt.AlignmentFlag.AlignCenter)
     return host
+
+
+def _queue_action_button(icon, tooltip: str) -> QPushButton:
+    button = QPushButton()
+    button.setFixedSize(36, 36)
+    button.setIcon(icon)
+    button.setIconSize(QSize(16, 16))
+    button.setToolTip(tooltip)
+    return button

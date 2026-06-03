@@ -667,11 +667,23 @@ def test_queue_toolbar_aligns_with_header_at_reference_size(qtbot):
     window.show()
     qtbot.wait(50)
 
-    title = next(label for label in window.queue_page.findChildren(QLabel) if label.text() == "队列")
+    title = window.queue_page.queue_heading
     title_top = title.mapTo(window.queue_page, QPoint(0, 0)).y()
     button_top = window.queue_page.pause_all_button.mapTo(window.queue_page, QPoint(0, 0)).y()
 
     assert button_top <= title_top + 16
+
+
+def test_queue_header_uses_reference_title_count(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    for index in range(3):
+        window.queue_page.add_task(f"task-{index}", "测试视频")
+
+    assert window.queue_page.queue_heading.text() == "下载队列 (3)"
+    assert window.queue_page.queue_heading.objectName() == "queueHeaderTitle"
+    assert window.queue_page.queue_heading.font().pointSize() <= 15
 
 
 def test_queue_header_uses_compact_reference_layout(qtbot):
@@ -711,6 +723,51 @@ def test_queue_cards_match_reference_top_and_height(qtbot):
 
     assert 112 <= first_card_top <= 125
     assert 86 <= first_card.height() <= 94
+
+
+def test_queue_cards_match_reference_left_and_width(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(535, 883)
+    window.nav.setCurrentRow(2)
+    window.queue_page.add_task("task-0", "Rick Astley - Never Gonna Give You Up (Official Music Video)")
+    window.show()
+    qtbot.wait(50)
+
+    first_card = window.queue_page._task_cards["task-0"]["card"]
+    first_card_left = first_card.mapTo(window, QPoint(0, 0)).x()
+
+    assert 94 <= first_card_left <= 100
+    assert 418 <= first_card.width() <= 430
+
+
+def test_queue_card_thumbnail_matches_reference_size(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.queue_page.add_task("task-0", "Rick Astley - Never Gonna Give You Up")
+
+    thumb = window.queue_page._task_cards["task-0"]["thumb"]
+
+    assert thumb.size() == QSize(80, 64)
+
+
+def test_queue_card_action_buttons_render_as_reference_squares(qtbot):
+    apply_light_theme(QApplication.instance())
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(535, 883)
+    window.nav.setCurrentRow(2)
+    window.queue_page.add_task("task-0", "Rick Astley - Never Gonna Give You Up")
+    window.show()
+    qtbot.wait(50)
+
+    pause = window.queue_page._task_cards["task-0"]["pause"]
+    cancel = window.queue_page._task_cards["task-0"]["cancel"]
+
+    assert pause.size() == QSize(36, 36)
+    assert cancel.size() == QSize(36, 36)
 
 
 def test_queue_card_actions_fit_compact_width(qtbot):

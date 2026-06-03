@@ -237,6 +237,11 @@ def apply_light_theme(app) -> None:
             font-weight: 700;
             background: transparent;
         }}
+        #queueHeaderTitle {{
+            font-size: 14px;
+            font-weight: 700;
+            background: transparent;
+        }}
         #queueHistoryTitleCell, #queueHistoryActionCell {{
             background: transparent;
         }}
@@ -258,10 +263,19 @@ def apply_light_theme(app) -> None:
         #toolbarButton {{
             min-width: 88px;
         }}
-        #iconButton, QPushButton[queueAction="true"] {{
-            min-width: 44px;
-            max-width: 54px;
-            padding: 6px;
+        #iconButton {{
+            min-width: 36px;
+            max-width: 36px;
+            min-height: 36px;
+            max-height: 36px;
+            padding: 0;
+        }}
+        QPushButton[queueAction="true"] {{
+            min-width: 34px;
+            max-width: 34px;
+            min-height: 34px;
+            max-height: 34px;
+            padding: 0;
         }}
         QProgressBar {{
             border: 0;

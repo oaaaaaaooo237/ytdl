@@ -25,13 +25,23 @@ def test_queue_card_buttons_emit_task_actions(qtbot):
 
     page.add_task("task-1", "Demo Video", "失败")
 
-    assert _button(page, "queue-pause-task-1").text() == "暂停"
-    assert _button(page, "queue-cancel-task-1").text() == "取消"
-    assert _button(page, "queue-retry-task-1").text() == "重试"
+    pause = _button(page, "queue-pause-task-1")
+    cancel = _button(page, "queue-cancel-task-1")
+    retry = _button(page, "queue-retry-task-1")
+    assert pause.text() == ""
+    assert cancel.text() == ""
+    assert retry.text() == ""
+    assert pause.toolTip() == "暂停"
+    assert cancel.toolTip() == "取消"
+    assert retry.toolTip() == "重试"
+    assert not pause.icon().isNull()
+    assert not cancel.icon().isNull()
+    assert not retry.icon().isNull()
+    assert pause.y() == cancel.y()
 
-    _button(page, "queue-pause-task-1").click()
-    _button(page, "queue-cancel-task-1").click()
-    _button(page, "queue-retry-task-1").click()
+    pause.click()
+    cancel.click()
+    retry.click()
 
     assert events == [("task-1", "pause"), ("task-1", "cancel"), ("task-1", "retry")]
 
