@@ -25,7 +25,7 @@ Batch test URLs:
 | Packaging | Build Win11 x64 dist folder | `scripts/package_win.ps1` generated `dist/YTDL-GUI/YTDL-GUI.exe` | Pass |
 | Packaged smoke | Bundled yt-dlp and bundled ffmpeg report versions | `scripts/smoke_packaged.ps1`, yt-dlp `2026.03.17`, ffmpeg `8.1-essentials_build-www.gyan.dev` | Pass |
 | Packaged startup | Exe opens responsive window | Hidden process smoke returned process `YTDL-GUI`, `Responding=True` | Pass |
-| Visual diff | Strict pixel comparison with reference crops | `scripts/visual_compare.py`, `docs/qa/visual-diff.json`; latest exact: Download `1.5339%`, Formats `1.7575%`, Queue `2.0876%` | Not pass |
+| Visual diff | Strict pixel comparison with reference crops | `scripts/visual_compare.py`, `docs/qa/visual-diff.json`; latest exact: Download `1.5339%`, Formats `1.7575%`, Queue `2.0914%` | Not pass |
 | Navigation visual rail | Left navigation uses visible icon+Chinese-label widgets without ellipsis, duplicate native text/icons, overlap, or scrollbar artifacts | `tests/test_gui_smoke.py::test_navigation_matches_reference_icon_rail`; `tests/test_gui_smoke.py::test_navigation_custom_widgets_avoid_native_text_duplication`; `tests/test_gui_smoke.py::test_navigation_icon_and_label_do_not_overlap`; refreshed `docs/qa/screenshots/1-download.png` | Pass |
 | Cookies settings | Select and validate cookies.txt from GUI | `tests/test_settings_actions.py` covers choose/validate/clear and path-only storage | Pass |
 | History actions | Search/open folder/clear from GUI | `tests/test_ui_service_wiring.py` covers search/open/clear; history write covered by real smoke | Pass |

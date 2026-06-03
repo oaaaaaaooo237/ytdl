@@ -8,6 +8,7 @@ from scripts.render_qa_screenshots import apply_visual_download_state
 from scripts.render_qa_screenshots import VISUAL_SAMPLE_URL
 from scripts.render_qa_screenshots import VISUAL_SAVE_DIR
 from scripts.render_qa_screenshots import VISUAL_HISTORY_ROWS
+from scripts.render_qa_screenshots import VISUAL_QUEUE_ROWS
 from scripts.render_qa_screenshots import visual_metadata_fixture
 from ytdl_gui.ui.main_window import MainWindow
 
@@ -33,6 +34,18 @@ def test_visual_metadata_fixture_uses_reference_like_sample_content():
 
 def test_visual_history_fixture_matches_reference_row_count():
     assert len(VISUAL_HISTORY_ROWS) == 5
+
+
+def test_visual_queue_fixture_matches_reference_task_rows():
+    assert [row["title"] for row in VISUAL_QUEUE_ROWS] == [
+        "Rick Astley - Never Gonna Give You Up (Official Music Video)",
+        "NVIDIA DLSS 3.5 Explained",
+        "lofi hip hop radio - beats to relax/study to",
+    ]
+    assert [row["progress"] for row in VISUAL_QUEUE_ROWS] == [68.0, 32.0, 15.0]
+    assert len({(row["thumbnail_crop"].x(), row["thumbnail_crop"].y()) for row in VISUAL_QUEUE_ROWS}) == 3
+    assert all(row["thumbnail_crop"].size().width() == 80 for row in VISUAL_QUEUE_ROWS)
+    assert all(row["thumbnail_crop"].size().height() == 64 for row in VISUAL_QUEUE_ROWS)
 
 
 def test_apply_visual_download_state_sets_reference_input_and_save_path(qtbot):

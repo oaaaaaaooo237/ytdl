@@ -22,8 +22,8 @@
     "reference_size": "535x883",
     "actual_size": "535x883",
     "compared_size": "535x883",
-    "mean_abs_channel_delta": 16.3689,
-    "exact_pixel_match_percent": 2.0876,
+    "mean_abs_channel_delta": 14.8034,
+    "exact_pixel_match_percent": 2.0914,
     "max_channel_delta": 255
   }
 ]

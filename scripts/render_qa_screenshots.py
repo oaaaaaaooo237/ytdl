@@ -31,6 +31,32 @@ QA_SCREENSHOT_SIZES = {
 REFERENCE_THUMBNAIL_CROP = QRect(126, 255, 198, 170)
 VISUAL_SAMPLE_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 VISUAL_SAVE_DIR = r"C:\Users\Public\Videos\YTDL Studio"
+VISUAL_QUEUE_ROWS = [
+    {
+        "title": "Rick Astley - Never Gonna Give You Up (Official Music Video)",
+        "progress": 68.0,
+        "status": "下载中",
+        "speed": "42.6 MB/s",
+        "eta": "00:18",
+        "thumbnail_crop": QRect(1225, 150, 80, 64),
+    },
+    {
+        "title": "NVIDIA DLSS 3.5 Explained",
+        "progress": 32.0,
+        "status": "下载中",
+        "speed": "18.7 MB/s",
+        "eta": "01:02",
+        "thumbnail_crop": QRect(1225, 262, 80, 64),
+    },
+    {
+        "title": "lofi hip hop radio - beats to relax/study to",
+        "progress": 15.0,
+        "status": "下载中",
+        "speed": "9.3 MB/s",
+        "eta": "02:45",
+        "thumbnail_crop": QRect(1225, 351, 80, 64),
+    },
+]
 VISUAL_HISTORY_ROWS = [
     (
         "Rick Astley - Never Gonna Give You Up (Official Music Video)",
@@ -98,6 +124,13 @@ def reference_thumbnail_pixmap(reference_path: Path = Path("docs/gui-reference.p
     return reference.copy(REFERENCE_THUMBNAIL_CROP)
 
 
+def reference_queue_thumbnail_pixmap(crop: QRect, reference_path: Path = Path("docs/gui-reference.png")) -> QPixmap:
+    reference = QPixmap(str(reference_path))
+    if reference.isNull():
+        return QPixmap()
+    return reference.copy(crop)
+
+
 def reference_thumbnail_file(data_dir: Path, reference_path: Path = Path("docs/gui-reference.png")) -> Path:
     output_path = data_dir / "history-thumb.png"
     reference = QImage(str(reference_path))
@@ -160,21 +193,23 @@ def render_screenshots(metadata_path: Path, output_dir: Path, data_dir: Path) ->
         thumbnail = QPixmap("docs/qa/assets/PqQNXB6hhUs-thumbnail.jpg")
     if not thumbnail.isNull():
         window.download_page.set_thumbnail(thumbnail)
-    for index, percent in enumerate([68.0, 32.0, 100.0]):
+    for index, row in enumerate(VISUAL_QUEUE_ROWS):
         task_id = f"qa-task-{index}"
-        status = "下载中" if percent < 100 else "已完成"
+        task_thumbnail = reference_queue_thumbnail_pixmap(row["thumbnail_crop"])
+        if task_thumbnail.isNull():
+            task_thumbnail = thumbnail
         window.queue_page.add_task(
             task_id,
-            metadata.get("title") or "测试视频",
-            status,
-            thumbnail=thumbnail if not thumbnail.isNull() else None,
+            row["title"],
+            row["status"],
+            thumbnail=task_thumbnail if not task_thumbnail.isNull() else None,
         )
         window.queue_page.update_task(
             task_id,
-            status=status,
-            progress=percent,
-            speed="2.00MiB/s",
-            eta="00:18" if percent < 100 else "00:00",
+            status=row["status"],
+            progress=row["progress"],
+            speed=row["speed"],
+            eta=row["eta"],
         )
     window.about_page.set_ytdlp_status("2026.03.17")
     window.about_page.set_ffmpeg_status("已配置：D:/ffmpeg/bin/ffmpeg.exe")
