@@ -13,6 +13,7 @@ from ytdl_gui.workers import (
     PlaylistProbeWorker,
     PreviewUrlRequest,
     PreviewUrlWorker,
+    fetch_thumbnail_bytes,
     make_analysis_command,
 )
 
@@ -127,6 +128,48 @@ def test_analysis_workers_hide_child_console_windows_on_windows(tmp_path: Path):
 
     assert captured_kwargs
     assert all(kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW for kwargs in captured_kwargs)
+
+
+def test_fetch_thumbnail_bytes_sends_safe_headers(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b"image-bytes"
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    data = fetch_thumbnail_bytes(
+        "https://ci.phncdn.com/thumb.jpg",
+        headers={
+            "User-Agent": "yt-dlp-test-agent",
+            "Referer": "https://www.pornhub.com/",
+            "Accept-Language": "en-US",
+            "Cookie": "secret=value",
+            "Authorization": "Bearer secret",
+        },
+        timeout_seconds=7,
+    )
+
+    request = captured["request"]
+    assert data == b"image-bytes"
+    assert captured["timeout"] == 7
+    assert request.get_header("User-agent") == "yt-dlp-test-agent"
+    assert request.get_header("Referer") == "https://www.pornhub.com/"
+    assert request.get_header("Accept-language") == "en-US"
+    assert request.get_header("Cookie") is None
+    assert request.get_header("Authorization") is None
 
 
 def test_analysis_worker_timeout_emits_network_timeout(tmp_path: Path):

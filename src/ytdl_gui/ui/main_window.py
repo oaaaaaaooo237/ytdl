@@ -702,7 +702,7 @@ class MainWindow(QWidget):
         self.formats_page.set_merge_hint_visible(choice.requires_ffmpeg_merge)
         self._apply_available_resolution_controls(formats, choice.actual_summary)
         self.download_page.show_analysis_result(title, _duration_text(metadata.get("duration")), choice.actual_summary)
-        self._load_thumbnail(_thumbnail_url(metadata))
+        self._load_thumbnail(_thumbnail_url(metadata), _thumbnail_headers(metadata, url))
         self.download_page.reset_analysis_action()
         self.download_page.set_status(_analysis_success_status(choice.relaxed, choice.requires_ffmpeg_merge))
         if len(self._all_urls()) <= 1:
@@ -1204,10 +1204,10 @@ class MainWindow(QWidget):
         if worker in self._workers:
             self._workers.remove(worker)
 
-    def _load_thumbnail(self, url: str) -> None:
+    def _load_thumbnail(self, url: str, headers: dict[str, str] | None = None) -> None:
         if not url:
             return
-        worker = ThumbnailWorker(url, self._thumbnail_fetcher)
+        worker = ThumbnailWorker(url, headers, self._thumbnail_fetcher)
         worker.finished.connect(self._apply_thumbnail_data)
         worker.failed.connect(lambda: self.download_page.thumbnail_label.setText("预览图"))
         self._worker_runner(worker)
@@ -1291,6 +1291,32 @@ def _thumbnail_url(metadata: dict) -> str:
             if isinstance(item, dict) and isinstance(item.get("url"), str):
                 return item["url"]
     return ""
+
+
+SAFE_METADATA_THUMBNAIL_HEADERS = {
+    "accept": "Accept",
+    "accept-language": "Accept-Language",
+    "referer": "Referer",
+    "user-agent": "User-Agent",
+}
+
+
+def _thumbnail_headers(metadata: dict, analyzed_url: str) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    metadata_headers = metadata.get("http_headers")
+    if isinstance(metadata_headers, dict):
+        for name, value in metadata_headers.items():
+            canonical_name = SAFE_METADATA_THUMBNAIL_HEADERS.get(str(name).casefold())
+            if canonical_name and isinstance(value, str) and value:
+                headers[canonical_name] = value
+
+    if not headers.get("Referer"):
+        webpage_url = metadata.get("webpage_url")
+        if isinstance(webpage_url, str) and webpage_url:
+            headers["Referer"] = webpage_url
+        elif analyzed_url:
+            headers["Referer"] = analyzed_url
+    return headers
 
 
 def _file_size_bytes(path: str) -> int:

@@ -147,11 +147,25 @@ class PlaylistProbeWorker(QObject):
         self.finished.emit(payload)
 
 
-ThumbnailFetcher = Callable[[str], bytes]
+ThumbnailFetcher = Callable[[str, dict[str, str] | None], bytes]
+SAFE_THUMBNAIL_HEADERS = {
+    "accept": "Accept",
+    "accept-language": "Accept-Language",
+    "referer": "Referer",
+    "user-agent": "User-Agent",
+}
 
 
-def fetch_thumbnail_bytes(url: str, timeout_seconds: int = 20) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+def fetch_thumbnail_bytes(url: str, headers: dict[str, str] | None = None, timeout_seconds: int = 20) -> bytes:
+    request_headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    }
+    for name, value in (headers or {}).items():
+        canonical_name = SAFE_THUMBNAIL_HEADERS.get(name.casefold())
+        if canonical_name and value:
+            request_headers[canonical_name] = value
+    request = urllib.request.Request(url, headers=request_headers)
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         return response.read()
 
@@ -160,15 +174,21 @@ class ThumbnailWorker(QObject):
     finished = Signal(bytes)
     failed = Signal()
 
-    def __init__(self, url: str, fetcher: ThumbnailFetcher = fetch_thumbnail_bytes):
+    def __init__(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        fetcher: ThumbnailFetcher = fetch_thumbnail_bytes,
+    ):
         super().__init__()
         self.url = url
+        self.headers = dict(headers or {})
         self._fetcher = fetcher
 
     @Slot()
     def run(self) -> None:
         try:
-            data = self._fetcher(self.url)
+            data = self._fetcher(self.url, self.headers)
         except (OSError, urllib.error.URLError, ValueError):
             self.failed.emit()
             return

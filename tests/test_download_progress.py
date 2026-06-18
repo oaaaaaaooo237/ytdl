@@ -209,7 +209,7 @@ def test_thumbnail_loader_fetches_image_bytes_without_qt_network(qtbot):
     image_bytes = _png_bytes()
 
     window = MainWindow(
-        thumbnail_fetcher=lambda url: calls.append(url) or image_bytes,
+        thumbnail_fetcher=lambda url, _headers=None: calls.append(url) or image_bytes,
         worker_runner=lambda worker: worker.run(),
     )
     qtbot.addWidget(window)
@@ -228,6 +228,75 @@ def test_thumbnail_loader_fetches_image_bytes_without_qt_network(qtbot):
     assert calls == ["https://img.example.test/thumb.jpg"]
     assert pixmap is not None and not pixmap.isNull()
     assert window.download_page.thumbnail_label.property("hasPreviewOverlay") is True
+
+
+def test_thumbnail_loader_uses_safe_metadata_headers_for_cdn_thumbnails(qtbot):
+    calls: list[tuple[str, dict[str, str]]] = []
+    image_bytes = _png_bytes()
+
+    def fetcher(url: str, headers: dict[str, str] | None = None) -> bytes:
+        calls.append((url, dict(headers or {})))
+        return image_bytes
+
+    window = MainWindow(
+        thumbnail_fetcher=fetcher,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+
+    window.apply_analysis_result(
+        "https://www.pornhub.com/view_video.php?viewkey=abc",
+        {
+            "title": "Demo Video",
+            "duration": 125,
+            "thumbnail": "https://ci.phncdn.com/videos/thumb.jpg",
+            "webpage_url": "https://www.pornhub.com/view_video.php?viewkey=abc",
+            "http_headers": {
+                "User-Agent": "yt-dlp-test-agent",
+                "Referer": "https://www.pornhub.com/",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Cookie": "session=secret",
+                "Authorization": "Bearer secret",
+            },
+            "formats": [{"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}],
+        },
+    )
+
+    assert calls == [
+        (
+            "https://ci.phncdn.com/videos/thumb.jpg",
+            {
+                "User-Agent": "yt-dlp-test-agent",
+                "Referer": "https://www.pornhub.com/",
+                "Accept-Language": "en-US,en;q=0.5",
+            },
+        )
+    ]
+    pixmap = window.download_page.thumbnail_label.pixmap()
+    assert pixmap is not None and not pixmap.isNull()
+
+
+def test_thumbnail_loader_falls_back_to_analysis_url_as_referer(qtbot):
+    calls: list[tuple[str, dict[str, str]]] = []
+    image_bytes = _png_bytes()
+
+    window = MainWindow(
+        thumbnail_fetcher=lambda url, headers=None: calls.append((url, dict(headers or {}))) or image_bytes,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+
+    window.apply_analysis_result(
+        "https://www.pornhub.com/view_video.php?viewkey=abc",
+        {
+            "title": "Demo Video",
+            "duration": 125,
+            "thumbnail": "https://ci.phncdn.com/videos/thumb.jpg",
+            "formats": [{"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}],
+        },
+    )
+
+    assert calls[0][1]["Referer"] == "https://www.pornhub.com/view_video.php?viewkey=abc"
 
 
 def test_successful_single_url_analysis_opens_format_selection(qtbot, app_data_dir: Path):
