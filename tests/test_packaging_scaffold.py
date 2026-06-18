@@ -22,6 +22,8 @@ def test_pyinstaller_spec_bundles_required_assets():
     spec = read_text("packaging/ytdl_gui.spec")
 
     assert 'str(root / "src" / "ytdl_gui" / "main.py")' in spec
+    assert 'str(root / "assets" / "app-icon.ico")' in spec
+    assert 'icon=str(root / "assets" / "app-icon.ico")' in spec
     assert "tools" in spec
     assert "yt-dlp.exe" in spec
     assert '".venv"' in spec
@@ -33,6 +35,18 @@ def test_pyinstaller_spec_bundles_required_assets():
     assert "gui-reference.png" in spec
     assert "PySide6.QtMultimedia" in spec
     assert "windows-app.manifest" in spec
+
+
+def test_app_icon_assets_exist_for_windows_shell():
+    icon = ROOT / "assets" / "app-icon.ico"
+    svg = ROOT / "assets" / "app-icon.svg"
+    png = ROOT / "assets" / "app-icon.png"
+
+    assert icon.is_file()
+    assert svg.is_file()
+    assert png.is_file()
+    assert icon.stat().st_size > 1024
+    assert png.stat().st_size > 1024
 
 
 def test_windows_manifest_requests_per_monitor_dpi_awareness():

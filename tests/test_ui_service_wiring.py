@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -282,15 +283,102 @@ def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Pa
     monkeypatch.setattr(app_module, "MainWindow", FakeWindow)
     monkeypatch.setattr(app_module, "apply_light_theme", lambda app: created.setdefault("theme_applied", True))
     monkeypatch.setattr(app_module, "app_data_dir", lambda: app_data_dir)
+    monkeypatch.setattr(app_module, "configure_application_icon", lambda app, window: created.setdefault("icon_configured", (app, window)))
 
     assert app_module.run() == 0
     assert created["theme_applied"] is True
+    assert created["icon_configured"][0].argv == sys.argv
+    assert isinstance(created["icon_configured"][1], FakeWindow)
     assert created["shown"] is True
     assert created["startup_update_checked"] is True
     assert isinstance(created["config_store"], ConfigStore)
     assert isinstance(created["history_store"], HistoryStore)
     assert created["config_store"].path == app_data_dir / "config.json"
     assert created["history_store"].path == app_data_dir / "history.json"
+
+
+def test_configure_application_icon_sets_window_icon_and_tray(monkeypatch):
+    import ytdl_gui.app as app_module
+
+    events: list[str] = []
+
+    class FakeSignal:
+        def connect(self, _callback):
+            events.append("signal-connected")
+
+    class FakeAction:
+        def __init__(self):
+            self.triggered = FakeSignal()
+
+    class FakeMenu:
+        def __init__(self, _parent=None):
+            events.append("menu-created")
+
+        def addAction(self, text):
+            events.append(f"action:{text}")
+            return FakeAction()
+
+    class FakeTrayIcon:
+        activated = FakeSignal()
+
+        def __init__(self, icon, parent=None):
+            self.icon = icon
+            self.parent = parent
+            events.append("tray-created")
+
+        @staticmethod
+        def isSystemTrayAvailable():
+            return True
+
+        def setToolTip(self, text):
+            events.append(f"tooltip:{text}")
+
+        def setContextMenu(self, _menu):
+            events.append("menu-set")
+
+        def show(self):
+            events.append("tray-shown")
+
+    class FakeIcon:
+        def isNull(self):
+            return False
+
+    class FakeApp:
+        def __init__(self):
+            self.window_icon = None
+
+        def setWindowIcon(self, icon):
+            self.window_icon = icon
+            events.append("app-icon-set")
+
+        def quit(self):
+            events.append("quit")
+
+    class FakeWindow:
+        def __init__(self):
+            self.window_icon = None
+
+        def setWindowIcon(self, icon):
+            self.window_icon = icon
+            events.append("window-icon-set")
+
+    monkeypatch.setattr(app_module, "load_app_icon", lambda: FakeIcon())
+    monkeypatch.setattr(app_module, "QMenu", FakeMenu)
+    monkeypatch.setattr(app_module, "QSystemTrayIcon", FakeTrayIcon)
+
+    app = FakeApp()
+    window = FakeWindow()
+
+    tray = app_module.configure_application_icon(app, window)
+
+    assert tray is getattr(window, "_tray_icon")
+    assert app.window_icon is window.window_icon
+    assert "app-icon-set" in events
+    assert "window-icon-set" in events
+    assert "tooltip:视频地址提取器" in events
+    assert "action:显示主窗口" in events
+    assert "action:退出" in events
+    assert "tray-shown" in events
 
 
 def test_footer_update_button_runs_update_worker_and_updates_config(qtbot, app_data_dir: Path):

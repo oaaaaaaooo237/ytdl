@@ -2,7 +2,7 @@
 
 一个面向 Windows 11 x64 的简洁视频下载 GUI。程序基于 `yt-dlp`，第一阶段以 YouTube 公开视频为核心目标，其他 `yt-dlp` 支持的网站按 best-effort 处理。
 
-当前里程碑版本：`v0.2.0-mvp`
+当前里程碑版本：`v0.2.1-icon`
 
 ## 主要功能
 

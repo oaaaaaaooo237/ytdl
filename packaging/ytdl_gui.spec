@@ -14,6 +14,7 @@ a = Analysis(
         (str(ffmpeg_exe), "tools/ffmpeg/bin"),
     ],
     datas=[
+        (str(root / "assets" / "app-icon.ico"), "assets"),
         (str(root / "licenses" / "THIRD_PARTY_NOTICES.txt"), "licenses"),
         (str(root / "docs" / "gui-reference.png"), "docs"),
     ],
@@ -36,6 +37,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(root / "assets" / "app-icon.ico"),
     manifest=str(root / "packaging" / "windows-app.manifest"),
 )
 coll = COLLECT(

@@ -22,6 +22,10 @@ def resource_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def app_icon_path() -> Path:
+    return resource_root() / "assets" / "app-icon.ico"
+
+
 def bundled_ytdlp_path() -> Path:
     return resource_root() / "tools" / "yt-dlp.exe"
 
