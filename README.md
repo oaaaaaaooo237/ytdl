@@ -1,12 +1,28 @@
-# 视频地址提取器
+<div align="center">
+  <img src="assets/app-icon.png" width="96" alt="视频地址提取器图标" />
 
-[![Release](https://img.shields.io/badge/release-v0.2.2--thumbnail-149A9A)](https://github.com/oaaaaaaooo237/ytdl/releases/tag/v0.2.2-thumbnail)
-![Windows](https://img.shields.io/badge/Windows-11%20x64-2563EB)
-![yt-dlp](https://img.shields.io/badge/engine-yt--dlp-3B82F6)
-![ffmpeg](https://img.shields.io/badge/media-ffmpeg-16A34A)
-![License](https://img.shields.io/badge/license-MIT-111827)
+  <h1>视频地址提取器</h1>
 
-一个 Windows 11 x64 桌面工具，用来输入视频播放地址，分析可用格式，并按用户选择下载音频、视频或音视频合并文件。
+  <p>
+    一个面向 Windows 11 x64 的图形化视频下载工具。输入播放地址，分析可用格式，按需下载音频、视频或音视频合并文件。
+  </p>
+
+  <p>
+    <a href="https://github.com/oaaaaaaooo237/ytdl/releases/tag/v0.2.2-thumbnail">
+      <img alt="Release" src="https://img.shields.io/badge/release-v0.2.2--thumbnail-149A9A" />
+    </a>
+    <img alt="Windows" src="https://img.shields.io/badge/Windows-11%20x64-2563EB" />
+    <img alt="yt-dlp" src="https://img.shields.io/badge/engine-yt--dlp-3B82F6" />
+    <img alt="ffmpeg" src="https://img.shields.io/badge/media-ffmpeg-16A34A" />
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-111827" />
+  </p>
+
+  <p>
+    <a href="https://github.com/oaaaaaaooo237/ytdl/releases">下载 Release</a>
+    ·
+    <a href="docs/superpowers/specs/2026-05-30-ytdl-gui-design.md">查看设计</a>
+  </p>
+</div>
 
 ## 特色
 
