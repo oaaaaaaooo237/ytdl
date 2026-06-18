@@ -4,10 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ytdl-gui"
-version = "0.1.0"
+version = "0.2.0"
 description = "Win11 desktop GUI for YouTube-first yt-dlp downloads"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = ["PySide6==6.8.1.1"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

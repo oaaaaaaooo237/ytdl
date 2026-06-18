@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.0.0.0" processorArchitecture="*" name="YTDL.GUI" type="win32" />
-  <description>YTDL GUI</description>
+  <assemblyIdentity version="0.2.0.0" processorArchitecture="*" name="YTDL.GUI" type="win32" />
+  <description>YTDL GUI 0.2.0 MVP</description>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity
