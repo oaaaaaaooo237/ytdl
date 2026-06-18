@@ -1,4 +1,4 @@
-from ytdl_gui.format_selector import FormatPreference, choose_format
+from ytdl_gui.format_selector import FormatPreference, available_resolution_values, choose_format
 from ytdl_gui.subtitles import choose_subtitle_language, subtitle_action_requires_ffmpeg
 from ytdl_gui.ytdlp_runner import AnalysisFailureKind, categorize_analysis_error, extract_playlist_urls, playlist_limit_message
 
@@ -26,6 +26,44 @@ def test_auto_format_picks_highest_single_file():
 
     assert result.format_id == "22"
     assert result.relaxed == []
+
+
+def test_audio_video_prefers_single_file_for_selected_360p_when_available():
+    formats = [
+        {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1.42001E", "acodec": "mp4a.40.2", "fps": 30},
+        {"format_id": "134", "height": 360, "ext": "mp4", "vcodec": "avc1.4d401e", "acodec": "none", "fps": 30},
+        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129},
+    ]
+
+    result = choose_format(formats, FormatPreference(resolution=360, container="mp4"))
+
+    assert result.format_id == "18"
+    assert result.requires_ffmpeg_merge is False
+
+
+def test_audio_video_can_merge_high_resolution_video_with_best_audio():
+    formats = [
+        {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1.42001E", "acodec": "mp4a.40.2", "fps": 30},
+        {"format_id": "299", "height": 1080, "ext": "mp4", "vcodec": "avc1.64002a", "acodec": "none", "fps": 60},
+        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129},
+    ]
+
+    result = choose_format(formats, FormatPreference(resolution=1080, container="mp4"))
+
+    assert result.format_id == "299+140"
+    assert result.requires_ffmpeg_merge is True
+    assert result.relaxed == []
+    assert "1080p mp4 avc1.64002a + 音频 m4a mp4a.40.2 129kbps 60fps" == result.actual_summary
+
+
+def test_audio_video_available_resolutions_include_video_only_when_audio_exists():
+    formats = [
+        {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1.42001E", "acodec": "mp4a.40.2", "fps": 30},
+        {"format_id": "299", "height": 1080, "ext": "mp4", "vcodec": "avc1.64002a", "acodec": "none", "fps": 60},
+        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129},
+    ]
+
+    assert available_resolution_values(formats, "audio_video") == {360, 1080}
 
 
 def test_choose_format_relaxes_container_when_no_container_match():
@@ -132,22 +170,16 @@ def test_choose_format_treats_non_finite_numeric_strings_as_zero():
     assert result.format_id == "good"
 
 
-def test_choose_format_reports_chinese_error_when_no_single_file_format():
+def test_choose_format_can_select_split_audio_video_when_no_single_file_format():
     formats = [
         {"format_id": "137", "height": 1080, "ext": "mp4", "vcodec": "avc1", "acodec": "none", "fps": 30},
         {"format_id": "140", "height": None, "ext": "m4a", "vcodec": "none", "acodec": "mp4a"},
     ]
 
-    try:
-        choose_format(formats, FormatPreference())
-    except ValueError as exc:
-        message = str(exc)
-    else:
-        raise AssertionError("expected ValueError")
+    result = choose_format(formats, FormatPreference())
 
-    assert message == "没有可用的单文件格式"
-    assert "æ" not in message
-    assert "�" not in message
+    assert result.format_id == "137+140"
+    assert result.requires_ffmpeg_merge is True
 
 
 def test_choose_format_can_select_audio_only():
@@ -189,7 +221,7 @@ def test_choose_format_rejects_formats_missing_codec_metadata():
     else:
         raise AssertionError("expected ValueError")
 
-    assert message == "没有可用的单文件格式"
+    assert message == "没有可用的视频+音频格式"
 
 
 def test_choose_format_reports_chinese_error_when_format_id_missing():

@@ -36,6 +36,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    manifest=str(root / "packaging" / "windows-app.manifest"),
 )
 coll = COLLECT(
     exe,

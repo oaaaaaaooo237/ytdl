@@ -4,9 +4,8 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QSize, Qt, QThread, QUrl
+from PySide6.QtCore import QObject, QSize, Qt, QThread, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QPixmap
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -28,7 +27,7 @@ from PySide6.QtWidgets import (
 from ytdl_gui.config_store import AppConfig
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
-from ytdl_gui.format_selector import FormatPreference, choose_format
+from ytdl_gui.format_selector import FormatPreference, available_resolution_values, choose_format
 from ytdl_gui.history_store import HistoryRecord
 from ytdl_gui.paths import bundled_ytdlp_path, local_ffmpeg_candidates, resource_root
 from ytdl_gui.subtitles import subtitle_action_requires_ffmpeg
@@ -49,9 +48,23 @@ from ytdl_gui.workers import (
     PlaylistProbeWorker,
     PreviewUrlRequest,
     PreviewUrlWorker,
+    ThumbnailWorker,
+    fetch_thumbnail_bytes,
 )
 from ytdl_gui.workers import YtdlpUpdateRequest, YtdlpUpdateRunner, YtdlpUpdateWorker
 from ytdl_gui.ytdlp_runner import ProgressEvent, extract_playlist_urls, playlist_limit_message
+
+
+class _UiCallDispatcher(QObject):
+    call_requested = Signal(object)
+
+    def __init__(self, parent: QObject):
+        super().__init__(parent)
+        self.call_requested.connect(self._run, Qt.ConnectionType.QueuedConnection)
+
+    @Slot(object)
+    def _run(self, callback) -> None:
+        callback()
 
 
 NAV_ITEMS = [
@@ -80,11 +93,13 @@ class MainWindow(QWidget):
         preview_runner=None,
         playlist_probe_runner=None,
         ytdlp_update_runner: YtdlpUpdateRunner | None = None,
+        thumbnail_fetcher=None,
         worker_runner: Callable[[object], object] | None = None,
         save_folder_picker: Callable[[], str] | None = None,
         confirmation_dialog: Callable[[QWidget, str, str], bool] | None = None,
         ):
         super().__init__()
+        self._ui_dispatcher = _UiCallDispatcher(self)
         self.setWindowTitle("视频地址提取器")
         self.resize(590, 883)
         self.setMinimumSize(488, 760)
@@ -115,10 +130,10 @@ class MainWindow(QWidget):
         self._preview_runner = preview_runner
         self._playlist_probe_runner = playlist_probe_runner
         self._ytdlp_update_runner = ytdlp_update_runner
+        self._thumbnail_fetcher = thumbnail_fetcher or fetch_thumbnail_bytes
         self._worker_runner = worker_runner or self._run_worker_in_thread
         self._save_folder_picker = save_folder_picker
         self._confirmation_dialog = confirmation_dialog or self._ask_confirmation
-        self._network_manager = QNetworkAccessManager(self)
 
         self.nav = self._build_navigation()
 
@@ -417,6 +432,11 @@ class MainWindow(QWidget):
         self.download_page.analyze_button.clicked.connect(self.start_analysis)
         self.download_page.save_folder_button.clicked.connect(self.choose_save_folder)
         self.download_page.start_button.clicked.connect(self.start_download)
+        self.download_page.audio_quality_button.clicked.connect(self.open_format_selection)
+        self.download_page.video_quality_button.clicked.connect(self.open_format_selection)
+
+    def open_format_selection(self) -> None:
+        self.nav.setCurrentRow(1)
 
     def connect_history_actions(self) -> None:
         self.history_page.clear_button.clicked.connect(self.clear_history)
@@ -435,6 +455,102 @@ class MainWindow(QWidget):
 
     def connect_format_actions(self) -> None:
         self.formats_page.subtitle_combo.currentTextChanged.connect(self.validate_subtitle_option)
+        for index, button in enumerate(self.formats_page.mode_buttons):
+            button.clicked.connect(lambda _checked=False, current=index: self.set_download_mode(current))
+        self.download_page.mode_combo.currentIndexChanged.connect(self.formats_page.set_mode_index)
+        self.formats_page.apply_button.clicked.connect(self.apply_format_selection)
+        self.formats_page.reset_button.clicked.connect(self.reset_format_selection)
+
+    def set_download_mode(self, index: int) -> None:
+        self.download_page.mode_combo.setCurrentIndex(index)
+        self.formats_page.set_mode_index(index)
+        self._refresh_current_format_controls(update_download_summary=True)
+
+    def apply_format_selection(self) -> None:
+        video_quality = self._format_summary_label(self.formats_page.resolution_combo.currentText())
+        audio_quality = self._format_summary_label(self.formats_page.audio_bitrate_combo.currentText())
+        subtitle_behavior = self.formats_page.subtitle_combo.currentText()
+        actual_summary = ""
+        relaxed_preferences: list[str] = []
+        formats = self.analyzed_metadata.get("formats") if isinstance(self.analyzed_metadata.get("formats"), list) else []
+        if formats:
+            try:
+                choice = choose_format(formats, self._format_preference())
+            except ValueError as exc:
+                self.download_page.set_status(f"没有可直接下载的格式：{exc}")
+                self.nav.setCurrentRow(0)
+                return
+            self.selected_format_id = choice.format_id
+            self.selected_format_summary = choice.actual_summary
+            actual_summary = choice.actual_summary
+            relaxed_preferences = choice.relaxed
+            self.formats_page.load_available_formats(formats, choice.format_id, choice.actual_summary)
+            self.formats_page.set_merge_hint_visible(choice.requires_ffmpeg_merge)
+            self._apply_available_resolution_controls(formats, choice.actual_summary)
+            self.download_page.format_summary_label.setText(f"格式：{choice.actual_summary}")
+            video_quality = _video_quality_from_summary(choice.actual_summary, fallback=video_quality)
+            audio_quality = _audio_quality_from_summary(choice.actual_summary, fallback=audio_quality)
+        else:
+            self.formats_page.set_merge_hint_visible(False)
+        self.download_page.video_quality_button.setText(video_quality)
+        self.download_page.audio_quality_button.setText(audio_quality)
+        status = f"格式选择已应用：{self.download_page.mode_combo.currentText()}，字幕：{subtitle_behavior}。"
+        tooltip = (
+            f"格式选择已应用：{self.download_page.mode_combo.currentText()}，"
+            f"视频：{video_quality}，音频：{audio_quality}，字幕：{subtitle_behavior}。"
+        )
+        if relaxed_preferences:
+            status += _relaxed_format_message(relaxed_preferences)
+            tooltip += _relaxed_format_message(relaxed_preferences)
+        if formats and choice.requires_ffmpeg_merge:
+            merge_message = _ffmpeg_merge_message()
+            status += merge_message
+            tooltip += merge_message
+        if actual_summary:
+            tooltip += f"实际格式：{actual_summary}。"
+        status += "可以开始下载。"
+        tooltip += "可以开始下载。"
+        self.download_page.set_status(status, tooltip=tooltip)
+        self.nav.setCurrentRow(0)
+
+    def reset_format_selection(self) -> None:
+        self.set_download_mode(0)
+        self.formats_page.resolution_combo.setCurrentText("自动")
+        self.formats_page.fps_combo.setCurrentText("自动")
+        self.formats_page.codec_combo.setCurrentText("自动")
+        self.formats_page.video_bitrate_combo.setCurrentText("自动")
+        self.formats_page.audio_bitrate_combo.setCurrentText("自动")
+        self.formats_page.container_combo.setCurrentText("自动")
+        self.formats_page.subtitle_combo.setCurrentText("不下载")
+        self.formats_page.format_id_combo.setCurrentText("自动")
+        self.formats_page.set_actual_format_summary("自动")
+        self.apply_format_selection()
+
+    @staticmethod
+    def _format_summary_label(value: str) -> str:
+        return "最佳质量" if value.strip() == "自动" else value.strip()
+
+    def _refresh_current_format_controls(self, update_download_summary: bool = False) -> None:
+        formats = self.analyzed_metadata.get("formats") if isinstance(self.analyzed_metadata.get("formats"), list) else []
+        if not formats:
+            return
+        try:
+            choice = choose_format(formats, self._format_preference())
+        except ValueError:
+            self.formats_page.set_merge_hint_visible(False)
+            return
+        self.selected_format_id = choice.format_id
+        self.selected_format_summary = choice.actual_summary
+        self.formats_page.load_available_formats(formats, choice.format_id, choice.actual_summary)
+        self.formats_page.set_merge_hint_visible(choice.requires_ffmpeg_merge)
+        self._apply_available_resolution_controls(formats, choice.actual_summary)
+        if update_download_summary:
+            self.download_page.format_summary_label.setText(f"格式：{choice.actual_summary}")
+
+    def _apply_available_resolution_controls(self, formats: list[dict], actual_summary: str) -> None:
+        values = available_resolution_values(formats, self._format_preference().download_mode)
+        selected = _resolution_from_summary(actual_summary) or "自动"
+        self.formats_page.set_available_resolutions(values, selected)
 
     def connect_about_actions(self) -> None:
         self.about_page.legal_button.clicked.connect(self.open_legal_notices)
@@ -575,17 +691,22 @@ class MainWindow(QWidget):
         except ValueError as exc:
             self.selected_format_id = ""
             self.selected_format_summary = ""
+            self.formats_page.set_merge_hint_visible(False)
             self.download_page.set_status(f"分析完成，但没有可直接下载的格式：{exc}")
             return
 
         self.selected_format_id = choice.format_id
         self.selected_format_summary = choice.actual_summary
         title = str(metadata.get("title") or "未命名视频")
-        self.formats_page.load_available_formats(formats, choice.format_id)
+        self.formats_page.load_available_formats(formats, choice.format_id, choice.actual_summary)
+        self.formats_page.set_merge_hint_visible(choice.requires_ffmpeg_merge)
+        self._apply_available_resolution_controls(formats, choice.actual_summary)
         self.download_page.show_analysis_result(title, _duration_text(metadata.get("duration")), choice.actual_summary)
         self._load_thumbnail(_thumbnail_url(metadata))
         self.download_page.reset_analysis_action()
-        self.download_page.set_status(_analysis_success_status(choice.relaxed))
+        self.download_page.set_status(_analysis_success_status(choice.relaxed, choice.requires_ffmpeg_merge))
+        if len(self._all_urls()) <= 1:
+            self.open_format_selection()
 
     def show_analysis_error(self, message: str, url: str | None = None) -> None:
         if message == "playlist_confirmation_needed" and url:
@@ -725,6 +846,11 @@ class MainWindow(QWidget):
         for url, metadata in analyzed_items:
             if self._start_download_for_analysis(url, metadata, allow_preview=started == 0):
                 started += 1
+        if started:
+            message = f"已添加 {started} 个下载任务，正在队列页显示进度。"
+            self.queue_page.show_notice(message)
+            self.download_page.set_status(message)
+            self.nav.setCurrentRow(2)
 
     def _start_download_for_analysis(self, url: str, metadata: dict, allow_preview: bool) -> bool:
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
@@ -740,6 +866,10 @@ class MainWindow(QWidget):
             choice_format_id = choice.format_id
         subtitle_action = _subtitle_action_value(self.formats_page.subtitle_combo.currentText())
         ffmpeg_path = self._configured_ffmpeg_path()
+        if choice.requires_ffmpeg_merge and ffmpeg_path is None:
+            self.about_page.show_ffmpeg_missing_baseline()
+            self.download_page.set_status("此分辨率需要 ffmpeg 合并音频和视频；请先在设置中搜索或选择 ffmpeg.exe。")
+            return False
         if subtitle_action_requires_ffmpeg(subtitle_action) and ffmpeg_path is None:
             self.about_page.show_ffmpeg_missing_baseline()
             self.download_page.set_status("嵌入或烧录字幕需要 ffmpeg；请先在设置中搜索或选择 ffmpeg.exe。")
@@ -839,22 +969,43 @@ class MainWindow(QWidget):
         worker.failed.connect(lambda message, task=task_id: self.fail_download(task, message))
         self._worker_runner(worker)
 
+    def _is_ui_thread(self) -> bool:
+        return QThread.currentThread() == self.thread()
+
+    def _run_on_ui_thread(self, callback) -> None:
+        if self._is_ui_thread():
+            callback()
+            return
+        self._ui_dispatcher.call_requested.emit(callback)
+
     def update_download_progress(self, task_id: str, event: ProgressEvent) -> None:
+        if not self._is_ui_thread():
+            self._run_on_ui_thread(lambda task_id=task_id, event=event: self.update_download_progress(task_id, event))
+            return
         if event.percent is None:
             return
         self.queue_page.update_task(task_id, status="下载中", progress=event.percent, speed=event.speed, eta=event.eta)
 
     def finish_download(self, task_id: str, output_path: str = "") -> None:
+        if not self._is_ui_thread():
+            self._run_on_ui_thread(lambda task_id=task_id, output_path=output_path: self.finish_download(task_id, output_path))
+            return
         self._download_workers_by_task.pop(task_id, None)
         self._download_task_states[task_id] = "finished"
         if output_path:
             self._download_context_by_task.setdefault(task_id, {})["output_path"] = output_path
         self.queue_page.update_task(task_id, status="已完成", progress=100.0, speed="", eta="00:00")
         self.download_page.set_status("下载完成。")
-        self.record_finished_download(task_id)
+        try:
+            self.record_finished_download(task_id)
+        except Exception:
+            self.download_page.set_status("下载完成，但历史记录写入失败。")
         self._start_ready_download_workers()
 
     def fail_download(self, task_id: str, message: str) -> None:
+        if not self._is_ui_thread():
+            self._run_on_ui_thread(lambda task_id=task_id, message=message: self.fail_download(task_id, message))
+            return
         self._download_workers_by_task.pop(task_id, None)
         state = self._download_task_states.get(task_id, "")
         if state == "cancel_requested":
@@ -1056,17 +1207,15 @@ class MainWindow(QWidget):
     def _load_thumbnail(self, url: str) -> None:
         if not url:
             return
-        reply = self._network_manager.get(QNetworkRequest(QUrl(url)))
-        reply.finished.connect(lambda reply=reply: self._apply_thumbnail_reply(reply))
+        worker = ThumbnailWorker(url, self._thumbnail_fetcher)
+        worker.finished.connect(self._apply_thumbnail_data)
+        worker.failed.connect(lambda: self.download_page.thumbnail_label.setText("预览图"))
+        self._worker_runner(worker)
 
-    def _apply_thumbnail_reply(self, reply) -> None:
-        try:
-            data = bytes(reply.readAll())
-            pixmap = QPixmap()
-            if pixmap.loadFromData(data):
-                self.download_page.set_thumbnail(pixmap)
-        finally:
-            reply.deleteLater()
+    def _apply_thumbnail_data(self, data: bytes) -> None:
+        pixmap = QPixmap()
+        if pixmap.loadFromData(data):
+            self.download_page.set_thumbnail(pixmap)
 
 
 def _duration_text(value: object) -> str:
@@ -1091,11 +1240,40 @@ _RELAXED_PREFERENCE_LABELS = {
 }
 
 
-def _analysis_success_status(relaxed_preferences: list[str]) -> str:
+def _analysis_success_status(relaxed_preferences: list[str], requires_ffmpeg_merge: bool = False) -> str:
+    relaxed_message = _relaxed_format_message(relaxed_preferences)
+    merge_message = _ffmpeg_merge_message() if requires_ffmpeg_merge else ""
+    if relaxed_message:
+        return f"分析完成，{relaxed_message}{merge_message}请在格式页确认分辨率、码率后开始下载。"
+    return f"分析完成，{merge_message}请在格式页确认分辨率、码率后开始下载。"
+
+
+def _relaxed_format_message(relaxed_preferences: list[str]) -> str:
     labels = [_RELAXED_PREFERENCE_LABELS.get(key, key) for key in relaxed_preferences]
-    if labels:
-        return f"分析完成，已放宽：{'、'.join(labels)}。可以开始下载。"
-    return "分析完成，可以开始下载。"
+    return f"已放宽：{'、'.join(labels)}。" if labels else ""
+
+
+def _ffmpeg_merge_message() -> str:
+    return "将使用 ffmpeg 合并音频和视频。"
+
+
+def _video_quality_from_summary(summary: str, fallback: str) -> str:
+    resolution = _resolution_from_summary(summary)
+    return resolution or fallback
+
+
+def _resolution_from_summary(summary: str) -> str:
+    first_token = summary.split(" ", 1)[0].strip()
+    if first_token.endswith("p") and first_token[:-1].isdigit():
+        return first_token
+    return ""
+
+
+def _audio_quality_from_summary(summary: str, fallback: str) -> str:
+    parts = summary.split()
+    if len(parts) >= 4 and parts[-1].endswith("kbps"):
+        return parts[-1].removesuffix("bps")
+    return fallback
 
 
 def _thumbnail_url(metadata: dict) -> str:
@@ -1104,6 +1282,11 @@ def _thumbnail_url(metadata: dict) -> str:
         return thumbnail
     thumbnails = metadata.get("thumbnails")
     if isinstance(thumbnails, list):
+        for item in reversed(thumbnails):
+            if isinstance(item, dict) and isinstance(item.get("url"), str):
+                url = item["url"]
+                if not url.casefold().split("?", 1)[0].endswith(".webp"):
+                    return url
         for item in reversed(thumbnails):
             if isinstance(item, dict) and isinstance(item.get("url"), str):
                 return item["url"]

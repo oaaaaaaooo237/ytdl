@@ -1,6 +1,8 @@
 import json
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +12,7 @@ from uuid import uuid4
 from PySide6.QtCore import QObject, Signal, Slot
 
 from ytdl_gui.ffmpeg import FfmpegStatus, find_ffmpeg
+from ytdl_gui.subprocess_utils import hidden_window_kwargs
 from ytdl_gui.update_manager import UpdateOutcome, download_and_install_latest_ytdlp
 from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error, parse_progress_line
 
@@ -70,6 +73,7 @@ class AnalysisWorker(QObject):
                 text=True,
                 timeout=self.request.timeout_seconds,
                 check=False,
+                **hidden_window_kwargs(),
             )
         except subprocess.TimeoutExpired:
             self.failed.emit(AnalysisFailureKind.NETWORK_TIMEOUT.value)
@@ -125,6 +129,7 @@ class PlaylistProbeWorker(QObject):
                 text=True,
                 timeout=self.request.timeout_seconds,
                 check=False,
+                **hidden_window_kwargs(),
             )
         except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
             self.failed.emit(AnalysisFailureKind.UNKNOWN_YTDLP_FAILURE.value)
@@ -140,6 +145,37 @@ class PlaylistProbeWorker(QObject):
             return
 
         self.finished.emit(payload)
+
+
+ThumbnailFetcher = Callable[[str], bytes]
+
+
+def fetch_thumbnail_bytes(url: str, timeout_seconds: int = 20) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        return response.read()
+
+
+class ThumbnailWorker(QObject):
+    finished = Signal(bytes)
+    failed = Signal()
+
+    def __init__(self, url: str, fetcher: ThumbnailFetcher = fetch_thumbnail_bytes):
+        super().__init__()
+        self.url = url
+        self._fetcher = fetcher
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            data = self._fetcher(self.url)
+        except (OSError, urllib.error.URLError, ValueError):
+            self.failed.emit()
+            return
+        if data:
+            self.finished.emit(data)
+        else:
+            self.failed.emit()
 
 
 @dataclass(frozen=True)
@@ -203,6 +239,7 @@ class DownloadWorker(QObject):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                **hidden_window_kwargs(),
             )
         except OSError:
             self.failed.emit("启动 yt-dlp 下载失败，请检查 yt-dlp 路径。")
@@ -265,6 +302,7 @@ class DownloadWorker(QObject):
                 text=True,
                 check=False,
                 cwd=str(safe_subtitle_path.parent),
+                **hidden_window_kwargs(),
             )
         except (OSError, subprocess.SubprocessError):
             self.failed.emit(BURN_FAILURE_MESSAGE)
@@ -403,6 +441,7 @@ class PreviewUrlWorker(QObject):
                 text=True,
                 timeout=self.request.timeout_seconds,
                 check=False,
+                **hidden_window_kwargs(),
             )
         except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
             self.failed.emit("预览不可用")

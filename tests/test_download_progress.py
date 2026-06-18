@@ -1,9 +1,13 @@
 import os
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QThread
+from PySide6.QtGui import QColor, QImage
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryStore
@@ -18,6 +22,22 @@ def test_parse_ytdlp_progress_line():
     event = parse_progress_line(line)
 
     assert event == ProgressEvent(percent=42.3, speed="1.23MiB/s", eta="00:10", raw=line)
+
+
+def test_parse_ytdlp_progress_line_without_eta():
+    line = "[download] 100% of 49.55MiB in 00:00:10 at 4.91MiB/s"
+
+    event = parse_progress_line(line)
+
+    assert event == ProgressEvent(percent=100.0, speed="4.91MiB/s", eta="", raw=line)
+
+
+def test_parse_ytdlp_fragment_progress_line():
+    line = "[download]  12.3% of ~1.43GiB at 2.34MiB/s ETA 05:12 (frag 3/88)"
+
+    event = parse_progress_line(line)
+
+    assert event == ProgressEvent(percent=12.3, speed="2.34MiB/s", eta="05:12", raw=line)
 
 
 def test_parse_non_progress_line_keeps_raw():
@@ -86,6 +106,8 @@ def test_analysis_entry_uses_injected_runner_and_saves_metadata(qtbot, app_data_
     assert window.download_page.duration_label.text() == "时长：02:05"
     assert window.download_page.format_summary_label.text() == "格式：720p mp4 avc1/mp4a 30fps"
     assert window.formats_page.format_id_combo.currentText() == "22"
+    assert window.formats_page.format_id_combo.isHidden()
+    assert window.formats_page.actual_format_label.text() == "720p mp4 avc1/mp4a 30fps"
 
 
 def test_analysis_respects_audio_only_mode(qtbot, app_data_dir: Path):
@@ -168,6 +190,157 @@ def test_thumbnail_url_prefers_direct_thumbnail_then_highest_list_entry():
         _thumbnail_url({"thumbnails": [{"url": "https://example.test/small.jpg"}, {"url": "https://example.test/large.jpg"}]})
         == "https://example.test/large.jpg"
     )
+    assert (
+        _thumbnail_url(
+            {
+                "thumbnails": [
+                    {"url": "https://example.test/small.jpg"},
+                    {"url": "https://example.test/hq720.jpg"},
+                    {"url": "https://example.test/maxresdefault.webp"},
+                ]
+            }
+        )
+        == "https://example.test/hq720.jpg"
+    )
+
+
+def test_thumbnail_loader_fetches_image_bytes_without_qt_network(qtbot):
+    calls: list[str] = []
+    image_bytes = _png_bytes()
+
+    window = MainWindow(
+        thumbnail_fetcher=lambda url: calls.append(url) or image_bytes,
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "duration": 125,
+            "thumbnail": "https://img.example.test/thumb.jpg",
+            "formats": [{"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}],
+        },
+    )
+
+    pixmap = window.download_page.thumbnail_label.pixmap()
+    assert calls == ["https://img.example.test/thumb.jpg"]
+    assert pixmap is not None and not pixmap.isNull()
+    assert window.download_page.thumbnail_label.property("hasPreviewOverlay") is True
+
+
+def test_successful_single_url_analysis_opens_format_selection(qtbot, app_data_dir: Path):
+    config = ConfigStore(app_data_dir)
+    config.save(AppConfig(active_ytdlp_path="D:/tools/yt-dlp.exe"))
+    window = MainWindow(
+        config_store=config,
+        history_store=HistoryStore(app_data_dir),
+        worker_runner=lambda worker: worker.run(),
+    )
+    qtbot.addWidget(window)
+    window.download_page.url_input.setPlainText("https://example.test/watch?v=1")
+
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "duration": 30,
+            "formats": [{"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30}],
+        },
+    )
+
+    assert window.nav.currentRow() == 1
+    assert "格式" in window.download_page.status_label.text()
+
+
+def test_quality_buttons_open_format_selection(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.download_page.audio_quality_button.click()
+    assert window.nav.currentRow() == 1
+
+    window.nav.setCurrentRow(0)
+    window.download_page.video_quality_button.click()
+    assert window.nav.currentRow() == 1
+
+
+def test_start_download_announces_queued_task_and_opens_queue(qtbot, app_data_dir: Path):
+    started_downloads: list[DownloadWorker] = []
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
+    config = ConfigStore(app_data_dir)
+    config.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe"))
+
+    def worker_runner(worker):
+        if isinstance(worker, DownloadWorker):
+            started_downloads.append(worker)
+            return
+        worker.run()
+
+    window = MainWindow(
+        config_store=config,
+        history_store=HistoryStore(app_data_dir),
+        worker_runner=worker_runner,
+    )
+    qtbot.addWidget(window)
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "duration": 125,
+            "formats": [
+                {
+                    "format_id": "22",
+                    "height": 720,
+                    "ext": "mp4",
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                    "fps": 30,
+                }
+            ],
+        },
+    )
+
+    window.download_page.start_button.click()
+
+    assert len(started_downloads) == 1
+    assert window.queue_page.table.rowCount() == 1
+    assert window.nav.currentRow() == 2
+    assert "已添加 1 个下载任务" in window.queue_page.notice_label.text()
+    assert "正在队列页显示进度" in window.download_page.status_label.text()
+
+
+def test_format_page_mode_buttons_sync_download_type(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.formats_page.mode_buttons[1].click()
+    assert window.download_page.mode_combo.currentText() == "仅音频"
+    assert window.download_page.audio_checkbox.isChecked()
+    assert not window.download_page.video_checkbox.isChecked()
+
+    window.formats_page.mode_buttons[0].click()
+    assert window.download_page.mode_combo.currentText() == "音频+视频"
+    assert window.download_page.audio_checkbox.isChecked()
+    assert window.download_page.video_checkbox.isChecked()
+
+
+def test_apply_format_selection_updates_download_page_summary(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.formats_page.resolution_combo.setCurrentText("1080p")
+    window.formats_page.audio_bitrate_combo.setCurrentText("192k")
+    window.formats_page.subtitle_combo.setCurrentText("烧录")
+    window.formats_page.apply_button.click()
+
+    assert window.nav.currentRow() == 0
+    assert window.download_page.video_quality_button.text() == "1080p"
+    assert window.download_page.audio_quality_button.text() == "192k"
+    assert "字幕：烧录" in window.download_page.status_label.text()
+    assert "可以开始下载" in window.download_page.status_label.text()
 
 
 def test_start_download_uses_injected_popen_updates_queue_and_history(qtbot, app_data_dir: Path):
@@ -305,6 +478,64 @@ def test_finished_download_history_uses_actual_output_path(qtbot, app_data_dir: 
     assert "%(title)s" not in records[0].output_path
 
 
+def test_finish_download_survives_history_write_failure(qtbot, app_data_dir: Path):
+    class FailingHistoryStore:
+        path = app_data_dir / "history.json"
+
+        def add(self, record):
+            raise OSError("disk full")
+
+        def list(self):
+            return []
+
+    output_file = app_data_dir / "downloads" / "Demo Video.mp4"
+    output_file.parent.mkdir()
+    output_file.write_bytes(b"x")
+    window = MainWindow(history_store=FailingHistoryStore())
+    qtbot.addWidget(window)
+    task_id = "task-history-failure"
+    window.queue_page.add_task(task_id, "Demo Video")
+    window._download_context_by_task[task_id] = {
+        "title": "Demo Video",
+        "url": "https://example.test/watch?v=1",
+        "output_path": str(output_file),
+    }
+
+    window.finish_download(task_id, str(output_file))
+    qtbot.wait(20)
+
+    assert window._download_task_states[task_id] == "finished"
+    assert window.queue_page.table.item(0, 2).text() == "100.0%"
+    assert "history" not in window.download_page.status_label.text().lower()
+
+
+def test_finish_download_called_from_worker_thread_updates_ui_on_main_thread(qtbot, app_data_dir: Path):
+    output_file = app_data_dir / "downloads" / "Demo Video.mp4"
+    output_file.parent.mkdir()
+    output_file.write_bytes(b"x")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    task_id = "task-thread-finish"
+    window.queue_page.add_task(task_id, "Demo Video")
+    update_threads: list[bool] = []
+    original_update_task = window.queue_page.update_task
+
+    def capture_update_task(*args, **kwargs):
+        update_threads.append(QThread.currentThread() == window.thread())
+        original_update_task(*args, **kwargs)
+
+    window.queue_page.update_task = capture_update_task
+    worker_thread = threading.Thread(target=lambda: window.finish_download(task_id, str(output_file)))
+
+    worker_thread.start()
+    worker_thread.join(timeout=2)
+
+    assert not worker_thread.is_alive()
+    qtbot.waitUntil(lambda: window._download_task_states.get(task_id) == "finished", timeout=1000)
+    assert update_threads
+    assert all(update_threads)
+
+
 def test_start_download_rejects_missing_output_folder_before_starting_worker(qtbot, app_data_dir: Path):
     missing_folder = app_data_dir / "missing-downloads"
     messages: list[tuple[str, str]] = []
@@ -333,6 +564,46 @@ def test_start_download_rejects_missing_output_folder_before_starting_worker(qtb
     assert window.queue_page.table.rowCount() == 0
     assert messages == [("保存位置不可用", "保存文件夹不存在或不可写，请重新选择保存位置。")]
     assert "保存位置不可用" in window.download_page.status_label.text()
+
+
+def test_start_download_rejects_split_audio_video_when_ffmpeg_missing(qtbot, app_data_dir: Path, monkeypatch):
+    monkeypatch.setattr("ytdl_gui.ui.main_window.local_ffmpeg_candidates", lambda *args, **kwargs: [])
+    started_downloads: list[DownloadWorker] = []
+    download_dir = app_data_dir / "downloads"
+    download_dir.mkdir()
+    config = ConfigStore(app_data_dir)
+    config.save(AppConfig(default_save_dir=str(download_dir), active_ytdlp_path="D:/tools/yt-dlp.exe", ffmpeg_path=""))
+
+    def worker_runner(worker):
+        if isinstance(worker, DownloadWorker):
+            started_downloads.append(worker)
+            return
+        worker.run()
+
+    window = MainWindow(
+        config_store=config,
+        history_store=HistoryStore(app_data_dir),
+        worker_runner=worker_runner,
+    )
+    qtbot.addWidget(window)
+    window.formats_page.resolution_combo.setCurrentText("1080p")
+    window.apply_analysis_result(
+        "https://example.test/watch?v=1",
+        {
+            "title": "Demo Video",
+            "formats": [
+                {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "fps": 30},
+                {"format_id": "299", "height": 1080, "ext": "mp4", "vcodec": "avc1.64002a", "acodec": "none", "fps": 60},
+                {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129},
+            ],
+        },
+    )
+
+    window.start_download()
+
+    assert started_downloads == []
+    assert window.queue_page.table.rowCount() == 0
+    assert "需要 ffmpeg 合并音频和视频" in window.download_page.status_label.text()
 
 
 def test_batch_urls_analyze_and_download_each_url(qtbot, app_data_dir: Path):
@@ -531,3 +802,13 @@ def test_start_download_with_burn_subtitle_starts_real_worker_when_ffmpeg_config
     assert started_downloads[0].request.ffmpeg_path.name == "ffmpeg.exe"
     assert started_downloads[0].request.ffmpeg_path.exists()
     assert "尚未实现" not in window.download_page.status_label.text()
+
+
+def _png_bytes() -> bytes:
+    image = QImage(64, 36, QImage.Format.Format_RGB32)
+    image.fill(QColor("#336699"))
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "PNG")
+    return bytes(data)

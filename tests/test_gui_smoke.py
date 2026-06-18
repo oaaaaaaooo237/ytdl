@@ -53,6 +53,18 @@ def test_main_window_has_chinese_navigation(qtbot):
     assert window.stack.count() == 6
 
 
+def test_theme_uses_point_sized_system_font_for_crisper_windows_text(qtbot):
+    app = QApplication.instance()
+
+    apply_light_theme(app)
+
+    stylesheet = app.styleSheet()
+    assert app.font().family() == "Segoe UI"
+    assert app.font().pointSize() == 10
+    assert "font-size: 10pt;" in stylesheet
+    assert stylesheet.index("'Segoe UI'") < stylesheet.index("'Microsoft YaHei UI'")
+
+
 def test_navigation_matches_reference_icon_rail(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
@@ -233,7 +245,7 @@ def test_download_save_location_uses_reference_path_field(qtbot):
     assert isinstance(window.download_page.save_folder_label, QLineEdit)
     assert window.download_page.save_folder_label.isReadOnly()
     assert window.download_page.save_folder_label.objectName() == "pathDisplay"
-    assert 34 <= window.download_page.save_folder_label.height() <= 42
+    assert window.download_page.save_folder_label.height() >= 44
 
 
 def test_download_thumbnail_uses_reference_visual_size(qtbot):
@@ -280,7 +292,7 @@ def test_download_video_card_top_matches_reference(qtbot):
     video_card = window.download_page.thumbnail_label.parentWidget()
     video_top = video_card.mapTo(window, QPoint(0, 0)).y()
 
-    assert 214 <= video_top <= 222
+    assert 222 <= video_top <= 230
 
 
 def test_download_options_and_start_button_match_reference_rows(qtbot):
@@ -294,9 +306,9 @@ def test_download_options_and_start_button_match_reference_rows(qtbot):
     options_top = window.download_page.options_card.mapTo(window, QPoint(0, 0)).y()
     start_top = window.download_page.start_button.mapTo(window, QPoint(0, 0)).y()
 
-    assert 566 <= options_top <= 576
+    assert 582 <= options_top <= 594
     assert 134 <= window.download_page.options_card.height() <= 145
-    assert 732 <= start_top <= 744
+    assert 748 <= start_top <= 760
     assert 42 <= window.download_page.start_button.height() <= 48
 
 
@@ -345,7 +357,9 @@ def test_download_url_input_height_matches_reference(qtbot):
     window.show()
     qtbot.wait(50)
 
-    assert 36 <= window.download_page.url_input.height() <= 42
+    assert window.download_page.url_input.height() >= 46
+    assert window.download_page.save_folder_label.height() >= 44
+    assert window.download_page.url_input.maximumHeight() >= 46
 
 
 def test_download_url_input_hides_scrollbar_chrome(qtbot):

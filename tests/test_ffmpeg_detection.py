@@ -84,6 +84,25 @@ def test_version_probe_uses_stdout_first_line(tmp_path: Path, monkeypatch):
     assert status == FfmpegStatus(found=True, path=exe, version="ffmpeg version 6.1")
 
 
+def test_version_probe_hides_child_console_window_on_windows(tmp_path: Path, monkeypatch):
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return
+    exe = tmp_path / "ffmpeg.exe"
+    exe.write_text("fake", encoding="utf-8")
+    captured_kwargs: dict = {}
+
+    def fake_run(command, **kwargs):
+        captured_kwargs.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout="ffmpeg version 8.1\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    status = find_ffmpeg(configured_path=exe, search_paths=[], env_path="")
+
+    assert status.found is True
+    assert captured_kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+
+
 def test_version_probe_timeout_falls_back_to_unknown(tmp_path: Path, monkeypatch):
     exe = tmp_path / "ffmpeg.exe"
     exe.write_text("fake", encoding="utf-8")

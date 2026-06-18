@@ -53,7 +53,7 @@ def test_preview_failure_does_not_clear_download_readiness(qtbot):
 
     assert window.selected_format_id == "22"
     assert window.download_page.start_button.isEnabled()
-    assert window.download_page.status_label.text() == "分析完成，可以开始下载。"
+    assert window.download_page.status_label.text() == "分析完成，请在格式页确认分辨率、码率后开始下载。"
     assert "预览不可用" in window.download_page.preview_player.status.text()
     assert "下载仍可继续" in window.download_page.preview_player.status.text()
 
@@ -116,6 +116,6 @@ def test_preview_stream_failure_does_not_clear_download_readiness(qtbot, app_dat
 
     assert window.selected_format_id == "18"
     assert window.download_page.start_button.isEnabled()
-    assert window.download_page.status_label.text() == "分析完成，可以开始下载。"
+    assert window.download_page.status_label.text() == "分析完成，请在格式页确认分辨率、码率后开始下载。"
     assert window.download_page.preview_player.state == PreviewState.UNAVAILABLE
     assert "预览不可用" in window.download_page.preview_player.status.text()

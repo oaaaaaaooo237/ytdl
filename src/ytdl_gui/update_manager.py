@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.request import urlretrieve
 
+from ytdl_gui.subprocess_utils import hidden_window_kwargs
+
 
 OFFICIAL_YTDLP_EXE_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 UNSAFE_VERSION_CHARS = set('<>:"|?*/\\')
@@ -70,6 +72,7 @@ def probe_ytdlp_version(executable: Path) -> str:
         text=True,
         timeout=15,
         check=False,
+        **hidden_window_kwargs(),
     )
     if result.returncode != 0:
         raise ValueError("yt-dlp version probe failed")

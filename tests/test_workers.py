@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from ytdl_gui.ytdlp_runner import AnalysisFailureKind
 from ytdl_gui.workers import (
     AnalysisRequest,
@@ -86,6 +88,45 @@ def test_analysis_worker_emits_finished_dict_on_success(tmp_path: Path):
     assert events["finished"] == [{"title": "Demo"}]
     assert events["failed"] == []
     assert events["canceled"] == []
+
+
+def test_analysis_workers_hide_child_console_windows_on_windows(tmp_path: Path):
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        pytest.skip("CREATE_NO_WINDOW is only available on Windows")
+    captured_kwargs: list[dict] = []
+
+    def analysis_runner(command, **kwargs):
+        captured_kwargs.append(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout='{"title": "Demo"}', stderr="")
+
+    def playlist_runner(command, **kwargs):
+        captured_kwargs.append(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout='{"entries": []}', stderr="")
+
+    def preview_runner(command, **kwargs):
+        captured_kwargs.append(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout="https://media.example/stream.mp4\n", stderr="")
+
+    AnalysisWorker(make_request(tmp_path), runner=analysis_runner).run()
+    PlaylistProbeWorker(
+        PlaylistProbeRequest(
+            url="https://www.youtube.com/playlist?list=abc",
+            ytdlp_path=tmp_path / "yt-dlp.exe",
+            cookies_path=None,
+        ),
+        runner=playlist_runner,
+    ).run()
+    PreviewUrlWorker(
+        PreviewUrlRequest(
+            url="https://www.youtube.com/watch?v=abc",
+            ytdlp_path=tmp_path / "yt-dlp.exe",
+            format_id="18",
+        ),
+        runner=preview_runner,
+    ).run()
+
+    assert captured_kwargs
+    assert all(kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW for kwargs in captured_kwargs)
 
 
 def test_analysis_worker_timeout_emits_network_timeout(tmp_path: Path):
@@ -303,6 +344,44 @@ def test_download_worker_emits_actual_output_path_from_ytdlp_print(tmp_path: Pat
 
     assert events["finished"] == [str(output_path)]
     assert events["failed"] == []
+
+
+def test_download_worker_hides_child_console_window_on_windows(tmp_path: Path):
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        pytest.skip("CREATE_NO_WINDOW is only available on Windows")
+    captured_kwargs: dict = {}
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(["[download] 100.0% of 1.00MiB at 1.00MiB/s ETA 00:00\n"])
+
+    class FakeProcess:
+        stdout = FakeStdout()
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    def popen_factory(command, **kwargs):
+        captured_kwargs.update(kwargs)
+        return FakeProcess()
+
+    request = DownloadRequest(
+        url="https://www.youtube.com/watch?v=abc",
+        ytdlp_path=tmp_path / "yt-dlp.exe",
+        output_template=tmp_path / "%(title)s.%(ext)s",
+        format_id="18",
+    )
+    worker = DownloadWorker(request, popen_factory=popen_factory)
+
+    worker.run()
+
+    assert captured_kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
 
 
 def test_download_worker_falls_back_to_new_existing_file_when_printed_path_is_stale(tmp_path: Path):

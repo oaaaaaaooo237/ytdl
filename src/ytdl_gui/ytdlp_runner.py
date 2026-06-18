@@ -19,18 +19,24 @@ class PlaylistExpansion:
     skipped_count: int
 
 
-PROGRESS_PATTERN = re.compile(r"\[download\]\s+(?P<percent>\d+(?:\.\d+)?)%.*? at (?P<speed>\S+) ETA (?P<eta>\S+)")
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+PROGRESS_PATTERN = re.compile(r"\[download\]\s+(?P<percent>\d+(?:\.\d+)?)%")
+SPEED_PATTERN = re.compile(r"\bat\s+(?P<speed>\S+)")
+ETA_PATTERN = re.compile(r"\bETA\s+(?P<eta>\S+)")
 DEFAULT_SUBTITLE_LANGS = "en.*"
 
 
 def parse_progress_line(line: str) -> ProgressEvent:
-    match = PROGRESS_PATTERN.search(line)
+    cleaned_line = ANSI_ESCAPE_PATTERN.sub("", line).replace("\r", "")
+    match = PROGRESS_PATTERN.search(cleaned_line)
     if not match:
         return ProgressEvent(percent=None, raw=line)
+    speed_match = SPEED_PATTERN.search(cleaned_line)
+    eta_match = ETA_PATTERN.search(cleaned_line)
     return ProgressEvent(
         percent=float(match.group("percent")),
-        speed=match.group("speed"),
-        eta=match.group("eta"),
+        speed=speed_match.group("speed") if speed_match else "",
+        eta=eta_match.group("eta") if eta_match else "",
         raw=line,
     )
 
@@ -90,6 +96,7 @@ class YtdlpCommandBuilder:
         command = [
             str(self.executable),
             "--newline",
+            "--progress",
             "-f",
             format_id,
             "-o",

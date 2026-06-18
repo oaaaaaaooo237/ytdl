@@ -2,8 +2,10 @@ from pathlib import Path
 
 import json
 import socket
+import subprocess
 
 from ytdl_gui.update_manager import OFFICIAL_YTDLP_EXE_URL, UpdateManager, UpdateResult
+from ytdl_gui.update_manager import probe_ytdlp_version
 from ytdl_gui.ytdlp_runner import YtdlpCommandBuilder
 
 
@@ -42,6 +44,7 @@ def test_download_command_uses_output_path_and_format(tmp_path: Path):
     command = builder.download_command("https://www.youtube.com/watch?v=abc", output, "22", cookies_path=cookies)
 
     assert "--newline" in command
+    assert "--progress" in command
     assert "-f" in command
     assert "22" in command
     assert "-o" in command
@@ -130,6 +133,21 @@ def test_preview_url_command_uses_get_url_optional_format_and_cookies(tmp_path: 
     assert "18" in command
     assert "--cookies" in command
     assert str(cookies) in command
+
+
+def test_probe_ytdlp_version_hides_child_console_window_on_windows(tmp_path: Path, monkeypatch):
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return
+    captured_kwargs: dict = {}
+
+    def fake_run(command, **kwargs):
+        captured_kwargs.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout="2026.03.17\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert probe_ytdlp_version(tmp_path / "yt-dlp.exe") == "2026.03.17"
+    assert captured_kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
 
 
 def test_update_switches_active_path_after_validation(tmp_path: Path):

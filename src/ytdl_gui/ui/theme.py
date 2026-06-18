@@ -1,4 +1,4 @@
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
 
 TEAL = "#0f8f8c"
 TEAL_DARK = "#08716f"
@@ -12,6 +12,7 @@ BORDER = "#d8dee4"
 
 
 def apply_light_theme(app) -> None:
+    app.setFont(QFont("Segoe UI", 10))
     palette = QPalette()
     palette.setColor(QPalette.Window, QColor(BACKGROUND))
     palette.setColor(QPalette.Base, QColor(SURFACE))
@@ -26,8 +27,8 @@ def apply_light_theme(app) -> None:
     app.setStyleSheet(
         f"""
         QWidget {{
-            font-family: 'Microsoft YaHei UI', 'Segoe UI';
-            font-size: 13px;
+            font-family: 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei';
+            font-size: 10pt;
             color: {TEXT};
             background: {BACKGROUND};
         }}
@@ -154,8 +155,7 @@ def apply_light_theme(app) -> None:
             min-height: 34px;
         }}
         QTextEdit#urlInput {{
-            min-height: 20px;
-            max-height: 20px;
+            min-height: 30px;
         }}
         #sectionTitle {{
             font-size: 13px;
@@ -209,6 +209,27 @@ def apply_light_theme(app) -> None:
             color: {TEXT};
             background: transparent;
         }}
+        #actualFormatLabel {{
+            color: #31445b;
+            background: #f7fafc;
+            border: 1px solid #d8e1e8;
+            border-radius: 6px;
+            padding: 7px 9px;
+        }}
+        #mergeHintLabel {{
+            color: #455a73;
+            background: #eef7f6;
+            border: 1px solid #c8e7e3;
+            border-radius: 6px;
+            padding: 7px 9px;
+        }}
+        QRadioButton:disabled, QLabel#resolutionSizeLabel:disabled {{
+            color: #98a2b3;
+        }}
+        QRadioButton::indicator:disabled {{
+            border: 1px solid #cbd5df;
+            background: #edf2f6;
+        }}
         #compactPreview {{
             border-top: 1px solid #edf1f3;
             margin-top: 8px;
@@ -241,6 +262,14 @@ def apply_light_theme(app) -> None:
             font-size: 14px;
             font-weight: 700;
             background: transparent;
+        }}
+        #queueNotice {{
+            color: #065f5b;
+            background: {TEAL_SOFT};
+            border: 1px solid #b7dfdc;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12px;
         }}
         #queueHistoryTitleCell, #queueHistoryActionCell {{
             background: transparent;

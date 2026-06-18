@@ -25,13 +25,13 @@ class DownloadPage(QWidget):
         self.url_input = QTextEdit()
         self.url_input.setObjectName("urlInput")
         self.url_input.setPlaceholderText("粘贴一个或多个视频播放地址")
-        self.url_input.setFixedHeight(38)
+        self.url_input.setFixedHeight(48)
         self.url_input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.url_input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.analyze_button = QPushButton("分析")
         self.analyze_button.setObjectName("primaryButton")
         self.analyze_button.setFixedWidth(110)
-        self.analyze_button.setMinimumHeight(42)
+        self.analyze_button.setMinimumHeight(46)
         self.paste_button = QPushButton("粘贴")
         self.paste_button.setFixedWidth(72)
         self.paste_button.clicked.connect(self.paste_from_clipboard)
@@ -48,7 +48,7 @@ class DownloadPage(QWidget):
         self.save_folder_label = QLineEdit()
         self.save_folder_label.setObjectName("pathDisplay")
         self.save_folder_label.setReadOnly(True)
-        self.save_folder_label.setFixedHeight(38)
+        self.save_folder_label.setFixedHeight(46)
         self.save_folder_label.setText("保存位置：未选择")
         self.free_space_label = QLabel("剩余空间：未检测")
         self.free_space_label.setFixedHeight(20)
@@ -206,8 +206,9 @@ class DownloadPage(QWidget):
         if text:
             self.url_input.setPlainText(text)
 
-    def set_status(self, message: str) -> None:
+    def set_status(self, message: str, tooltip: str = "") -> None:
         self.status_label.setText(message)
+        self.status_label.setToolTip(tooltip)
 
     def set_analysis_retry_available(self) -> None:
         self.analyze_button.setText("重试分析")

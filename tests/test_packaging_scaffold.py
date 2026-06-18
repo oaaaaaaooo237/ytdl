@@ -32,6 +32,14 @@ def test_pyinstaller_spec_bundles_required_assets():
     assert "docs" in spec
     assert "gui-reference.png" in spec
     assert "PySide6.QtMultimedia" in spec
+    assert "windows-app.manifest" in spec
+
+
+def test_windows_manifest_requests_per_monitor_dpi_awareness():
+    manifest = read_text("packaging/windows-app.manifest")
+
+    assert "PerMonitorV2" in manifest
+    assert "dpiAwareness" in manifest
 
 
 def test_package_scripts_and_readme_document_packaging_flow():

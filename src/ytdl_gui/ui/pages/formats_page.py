@@ -21,6 +21,7 @@ class FormatsPage(QWidget):
         self.resolution_combo.setObjectName("hiddenResolutionCombo")
         self.resolution_combo.hide()
         self.resolution_buttons: list[QRadioButton] = []
+        self.resolution_size_labels: dict[str, QLabel] = {}
         self.resolution_button_group = QButtonGroup(self)
         self.resolution_button_group.setExclusive(True)
         self.resolution_combo.addItems(["自动", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"])
@@ -37,9 +38,22 @@ class FormatsPage(QWidget):
         self.subtitle_combo = QComboBox()
         self.subtitle_combo.addItems(["不下载", "下载字幕文件", "嵌入", "烧录"])
         self.format_id_combo = QComboBox()
+        self.format_id_combo.setObjectName("hiddenFormatIdCombo")
+        self.format_id_combo.hide()
+        self.actual_format_label = QLabel("自动")
+        self.actual_format_label.setObjectName("actualFormatLabel")
+        self.actual_format_label.setWordWrap(True)
+        self.actual_format_label.setMinimumHeight(32)
+        self.merge_hint_label = QLabel("当前选择会分别下载视频流和音频流，并使用 ffmpeg 合并。")
+        self.merge_hint_label.setObjectName("mergeHintLabel")
+        self.merge_hint_label.setWordWrap(True)
+        self.merge_hint_label.hide()
         self.reset_button = QPushButton("重置默认")
         self.apply_button = QPushButton("应用选择")
         self.apply_button.setObjectName("primaryButton")
+        self.mode_buttons: list[QPushButton] = []
+        self.mode_button_group = QButtonGroup(self)
+        self.mode_button_group.setExclusive(True)
         for combo in (
             self.fps_combo,
             self.codec_combo,
@@ -63,6 +77,8 @@ class FormatsPage(QWidget):
             button.setCheckable(True)
             button.setObjectName("segmentButton")
             button.setChecked(index == 0)
+            self.mode_buttons.append(button)
+            self.mode_button_group.addButton(button, index)
             button.setFixedHeight(42)
             mode_row.addWidget(button)
         layout.addLayout(mode_row)
@@ -77,8 +93,9 @@ class FormatsPage(QWidget):
         layout.addWidget(_section("容器与字幕", [
             ("容器", self.container_combo),
             ("字幕行为", self.subtitle_combo),
-            ("实际格式", self.format_id_combo),
+            ("实际格式", self.actual_format_label),
         ]))
+        layout.addWidget(self.merge_hint_label)
         action_row = QHBoxLayout()
         action_row.addWidget(self.reset_button)
         action_row.addStretch()
@@ -122,7 +139,10 @@ class FormatsPage(QWidget):
             self.resolution_buttons.append(button)
             self.resolution_button_group.addButton(button)
             grid.addWidget(button, row_index, 0)
-            grid.addWidget(QLabel(size_text), row_index, 1)
+            size_label = QLabel(size_text)
+            size_label.setObjectName("resolutionSizeLabel")
+            self.resolution_size_labels[value] = size_label
+            grid.addWidget(size_label, row_index, 1)
 
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
@@ -155,15 +175,49 @@ class FormatsPage(QWidget):
                 button.setChecked(True)
                 return
 
-    def load_available_formats(self, formats: list[dict], selected_format_id: str) -> None:
+    def set_mode_index(self, index: int) -> None:
+        if 0 <= index < len(self.mode_buttons):
+            self.mode_buttons[index].setChecked(True)
+
+    def set_available_resolutions(self, resolution_values: set[int], selected_value: str = "自动") -> None:
+        available = {f"{value}p" for value in resolution_values}
+        fallback = _highest_resolution_text(resolution_values)
+        if selected_value != "自动" and selected_value not in available:
+            selected_value = fallback
+        for button in self.resolution_buttons:
+            value = str(button.property("resolutionValue") or "")
+            enabled = value == "自动" or value in available
+            button.setEnabled(enabled)
+            button.setToolTip("" if enabled else "该视频在当前下载类型下没有此分辨率")
+            button.setProperty("availableResolution", enabled)
+            button.setStyleSheet("" if enabled else "color: #98a2b3;")
+            label = self.resolution_size_labels.get(value)
+            if label is not None:
+                label.setEnabled(enabled)
+                label.setProperty("availableResolution", enabled)
+                label.setStyleSheet("" if enabled else "color: #98a2b3;")
+        self.resolution_combo.setCurrentText(selected_value)
+
+    def load_available_formats(self, formats: list[dict], selected_format_id: str, actual_summary: str = "") -> None:
         self.format_id_combo.clear()
+        self.format_id_combo.addItem("自动")
         for item in formats:
             format_id = str(item.get("format_id") or "")
             if format_id:
                 self.format_id_combo.addItem(format_id)
         index = self.format_id_combo.findText(selected_format_id)
+        if index < 0 and selected_format_id and selected_format_id != "自动":
+            self.format_id_combo.addItem(selected_format_id)
+            index = self.format_id_combo.findText(selected_format_id)
         if index >= 0:
             self.format_id_combo.setCurrentIndex(index)
+        self.set_actual_format_summary(actual_summary or selected_format_id or "自动")
+
+    def set_merge_hint_visible(self, visible: bool) -> None:
+        self.merge_hint_label.setVisible(visible)
+
+    def set_actual_format_summary(self, text: str) -> None:
+        self.actual_format_label.setText(text or "自动")
 
 
 def _section(title: str, rows: list[tuple[str, QWidget]]) -> QFrame:
@@ -178,7 +232,11 @@ def _section(title: str, rows: list[tuple[str, QWidget]]) -> QFrame:
     grid = QGridLayout()
     grid.setHorizontalSpacing(12)
     grid.setVerticalSpacing(4)
-    visible_rows = [(label_text, widget) for label_text, widget in rows if widget.objectName() != "hiddenResolutionCombo"]
+    visible_rows = [
+        (label_text, widget)
+        for label_text, widget in rows
+        if widget.objectName() not in {"hiddenResolutionCombo", "hiddenFormatIdCombo"}
+    ]
     for row, (label_text, widget) in enumerate(visible_rows):
         label = QLabel(label_text)
         label.setObjectName("optionLabel")
@@ -187,3 +245,7 @@ def _section(title: str, rows: list[tuple[str, QWidget]]) -> QFrame:
     grid.setColumnStretch(1, 1)
     layout.addLayout(grid)
     return frame
+
+
+def _highest_resolution_text(values: set[int]) -> str:
+    return f"{max(values)}p" if values else "自动"

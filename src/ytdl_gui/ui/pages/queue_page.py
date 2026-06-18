@@ -63,6 +63,10 @@ class QueuePage(QWidget):
         self.queue_heading = QLabel()
         self.queue_heading.setObjectName("queueHeaderTitle")
         self._update_queue_heading()
+        self.notice_label = QLabel("")
+        self.notice_label.setObjectName("queueNotice")
+        self.notice_label.setWordWrap(True)
+        self.notice_label.hide()
         self.history_heading = QLabel("历史")
         self.history_heading.setObjectName("sectionTitle")
         self.recent_history_table = QTableWidget(0, 7)
@@ -102,6 +106,7 @@ class QueuePage(QWidget):
         header_row.addWidget(self.queue_heading, 1)
         header_row.addLayout(actions)
         layout.addLayout(header_row)
+        layout.addWidget(self.notice_label)
         layout.addWidget(self.scroll_area, 2)
         layout.addWidget(self.history_heading)
         layout.addWidget(self.recent_history_table, 1)
@@ -262,6 +267,10 @@ class QueuePage(QWidget):
     def _update_queue_heading(self) -> None:
         count = self.table.rowCount()
         self.queue_heading.setText(f"下载队列 ({count})")
+
+    def show_notice(self, message: str) -> None:
+        self.notice_label.setText(message)
+        self.notice_label.setVisible(bool(message.strip()))
 
     def load_history_records(self, records) -> None:
         all_records = list(records)

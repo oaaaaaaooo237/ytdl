@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ytdl_gui.paths import local_ffmpeg_candidates
+from ytdl_gui.subprocess_utils import hidden_window_kwargs
 
 
 UNKNOWN_VERSION = "未检测版本"
@@ -68,6 +69,7 @@ def _probe_version(path: Path, timeout_seconds: float = 1.0) -> str:
             text=True,
             timeout=timeout_seconds,
             check=False,
+            **hidden_window_kwargs(),
         )
     except OSError:
         return UNKNOWN_VERSION

@@ -4,8 +4,8 @@
     "reference_size": "590x883",
     "actual_size": "590x883",
     "compared_size": "590x883",
-    "mean_abs_channel_delta": 13.8754,
-    "exact_pixel_match_percent": 1.5339,
+    "mean_abs_channel_delta": 17.6047,
+    "exact_pixel_match_percent": 1.3239,
     "max_channel_delta": 255
   },
   {
@@ -13,7 +13,7 @@
     "reference_size": "488x883",
     "actual_size": "488x883",
     "compared_size": "488x883",
-    "mean_abs_channel_delta": 11.9536,
+    "mean_abs_channel_delta": 11.9421,
     "exact_pixel_match_percent": 1.7575,
     "max_channel_delta": 255
   },
