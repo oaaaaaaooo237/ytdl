@@ -44,7 +44,7 @@
 
 **Steps:**
 - [ ] Generate Gradle Wrapper 9.4.1 from `D:\DevTools\gradle-9.4.1\bin\gradle.bat wrapper --gradle-version 9.4.1`.
-- [ ] Configure plugins: `com.android.application` 9.2.1, `org.jetbrains.kotlin.android` 2.3.0, `org.jetbrains.kotlin.plugin.compose` 2.3.0, `com.chaquo.python` 17.0.0.
+- [ ] Configure plugins/toolchain: `com.android.application` 9.2.1, Kotlin/Compose 2.3.0, `org.jetbrains.kotlin.plugin.compose` 2.3.0, `com.chaquo.python` 17.0.0. If AGP 9.2.1 rejects direct `org.jetbrains.kotlin.android` application in the app module, keep Kotlin Android support in the verified AGP-integrated form as long as `compileDebugKotlin`, unit tests, and `assembleDebug` pass.
 - [ ] Configure Android: namespace `com.garyapp.ytdl`, `compileSdk = 37`, `targetSdk = 37`, `minSdk = 24`, app id `com.garyapp.ytdl`.
 - [ ] Configure Chaquopy with `buildPython("D:/garyapp/ytdl/.venv/Scripts/python.exe")`.
 - [ ] Implement a real `MainActivity` and Compose shell with bottom navigation labels `下载`, `格式`, `队列`, `历史`, `设置`.
@@ -54,6 +54,7 @@
   - `.\gradlew.bat :app:testDebugUnitTest`
   - `.\gradlew.bat :app:assembleDebug`
   - Install and launch on `ytdl_api37_play_x86_64` using `adb install` and `adb shell am start`.
+- [ ] Record Task 1 smoke evidence under `docs/qa/` if a runtime timing caveat or launch issue is discovered.
 - [ ] Commit with message `android: scaffold Play MVP app`.
 
 ### Task 2: Policy, Settings, and Storage Core
