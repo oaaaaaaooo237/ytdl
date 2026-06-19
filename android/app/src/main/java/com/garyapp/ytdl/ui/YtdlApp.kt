@@ -35,6 +35,7 @@ data class YtdlDestination(
     val label: String,
     val title: String,
     val summary: String,
+    val reservedEntries: List<String> = emptyList(),
 )
 
 fun ytdlNavigationDestinations(): List<YtdlDestination> = listOf(
@@ -67,6 +68,7 @@ fun ytdlNavigationDestinations(): List<YtdlDestination> = listOf(
         label = "设置",
         title = "设置",
         summary = "管理保存位置、cookies 引用、解析器版本和隐私说明。",
+        reservedEntries = listOf("外观与颜色"),
     ),
 )
 
