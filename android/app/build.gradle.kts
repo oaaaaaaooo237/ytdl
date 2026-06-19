@@ -35,6 +35,9 @@ chaquopy {
     defaultConfig {
         version = "3.12"
         buildPython("D:/garyapp/ytdl/.venv/Scripts/python.exe")
+        pip {
+            install("yt-dlp==2026.3.17")
+        }
     }
 }
 
@@ -52,4 +55,6 @@ dependencies {
     testImplementation("androidx.test:core:1.7.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
 }
