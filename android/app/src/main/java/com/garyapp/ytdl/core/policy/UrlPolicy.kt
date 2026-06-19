@@ -26,8 +26,12 @@ object UrlPolicy {
             )
         }
 
-        val uri = trimmed.toUriOrNull()
-        val scheme = uri?.scheme?.lowercase()
+        val uri = trimmed.toUriOrNull() ?: return UrlPolicyResult.rejected(
+            blockReason = UrlPolicyBlockReason.InvalidUrl,
+            userMessage = "请输入有效的公开视频页面地址。",
+            logSummary = UrlLogSummary(category = "invalid_url"),
+        )
+        val scheme = uri.scheme?.lowercase()
         if (scheme !in allowedSchemes) {
             return UrlPolicyResult.rejected(
                 blockReason = UrlPolicyBlockReason.UnsupportedScheme,
@@ -36,12 +40,7 @@ object UrlPolicy {
             )
         }
 
-        val parsedUri = uri ?: return UrlPolicyResult.rejected(
-            blockReason = UrlPolicyBlockReason.InvalidUrl,
-            userMessage = "请输入有效的公开视频页面地址。",
-            logSummary = UrlLogSummary(category = "invalid_url"),
-        )
-        val host = parsedUri.host?.normalizeHost()
+        val host = uri.host?.normalizeHost()
         if (host.isNullOrEmpty()) {
             return UrlPolicyResult.rejected(
                 blockReason = UrlPolicyBlockReason.InvalidUrl,
@@ -63,7 +62,11 @@ object UrlPolicy {
         }
 
         return UrlPolicyResult.allowed(
-            normalizedUrl = trimmed,
+            rawUrlForExecution = trimmed,
+            safeUrlSummary = SafeUrlSummary(
+                scheme = scheme.orEmpty(),
+                hostHash = hostHash,
+            ),
             logSummary = UrlLogSummary(
                 category = "allowed",
                 hostHash = hostHash,
@@ -98,9 +101,15 @@ data class UrlLogSummary(
     val hostHash: String? = null,
 )
 
+data class SafeUrlSummary(
+    val scheme: String,
+    val hostHash: String,
+)
+
 data class UrlPolicyResult(
     val decision: UrlPolicyDecision,
-    val normalizedUrl: String? = null,
+    val rawUrlForExecution: String? = null,
+    val safeUrlSummary: SafeUrlSummary? = null,
     val blockReason: UrlPolicyBlockReason? = null,
     val userMessage: String? = null,
     val logSummary: UrlLogSummary,
@@ -110,11 +119,13 @@ data class UrlPolicyResult(
 
     companion object {
         fun allowed(
-            normalizedUrl: String,
+            rawUrlForExecution: String,
+            safeUrlSummary: SafeUrlSummary,
             logSummary: UrlLogSummary,
         ): UrlPolicyResult = UrlPolicyResult(
             decision = UrlPolicyDecision.Allowed,
-            normalizedUrl = normalizedUrl,
+            rawUrlForExecution = rawUrlForExecution,
+            safeUrlSummary = safeUrlSummary,
             logSummary = logSummary,
         )
 

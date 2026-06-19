@@ -3,21 +3,114 @@ package com.garyapp.ytdl.core.settings
 import com.garyapp.ytdl.core.storage.StorageTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppSettingsStorageTest {
     @Test
     fun cookiesReferenceStoresOnlyReferenceAndDisplayName() {
-        val reference = CookiesReference(
+        val reference = CookiesReference.fromUserReference(
             reference = "content://com.android.providers.downloads.documents/document/42",
             displayName = "cookies.txt",
         )
         val settings = AppSettings(cookiesReference = reference)
 
         assertEquals("cookies.txt", settings.cookiesReference?.displayName)
-        assertEquals("content://com.android.providers.downloads.documents/document/42", settings.cookiesReference?.reference)
+        assertEquals("content://com.android.providers.downloads.documents/document/42", settings.cookiesReference?.value)
         assertFalse(settings.toString().contains("SID=secret"))
+    }
+
+    @Test
+    fun cookiesReferenceRejectsCookieContentLikeStrings() {
+        val reference = CookiesReference.fromUserReference(
+            reference = "SID=secret; PREF=visible",
+            displayName = "cookies.txt",
+        )
+
+        assertNull(reference)
+    }
+
+    @Test
+    fun cookiesReferenceRejectsNetscapeCookieFileContent() {
+        val reference = CookiesReference.fromUserReference(
+            reference = """
+                # Netscape HTTP Cookie File
+                .youtube.com	TRUE	/	FALSE	2147483647	SID	secret-value
+            """.trimIndent(),
+            displayName = "cookies.txt",
+        )
+
+        assertNull(reference)
+    }
+
+    @Test
+    fun cookiesReferenceRejectsArbitraryNonPathText() {
+        val reference = CookiesReference.fromUserReference(
+            reference = "this is not a user selected file uri or path",
+            displayName = "cookies.txt",
+        )
+
+        assertNull(reference)
+    }
+
+    @Test
+    fun cookiesReferenceAcceptsFileUriAndAbsolutePaths() {
+        val contentUri = CookiesReference.fromUserReference(
+            reference = "content://com.android.providers.downloads.documents/document/42",
+            displayName = "cookies.txt",
+        )
+        val fileUri = CookiesReference.fromUserReference(
+            reference = "file:///storage/emulated/0/Download/cookies.txt",
+            displayName = "cookies.txt",
+        )
+        val androidPath = CookiesReference.fromUserReference(
+            reference = "/storage/emulated/0/Download/cookies.txt",
+            displayName = "cookies.txt",
+        )
+        val windowsPath = CookiesReference.fromUserReference(
+            reference = "D:/safe/reference/cookies.txt",
+            displayName = "cookies.txt",
+        )
+
+        assertEquals("content://com.android.providers.downloads.documents/document/42", contentUri?.value)
+        assertEquals("file:///storage/emulated/0/Download/cookies.txt", fileUri?.value)
+        assertEquals("/storage/emulated/0/Download/cookies.txt", androidPath?.value)
+        assertEquals("D:/safe/reference/cookies.txt", windowsPath?.value)
+    }
+
+    @Test
+    fun cookiesReferenceToStringDoesNotExposeStoredReference() {
+        val reference = CookiesReference.fromUserReference(
+            reference = "content://com.android.providers.downloads.documents/document/42",
+            displayName = "cookies.txt",
+        )
+
+        assertFalse(reference.toString().contains("content://"))
+        assertTrue(reference.toString().contains("cookies.txt"))
+    }
+
+    @Test
+    fun cookiesReferenceSanitizesSensitiveDisplayName() {
+        val reference = CookiesReference.fromUserReference(
+            reference = "content://com.android.providers.downloads.documents/document/42",
+            displayName = "SID=secret; PREF=visible",
+        )
+
+        assertEquals("cookies 文件", reference?.displayName)
+        assertFalse(reference.toString().contains("secret"))
+        assertFalse(reference.toString().contains("visible"))
+    }
+
+    @Test
+    fun cookiesReferenceSanitizesReferenceLikeDisplayName() {
+        val reference = CookiesReference.fromUserReference(
+            reference = "content://com.android.providers.downloads.documents/document/42",
+            displayName = "content://com.android.providers.downloads.documents/document/42",
+        )
+
+        assertEquals("cookies 文件", reference?.displayName)
+        assertFalse(reference.toString().contains("content://"))
     }
 
     @Test
@@ -47,7 +140,7 @@ class AppSettingsStorageTest {
         val repository = SettingsRepository()
 
         repository.setCookiesReference(
-            CookiesReference(
+            CookiesReference.fromUserReference(
                 reference = "D:/safe/reference/cookies.txt",
                 displayName = "cookies.txt",
             ),

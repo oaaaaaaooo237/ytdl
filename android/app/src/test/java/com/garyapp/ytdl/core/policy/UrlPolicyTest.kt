@@ -26,6 +26,16 @@ class UrlPolicyTest {
     }
 
     @Test
+    fun rejectsMalformedUrlsAsInvalidUrl() {
+        val result = UrlPolicy.evaluate("https://exa mple.com/watch")
+
+        assertFalse(result.isAllowed)
+        assertEquals(UrlPolicyBlockReason.InvalidUrl, result.blockReason)
+        assertEquals("请输入有效的公开视频页面地址。", result.userMessage)
+        assertEquals("invalid_url", result.logSummary.category)
+    }
+
+    @Test
     fun blocksAdultDomainsAndSubdomainsWithoutEchoingUrl() {
         val result = UrlPolicy.evaluate("https://video.pornhub.com/watch?v=private&token=secret")
 
@@ -65,9 +75,12 @@ class UrlPolicyTest {
         val result = UrlPolicy.evaluate("https://Example.com/watch?v=public&token=secret")
 
         assertTrue(result.isAllowed)
-        assertEquals("https://Example.com/watch?v=public&token=secret", result.normalizedUrl)
+        assertEquals("https://Example.com/watch?v=public&token=secret", result.rawUrlForExecution)
         assertEquals("allowed", result.logSummary.category)
         assertNotNull(result.logSummary.hostHash)
         assertFalse(result.logSummary.toString().contains("token=secret", ignoreCase = true))
+        assertNotNull(result.safeUrlSummary)
+        assertFalse(result.safeUrlSummary.toString().contains("token=secret", ignoreCase = true))
+        assertFalse(result.safeUrlSummary.toString().contains("v=public", ignoreCase = true))
     }
 }

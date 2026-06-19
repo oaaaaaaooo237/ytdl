@@ -32,12 +32,44 @@ class SensitiveTextTest {
     }
 
     @Test
-    fun redactsSensitiveQueryParameters() {
-        val raw = "https://example.com/watch?id=1&token=abc&access_token=def&auth=g&cookie=h&password=i&pass=j&session=k"
+    fun redactsInlineHeaderFormsInCommandsAndJson() {
+        val raw = """
+            yt-dlp --add-header "Cookie: SID=abc123; PREF=visible" --add-header 'Authorization: Bearer json-secret'
+            {"headers":{"set-cookie":"SID=from-json","Authorization":"Bearer another-secret"}}
+        """.trimIndent()
 
         val redacted = SensitiveText.redact(raw)
 
-        listOf("abc", "def", "auth=g", "cookie=h", "password=i", "pass=j", "session=k").forEach {
+        listOf("abc123", "visible", "json-secret", "from-json", "another-secret").forEach {
+            assertFalse("Should redact $it", redacted.contains(it))
+        }
+        assertTrue(redacted.contains("Cookie: [已隐藏]"))
+        assertTrue(redacted.contains("Authorization: [已隐藏]"))
+        assertTrue(redacted.contains("set-cookie\":\"[已隐藏]"))
+    }
+
+    @Test
+    fun redactsSensitiveQueryParameters() {
+        val raw = "https://example.com/watch?id=1&token=abc&access_token=def&auth=g&cookie=h&password=i&pass=j&session=k&sig=l&signature=m&secret=n&api_key=o&key=p&sid=q&jwt=r"
+
+        val redacted = SensitiveText.redact(raw)
+
+        listOf(
+            "abc",
+            "def",
+            "auth=g",
+            "cookie=h",
+            "password=i",
+            "pass=j",
+            "session=k",
+            "sig=l",
+            "signature=m",
+            "secret=n",
+            "api_key=o",
+            "key=p",
+            "sid=q",
+            "jwt=r",
+        ).forEach {
             assertFalse("Should redact $it", redacted.contains(it))
         }
         assertTrue(redacted.contains("id=1"))
