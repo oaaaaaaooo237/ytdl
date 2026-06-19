@@ -17,6 +17,8 @@
 - Do not edit Windows GUI/source files unless a task explicitly says so.
 - Use test URL for full-flow verification: `https://www.youtube.com/watch?v=tkxzMEfp49Q`.
 - Do not mark a task complete until its tests and required real runtime check have fresh output.
+- UI fidelity is a hard requirement, not a loose theme hint: final Android screens must visually match `docs/android-gui-reference-v3.png` as closely as the native Android runtime allows, including the five-page composition, bottom navigation, card density, accent colors, top safe area, queue scrolling, and progress presentation.
+- The Settings page must include an appearance/color section modeled after Codex-style appearance settings: mode selection plus color preset selection. The default preset remains `reference_v3`; a `codex` preset must be available.
 
 ## Task Map
 
@@ -47,6 +49,7 @@
 - [ ] Configure Chaquopy with `buildPython("D:/garyapp/ytdl/.venv/Scripts/python.exe")`.
 - [ ] Implement a real `MainActivity` and Compose shell with bottom navigation labels `下载`, `格式`, `队列`, `历史`, `设置`.
 - [ ] Add a unit test asserting the five navigation labels remain present in the app model.
+- [ ] Reserve the appearance/color settings model in the shell: `System/Light/Dark` theme mode and at least `reference_v3` plus `codex` color presets, without building the full settings UI yet.
 - [ ] Verify:
   - `.\gradlew.bat :app:testDebugUnitTest`
   - `.\gradlew.bat :app:assembleDebug`
@@ -176,6 +179,8 @@
 - [ ] Queue page: real progress, speed, ETA, pause/cancel affordances, completed/failed sections.
 - [ ] History page: search, open, share/export, delete record.
 - [ ] Settings page: default storage, cookies URI, parser version, ffmpeg status, privacy/legal/license entries.
+- [ ] Settings page: implement `外观与颜色` as a real section with theme mode choices and color preset choices. It must expose at least `基准图配色` and `Codex 风格`, persist the choice, and immediately apply the selected scheme.
+- [ ] Add a visual comparison checklist against `docs/android-gui-reference-v3.png`; if screenshots differ, record and fix layout/color issues before moving on.
 - [ ] Verify `.\gradlew.bat :app:assembleDebug`.
 - [ ] Real check with screenshot or Computer Use on API37: navigate all five pages without layout clipping.
 - [ ] Commit with message `android: implement five-page Compose UI`.
