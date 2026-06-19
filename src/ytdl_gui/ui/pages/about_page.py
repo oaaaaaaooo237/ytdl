@@ -1,13 +1,13 @@
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
-from ytdl_gui import __version__
+from ytdl_gui import __display_version__
 from ytdl_gui.ui.widgets import PageHeader
 
 
 class AboutPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.version_label = QLabel(f"YTDL GUI {__version__}")
+        self.version_label = QLabel(f"YTDL GUI {__display_version__}")
         self.ytdlp_label = QLabel("yt-dlp 状态：待检测")
         self.ffmpeg_label = QLabel("ffmpeg 状态：待检测")
         self.legal_button = QPushButton("第三方许可")

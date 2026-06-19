@@ -56,7 +56,7 @@ def test_windows_manifest_requests_per_monitor_dpi_awareness():
     assert "dpiAwareness" in manifest
 
 
-def test_package_scripts_and_readme_document_packaging_flow():
+def test_package_scripts_and_readme_document_release_flow():
     package_script = read_text("scripts/package_win.ps1")
     smoke_script = read_text("scripts/smoke_packaged.ps1")
     readme = read_text("README.md")
@@ -69,10 +69,12 @@ def test_package_scripts_and_readme_document_packaging_flow():
     assert "_internal\\tools\\yt-dlp.exe" in smoke_script
     assert "_internal\\tools\\ffmpeg\\bin\\ffmpeg.exe" in smoke_script
     assert "--version" in smoke_script
-    assert "scripts\\fetch_ytdlp.ps1" in readme
-    assert ".venv\\tools\\ffmpeg\\bin\\ffmpeg.exe" in readme
-    assert "THIRD_PARTY_NOTICES.txt" in readme
+    assert "win-v1.0.0" in readme
+    assert "YTDL-GUI.exe" in readme
+    assert ".\\.venv\\Scripts\\python.exe -m ytdl_gui.main" in readme
+    assert "不保存 cookies 内容" in readme
     assert "ffmpeg" in readme
+    assert "MIT License" in readme
 
 
 def test_third_party_notices_cover_bundled_components():

@@ -874,7 +874,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert "YTDL GUI" in window.about_page.version_label.text()
+    assert window.about_page.version_label.text() == "YTDL GUI Windows v1.0.0"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"
