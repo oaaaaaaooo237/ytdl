@@ -19,6 +19,7 @@
 - Do not mark a task complete until its tests and required real runtime check have fresh output.
 - UI fidelity is a hard requirement, not a loose theme hint: final Android screens must visually match `docs/android-gui-reference-v3.png` as closely as the native Android runtime allows, including the five-page composition, bottom navigation, card density, accent colors, top safe area, queue scrolling, and progress presentation.
 - The Settings page must include an appearance/color section modeled after Codex-style appearance settings: mode selection plus color preset selection. The default preset remains `reference_v3`; a `codex` preset must be available.
+- Corrective priority after Task 4: before continuing to download worker/media tasks, implement and visibly verify the five-page Android GUI shell against `docs/android-gui-reference-v3.png`. Backend, instrumentation, adb, and build checks are supporting evidence only; Android stage acceptance requires a foreground visible emulator window GUI run for the relevant flow.
 
 ## Task Map
 
@@ -117,6 +118,29 @@
 - [ ] Verify `.\gradlew.bat :app:testDebugUnitTest` and `.\gradlew.bat :app:assembleDebug`.
 - [ ] Real check: run an instrumentation or debug helper against `https://www.youtube.com/watch?v=tkxzMEfp49Q` on API37 and confirm non-empty title/formats.
 - [ ] Commit with message `android: bridge yt-dlp analysis`.
+
+### Task 4.5: Five-Page Visible GUI Shell
+
+**Purpose:** Correct the visual gap before adding more backend flow: replace the current placeholder shell with a real five-page Compose UI that visibly matches the approved Android reference layout closely enough for foreground emulator inspection.
+
+**Files:**
+- Modify: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt`
+- Modify or create: `android/app/src/main/java/com/garyapp/ytdl/ui/theme/Theme.kt`
+- Create: `android/app/src/test/java/com/garyapp/ytdl/ui/YtdlAppModelTest.kt`
+- Optional create if needed to keep files focused: `android/app/src/main/java/com/garyapp/ytdl/ui/AppTabs.kt`, `android/app/src/main/java/com/garyapp/ytdl/ui/ReferenceScreens.kt`
+
+**Steps:**
+- [ ] Add a UI model for the five bottom tabs: `下载`, `格式`, `队列`, `历史`, `设置`, with selected color accents matching the reference.
+- [ ] Rebuild the Download page with URL input row, analysis button, thumbnail/result card, save location card, mode options, authorization checkbox, and bottom primary action placeholder.
+- [ ] Rebuild the Format page with `视频+音频` / `仅音频` / `仅视频` segmented tabs, resolution rows, merge-required badges, frame/codec/container/subtitle rows, and an applied-summary card.
+- [ ] Rebuild the Queue page with a scrollable list that contains running, waiting, completed, and failed examples, progress, speed, ETA, pause/cancel affordances, and visible scroll behavior.
+- [ ] Rebuild the History page with search/filter controls and local-history cards with open/share/delete actions.
+- [ ] Rebuild the Settings page with default save location, cookies file, parser version, ffmpeg capability, notification permission, privacy/legal notes, and appearance/color mode settings (`reference_v3` default and `codex` preset available).
+- [ ] Ensure top safe area and status-bar readability on the API37 emulator; no text clipping or bottom-nav overlap on Xiaomi 14-like portrait dimensions.
+- [ ] Add unit tests proving all five tabs, the appearance settings labels, and the key download/format/queue/history/settings labels remain present in the UI model.
+- [ ] Verify `.\gradlew.bat :app:testDebugUnitTest` and `.\gradlew.bat :app:assembleDebug`.
+- [ ] Foreground visible GUI check: install and launch the APK on `ytdl_api37_play_x86_64`, use Computer Use or an equivalent desktop screenshot to inspect all five tabs in the visible emulator window, and do not mark this task complete unless screenshots show the relevant pages.
+- [ ] Commit with message `android: build visible five-page gui shell`.
 
 ### Task 5: Download Worker and Foreground Service
 
