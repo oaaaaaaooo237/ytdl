@@ -21,6 +21,8 @@ build/
 dist/
 *.tmp
 *.bak
+.gradle/
+local.properties
 
 # Local runtime state and logs
 logs/
