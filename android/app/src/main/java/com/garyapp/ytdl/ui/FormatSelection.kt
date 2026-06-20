@@ -148,7 +148,7 @@ private fun rowFromChoice(
 ): FormatResolutionRow {
     val formatHeight = choice.video.height?.let { "${it}p" } ?: label
     val ext = choice.video.ext.ifBlank { choice.audio?.ext.orEmpty() }.uppercase()
-    val capability = if (choice.mergeRequired) "需 ffmpeg 合并" else "单文件"
+    val capability = if (choice.mergeRequired) "需原生合并" else "单文件"
     return FormatResolutionRow(
         height = height,
         label = label,

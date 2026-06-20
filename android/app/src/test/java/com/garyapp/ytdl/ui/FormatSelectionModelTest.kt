@@ -46,7 +46,7 @@ class FormatSelectionModelTest {
         assertTrue(row.mergeRequired)
         assertEquals("137", row.videoFormatId)
         assertEquals("140", row.audioFormatId)
-        assertTrue(row.summary.contains("需 ffmpeg 合并"))
+        assertTrue(row.summary.contains("需原生合并"))
     }
 
     @Test

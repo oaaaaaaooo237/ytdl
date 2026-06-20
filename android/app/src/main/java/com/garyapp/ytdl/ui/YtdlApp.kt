@@ -146,7 +146,7 @@ fun ytdlNavigationDestinations(): List<YtdlDestination> = listOf(
         route = "settings",
         label = "设置",
         title = "设置",
-        summary = "管理保存位置、解析器、ffmpeg、隐私和外观。",
+        summary = "管理保存位置、解析器、媒体处理、隐私和外观。",
         icon = "⚙",
         accent = SettingsAccent,
         reservedEntries = listOf("外观与颜色"),
@@ -158,7 +158,7 @@ fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
     "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕"),
     "queue" to listOf("下载进行中", "真实下载中", "等待中", "已完成", "失败", "暂停", "取消"),
     "history" to listOf("搜索历史", "全部", "视频", "音频", "打开", "分享", "删除"),
-    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "ffmpeg 能力", "通知权限", "隐私与授权说明", "外观与颜色", "Codex 风格"),
+    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "隐私与授权说明", "外观与颜色", "Codex 风格"),
 )
 
 @Composable
@@ -868,7 +868,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems() {
     item { SettingLineCard("默认保存位置", "App 私有目录", "▣", "›", SettingsAccent) }
     item { SettingLineCard("Cookies 文件", "仅保存文件引用，不保存内容", "▤", "›", SettingsAccent) }
     item { SettingLineCard("解析器版本", "yt-dlp 2026.3.17", "◇", "›", Color(0xFFE7A600)) }
-    item { SettingLineCard("ffmpeg 能力", "第一阶段真实合并/嵌入/烧录", "⚙", "›", SettingsAccent, modifier = Modifier.testTag("ytdl-settings-ffmpeg")) }
+    item { SettingLineCard("媒体处理能力", "原生合并 · 字幕独立文件", "⚙", "›", SettingsAccent, modifier = Modifier.testTag("ytdl-settings-media-processor")) }
     item { SettingLineCard("通知权限", "已允许", "●", "›", FormatAccent) }
     item { SettingLineCard("隐私与授权说明", "查看说明", "◆", "›", SuccessGreen) }
     item { SettingLineCard("不适用网站提示", "该地址不适合 Play 版处理", "!", "›", DownloadAccent) }
@@ -998,7 +998,7 @@ private fun SegmentedRow(
 private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
     val tagSuffix = row.height?.toString() ?: "auto"
     val badge = when {
-        row.mergeRequired -> "需 ffmpeg 合并"
+        row.mergeRequired -> "需原生合并"
         row.direct -> "单文件"
         row.reason != null -> row.reason
         else -> null

@@ -56,7 +56,7 @@ class YtdlAppUiTest {
 
         tapTag("ytdl-tab-settings")
         assertTagVisible("ytdl-screen-settings")
-        assertTagVisible("ytdl-settings-ffmpeg")
+        assertTagVisible("ytdl-settings-media-processor")
     }
 
     @Test
@@ -108,7 +108,7 @@ class YtdlAppUiTest {
         tapTag("ytdl-tab-formats")
         scrollUntilTag("ytdl-format-row-1080")
         assertTextContains("1080p", timeoutMs = 1_000)
-        assertTextContains("需 ffmpeg 合并", timeoutMs = 1_000)
+        assertTextContains("需原生合并", timeoutMs = 1_000)
         tapTag("ytdl-format-row-1080")
         scrollUntilTag("ytdl-format-apply")
         tapTag("ytdl-format-apply")
@@ -151,9 +151,7 @@ class YtdlAppUiTest {
     private fun setTextTag(tag: String, value: String) {
         val node = findTag(tag)
         assertNotNull("未找到可输入 UI 节点：$tag", node)
-        node!!.click()
-        node.text = value
-        device.pressBack()
+        node!!.text = value
         device.waitForIdle()
     }
 

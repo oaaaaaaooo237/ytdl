@@ -105,7 +105,7 @@ class MediaProcessorContractTest {
     }
 
     @Test
-    fun nativeMuxerExplicitlyRoutesSubtitleWorkToFfmpegProcessor() {
+    fun nativeMuxerExplicitlyKeepsSubtitleWorkForMvp2Processor() {
         val outputRoot = tempFolder.newFolder("outputs")
         val processor = NativeMuxerMediaProcessor(outputRoot)
         val videoInput = tempFolder.newFile("input.mp4").apply {
@@ -134,8 +134,8 @@ class MediaProcessorContractTest {
         assertTrue(burnResult.isFailure)
         assertTrue(embedResult.exceptionOrNull() is UnsupportedOperationException)
         assertTrue(burnResult.exceptionOrNull() is UnsupportedOperationException)
-        assertTrue(embedResult.exceptionOrNull()?.message.orEmpty().contains("ffmpeg", ignoreCase = true))
-        assertTrue(burnResult.exceptionOrNull()?.message.orEmpty().contains("ffmpeg", ignoreCase = true))
+        assertTrue(embedResult.exceptionOrNull()?.message.orEmpty().contains("MVP2", ignoreCase = true))
+        assertTrue(burnResult.exceptionOrNull()?.message.orEmpty().contains("MVP2", ignoreCase = true))
     }
 
     private fun request(

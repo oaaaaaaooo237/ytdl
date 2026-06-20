@@ -20,7 +20,7 @@
 
 - 仓库内尚未创建正式 Android 工程骨架。
 - 尚未准备真实 `arm64-v8a` 手机；小米 14 或同级设备仍是第一阶段真机验收目标。
-- 尚未确定 Android ffmpeg 打包方案、许可证记录、ABI 产物和包体积预算；第一阶段必须真实支持音视频合并、字幕嵌入和字幕烧录。
+- 尚未实现 MVP1 的完整下载编排、前台服务、历史、导出和独立字幕文件输出；MVP1 媒体处理口径为原生 `MediaExtractor + MediaMuxer` 合并分离音视频流，字幕嵌入、字幕烧录和三合一输出进入 MVP2。
 - 尚未确认 Google Play 发布签名、隐私政策 URL、Data safety 填写口径和商店截图素材。
 
 ## 已确认工具链
@@ -147,4 +147,4 @@ powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1 -CreateMatrix
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-真实设备验收仍需要小米 14 或同级 `arm64-v8a` 手机。模拟器矩阵已经准备好，不能替代真机通知、后台下载、文件导出和 Android ffmpeg 性能验证。
+真实设备验收仍需要小米 14 或同级 `arm64-v8a` 手机。模拟器矩阵已经准备好，不能替代真机通知、后台下载、文件导出和原生媒体合并性能验证；MVP2 若加入 FFmpeg 或等价字幕处理链，还需要另做真机性能、许可证、ABI 和包体积验证。

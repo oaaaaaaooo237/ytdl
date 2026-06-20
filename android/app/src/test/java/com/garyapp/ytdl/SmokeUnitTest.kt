@@ -34,7 +34,7 @@ class SmokeUnitTest {
         assertTrue(labels.getValue("formats").containsAll(listOf("视频+音频", "1080p", "需合并", "字幕")))
         assertTrue(labels.getValue("queue").containsAll(listOf("下载进行中", "真实下载中", "等待中", "已完成", "失败", "暂停", "取消")))
         assertTrue(labels.getValue("history").containsAll(listOf("搜索历史", "打开", "分享", "删除")))
-        assertTrue(labels.getValue("settings").containsAll(listOf("Cookies 文件", "ffmpeg 能力", "外观与颜色", "Codex 风格")))
+        assertTrue(labels.getValue("settings").containsAll(listOf("Cookies 文件", "媒体处理能力", "外观与颜色", "Codex 风格")))
     }
 
     @Test

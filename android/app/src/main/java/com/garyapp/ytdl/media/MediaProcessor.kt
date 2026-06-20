@@ -33,7 +33,7 @@ interface MediaProcessor {
     private fun unsupportedSubtitleOperation(operationName: String): Result<MediaProcessingResult> {
         return Result.failure(
             UnsupportedOperationException(
-                "$processorName 不支持$operationName；请路由到后续 Android ffmpeg processor。",
+                "$processorName 不支持$operationName；请路由到 MVP2 字幕处理器。",
             ),
         )
     }
