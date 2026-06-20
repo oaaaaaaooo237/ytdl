@@ -73,6 +73,7 @@ enum class SubtitleSource(val pythonValue: String) {
 }
 
 enum class DownloadFormatRole(val pythonValue: String) {
+    Media("media"),
     Video("video"),
     Audio("audio"),
     ;
@@ -89,6 +90,7 @@ enum class AnalysisErrorCategory {
     Unsupported,
     Permission,
     Parser,
+    Canceled,
     Unknown,
 }
 

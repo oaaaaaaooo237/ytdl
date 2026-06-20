@@ -5,6 +5,10 @@ import re
 import yt_dlp
 
 
+class ProgressListenerException(Exception):
+    pass
+
+
 def analyze(url, cookies_path=None):
     options = {
         "quiet": True,
@@ -84,8 +88,8 @@ def download_format(url, output_dir, format_id, role, cookies_path=None, progres
         normalized_role = str(role or "").strip()
         if not _is_explicit_format_id(normalized_format_id):
             raise ValueError("format id must be a single explicit id")
-        if normalized_role not in ("video", "audio"):
-            raise ValueError("role must be video or audio")
+        if normalized_role not in ("media", "video", "audio"):
+            raise ValueError("role must be media, video or audio")
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -259,8 +263,9 @@ def _emit_progress(progress_listener, event):
 
     try:
         progress_listener.onProgress(status, percent, downloaded, total, speed, eta, str(filename))
-    except Exception:
-        pass
+    except BaseException as exc:
+        detail = f"{exc.__class__.__name__}: {exc}"
+        raise ProgressListenerException(f"progress listener exception: {detail}") from exc
 
 
 def _is_explicit_format_id(value):
@@ -426,6 +431,8 @@ def _as_float(value):
 
 def _error_category(exc):
     text = str(exc).lower()
+    if "canceled" in text or "cancelled" in text or "取消" in text:
+        return "canceled"
     if "network" in text or "timed out" in text or "timeout" in text:
         return "network"
     if "unsupported" in text or "no suitable extractor" in text:
@@ -443,6 +450,8 @@ def _error_category(exc):
 
 def _safe_error_message(exc):
     category = _error_category(exc)
+    if category == "canceled":
+        return "下载已取消。"
     if "subtitle" in str(exc).lower() or "subtitles" in str(exc).lower():
         return "没有可用的匹配字幕文件，请选择分析结果中的语言和格式。"
     if category == "network":

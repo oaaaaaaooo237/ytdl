@@ -24,7 +24,7 @@ class YtdlpBridge(
             val module = pythonProvider().getModule("ytdl_bridge")
             val json = module.callAttr("analyze", policy.rawUrlForExecution, cookiesPath).toString()
             parseAnalysisJson(json)
-        } catch (exc: Throwable) {
+        } catch (exc: Exception) {
             Result.failure(exc.toSafeAnalysisException())
         }
     }
@@ -56,7 +56,7 @@ class YtdlpBridge(
                 PythonProgressProxy(listener),
             ).toString()
             parseDownloadJson(json)
-        } catch (exc: Throwable) {
+        } catch (exc: Exception) {
             Result.failure(exc.toSafeDownloadException())
         }
     }
@@ -102,7 +102,7 @@ class YtdlpBridge(
                 PythonProgressProxy(listener),
             ).toString()
             parseDownloadJson(json)
-        } catch (exc: Throwable) {
+        } catch (exc: Exception) {
             Result.failure(exc.toSafeDownloadException())
         }
     }
@@ -151,7 +151,7 @@ class YtdlpBridge(
                 PythonProgressProxy(listener),
             ).toString()
             parseSubtitleDownloadJson(json)
-        } catch (exc: Throwable) {
+        } catch (exc: Exception) {
             Result.failure(exc.toSafeDownloadException())
         }
     }
@@ -210,6 +210,7 @@ class YtdlpBridge(
                 "unsupported" -> AnalysisErrorCategory.Unsupported
                 "permission" -> AnalysisErrorCategory.Permission
                 "parser" -> AnalysisErrorCategory.Parser
+                "canceled" -> AnalysisErrorCategory.Canceled
                 else -> AnalysisErrorCategory.Unknown
             }
         }

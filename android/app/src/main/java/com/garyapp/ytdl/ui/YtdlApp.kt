@@ -35,6 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,10 +57,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.garyapp.ytdl.core.ytdlp.DownloadProgress
-import com.garyapp.ytdl.core.ytdlp.DownloadProgressListener
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import com.garyapp.ytdl.download.DownloadCoordinator
+import com.garyapp.ytdl.download.DownloadOutputKind
+import com.garyapp.ytdl.download.DownloadStage
+import com.garyapp.ytdl.download.DownloadTaskState
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -88,7 +91,7 @@ data class YtdlDestination(
     val reservedEntries: List<String> = emptyList(),
 )
 
-private data class RuntimeDownloadState(
+internal data class RuntimeDownloadState(
     val url: String = "",
     val analysis: VideoAnalysis? = null,
     val formatSelection: FormatSelection = FormatSelection(),
@@ -106,7 +109,7 @@ private data class RuntimeDownloadState(
     val outputBytes: Long = 0L,
 ) {
     val hasRealTask: Boolean
-        get() = downloadStatus.isNotBlank() || progressPercent != null || outputPath.isNotBlank()
+        get() = downloadStatus.isNotBlank() || progressPercent != null || outputPath.isNotBlank() || outputBytes > 0L || isDownloading
 }
 
 fun ytdlNavigationDestinations(): List<YtdlDestination> = listOf(
@@ -154,11 +157,11 @@ fun ytdlNavigationDestinations(): List<YtdlDestination> = listOf(
 )
 
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
-    "download" to listOf("粘贴公开视频页面地址", "分析", "公开授权测试片段", "保存位置", "下载模式", "开始下载"),
+    "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "保存位置", "下载模式", "开始下载"),
     "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕"),
-    "queue" to listOf("下载进行中", "真实下载中", "等待中", "已完成", "失败", "暂停", "取消"),
-    "history" to listOf("搜索历史", "全部", "视频", "音频", "打开", "分享", "删除"),
-    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "隐私与授权说明", "外观与颜色", "Codex 风格"),
+    "queue" to listOf("下载进行中", "当前阶段", "等待真实任务", "暂无真实下载任务", "最近任务已完成", "最近任务失败", "最近任务已取消", "下载视频", "下载音频", "原生合并", "已取消"),
+    "history" to listOf("搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
+    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "前台验收待完成", "隐私与授权说明", "外观与颜色", "Codex 风格"),
 )
 
 @Composable
@@ -170,6 +173,15 @@ fun YtdlApp() {
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val bridge = remember { YtdlpBridge() }
     val selected = destinations.firstOrNull { it.route == selectedRoute } ?: destinations.first()
+
+    DisposableEffect(Unit) {
+        val subscription = DownloadCoordinator.addListener { state ->
+            mainHandler.post {
+                runtimeState = runtimeState.withPipelineState(state)
+            }
+        }
+        onDispose { subscription.close() }
+    }
 
     fun loadThumbnail(thumbnailUrl: String) {
         Thread {
@@ -234,56 +246,39 @@ fun YtdlApp() {
 
     fun startRealDownload() {
         val url = runtimeState.url.trim()
-        if (url.isBlank()) {
-            runtimeState = runtimeState.copy(userMessage = "请先输入公开视频页面地址。")
+        val requestResult = buildAppliedDownloadRequest(
+            url = url,
+            analysis = runtimeState.analysis,
+            appliedSelection = runtimeState.appliedFormatSelection,
+        )
+        if (requestResult.isFailure) {
+            val message = requestResult.exceptionOrNull()?.message.orEmpty()
+                .ifBlank { "格式选择错误，请重新分析或应用格式。" }
+            runtimeState = runtimeState.copy(
+                isDownloading = false,
+                userMessage = if (message.contains("请先")) message else "格式选择错误：$message",
+            )
             return
         }
+        val request = requestResult.getOrThrow()
 
-        runtimeState = runtimeState.copy(
-            isDownloading = true,
-            userMessage = "真实下载已开始，已加入队列。",
-            downloadStatus = "真实下载中",
-            progressPercent = 0.0,
-            downloadedBytes = 0L,
-            totalBytes = null,
-            outputPath = "",
-            outputBytes = 0L,
+        val outputDir = File(context.cacheDir, "gui-downloads").apply { mkdirs() }
+        val startResult = DownloadCoordinator.startForegroundDownload(
+            context = context.applicationContext,
+            request = request,
+            outputDirectory = outputDir,
         )
-        Thread {
-            val outputDir = File(context.cacheDir, "gui-downloads").apply { mkdirs() }
-            val result = bridge.downloadSingleFile(
-                url = url,
-                outputDirectory = outputDir,
-                listener = DownloadProgressListener { progress ->
-                    mainHandler.post {
-                        runtimeState = runtimeState.withProgress(progress)
-                    }
-                },
-            )
-            mainHandler.post {
-                runtimeState = result.fold(
-                    onSuccess = { download ->
-                        runtimeState.copy(
-                            isDownloading = false,
-                            userMessage = "下载完成：${File(download.outputPath).name}",
-                            downloadStatus = "下载完成",
-                            progressPercent = 100.0,
-                            downloadedBytes = download.bytesWritten,
-                            totalBytes = download.bytesWritten,
-                            outputPath = download.outputPath,
-                            outputBytes = download.bytesWritten,
-                        )
-                    },
-                    onFailure = { error ->
-                        runtimeState.copy(
-                            isDownloading = false,
-                            userMessage = "下载失败：${error.message.orEmpty().ifBlank { "请检查网络或授权状态。" }}",
-                            downloadStatus = "下载失败",
-                        )
-                    },
+        runtimeState = startResult.fold(
+            onSuccess = { waiting ->
+                runtimeState.withPipelineState(waiting).copy(userMessage = "真实下载已加入前台队列。")
+            },
+            onFailure = { error ->
+                runtimeState.withPipelineState(DownloadTaskState.idle()).copy(
+                    isDownloading = false,
+                    userMessage = "启动前台下载失败：${error.message.orEmpty().ifBlank { "请检查系统权限。" }}",
                 )
-            }
-        }.start()
+            },
+        )
     }
 
     Scaffold(
@@ -335,11 +330,13 @@ fun YtdlApp() {
                         },
                         onApplySelection = {
                             val summary = formatSelectionSummary(runtimeState.analysis, runtimeState.formatSelection)
-                            runtimeState = runtimeState.copy(
-                                appliedFormatSelection = runtimeState.formatSelection,
-                                userMessage = "已应用格式选择：$summary",
-                            )
-                            selectedRoute = "download"
+                            mainHandler.post {
+                                runtimeState = runtimeState.copy(
+                                    appliedFormatSelection = runtimeState.formatSelection,
+                                    userMessage = "已应用格式选择：$summary",
+                                )
+                                selectedRoute = "download"
+                            }
                         },
                     )
                     "queue" -> queuePageItems(runtimeState)
@@ -360,20 +357,50 @@ fun YtdlApp() {
     }
 }
 
-private fun RuntimeDownloadState.withProgress(progress: DownloadProgress): RuntimeDownloadState {
-    val statusText = when (progress.status) {
-        "finished" -> "下载完成"
-        "downloading" -> "真实下载中"
-        else -> progress.status.ifBlank { "真实下载中" }
+internal fun RuntimeDownloadState.withPipelineStateForUiTest(state: DownloadTaskState): RuntimeDownloadState = withPipelineState(state)
+
+private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): RuntimeDownloadState {
+    val statusText = userVisibleDownloadStatus(state.stage)
+    val progress = state.progress
+    val mediaOutput = state.outputs.firstOrNull { it.kind == DownloadOutputKind.Media }
+    if (state.stage == DownloadStage.Idle || (state.request == null && state.outputs.isEmpty() && state.stage == DownloadStage.Failed)) {
+        return copy(
+            isDownloading = false,
+            userMessage = "等待输入公开视频页面地址。",
+            progressPercent = null,
+            downloadedBytes = null,
+            totalBytes = null,
+            downloadStatus = "",
+            outputPath = "",
+            outputBytes = 0L,
+        )
     }
     return copy(
-        isDownloading = progress.status != "finished",
+        isDownloading = state.stage !in TerminalDownloadStages,
+        userMessage = when (state.stage) {
+            DownloadStage.Failed -> "下载失败：${state.errorMessage.orEmpty().ifBlank { "请检查网络或授权状态。" }}"
+            DownloadStage.Canceled -> "下载已取消。"
+            DownloadStage.Completed -> "下载完成：${mediaOutput?.path?.let { File(it).name }.orEmpty().ifBlank { "输出文件" }}"
+            else -> "正在$statusText..."
+        },
         downloadStatus = statusText,
-        progressPercent = progress.percent ?: progressPercent,
-        downloadedBytes = progress.downloadedBytes ?: downloadedBytes,
-        totalBytes = progress.totalBytes ?: totalBytes,
+        progressPercent = when (state.stage) {
+            DownloadStage.Completed -> 100.0
+            else -> progress?.percent
+        },
+        downloadedBytes = progress?.downloadedBytes ?: mediaOutput?.bytesWritten,
+        totalBytes = progress?.totalBytes ?: mediaOutput?.bytesWritten,
+        outputPath = mediaOutput?.path.orEmpty(),
+        outputBytes = mediaOutput?.bytesWritten ?: 0L,
     )
 }
+
+private val TerminalDownloadStages = setOf(
+    DownloadStage.Completed,
+    DownloadStage.Failed,
+    DownloadStage.Canceled,
+    DownloadStage.Idle,
+)
 
 private fun loadThumbnailBitmap(thumbnailUrl: String): Bitmap? {
     return runCatching {
@@ -719,7 +746,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     item { SettingLineCard("帧率", "自动（推荐）", "▾", "›") }
     item { SettingLineCard("视频编码", "H.264（推荐）", "▾", "›") }
     item { SettingLineCard("容器格式", "MP4（推荐）", "▾", "›") }
-    item { SettingLineCard("字幕", "下载文件", "▾", "›") }
+    item { SettingLineCard("字幕", "字幕待选择", "▾", "›") }
     item {
         Surface(
             modifier = Modifier.testTag("ytdl-format-summary"),
@@ -729,7 +756,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("实际下载：${formatSelectionSummary(analysis, selection)}", color = FormatAccent, fontWeight = FontWeight.Bold)
-                Text("只更新界面选择摘要；真实下载路由将在后续任务接入。", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                Text("已接入 M6 下载管线；开始下载会按当前格式选择进入真实路由。", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -752,9 +779,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(state:
     item {
         Surface(color = Color(0xFFFFF2DE), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(16.dp)) {
-                Text("下载进行中", color = Color(0xFF9A4A00), fontWeight = FontWeight.Bold)
+                Text(queueHeaderTitle(state), color = Color(0xFF9A4A00), fontWeight = FontWeight.Bold)
                 Text(
-                    if (state.hasRealTask) "1 个真实任务正在处理" else "暂无真实下载任务，下方为界面演示队列",
+                    queueHeaderSummary(state),
                     color = SoftText,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -771,11 +798,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(state:
             Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
                 QueueCard(
                     title = title,
-                    subtitle = "真实下载中 · ${state.downloadStatus.ifBlank { "等待进度" }}",
+                    subtitle = queueCardSubtitle(state),
                     progress = progress,
-                    status = if (state.downloadStatus == "下载完成") "100%" else "${(state.progressPercent ?: 0.0).toInt()}%",
+                    status = queueCardStatus(state),
                     meta = "$downloaded / $total${if (state.outputPath.isNotBlank()) " · ${File(state.outputPath).name}" else ""}",
-                    accent = if (state.downloadStatus == "下载完成") SuccessGreen else QueueAccent,
+                    accent = queueCardAccent(state),
                 )
             }
         }
@@ -793,37 +820,58 @@ private fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(state:
             )
         }
     }
-    item { SectionTitle("演示队列（未下载）") }
-    items(
-        listOf(
-            "城市延时摄影片段" to "1080p MP4",
-            "自然风光演示片段" to "720p MP4",
-        ),
-    ) { (title, subtitle) ->
-        QueueCard(title = title, subtitle = subtitle, progress = 0f, status = "等待中", meta = "拖动可调整顺序", accent = Color(0xFFB7AFA5))
+}
+
+private fun queueHeaderTitle(state: RuntimeDownloadState): String {
+    if (!state.hasRealTask) return "暂无真实下载任务"
+    return when (state.downloadStatus) {
+        "下载完成" -> "最近任务已完成"
+        "下载失败" -> "最近任务失败"
+        "已取消" -> "最近任务已取消"
+        else -> "下载进行中"
     }
-    item { SectionTitle("已完成（18）") }
-    item {
-        QueueCard(
-            title = "海边散步片段",
-            subtitle = "720p MP4",
-            progress = 1f,
-            status = "已完成",
-            meta = "本地文件可打开或分享",
-            accent = SuccessGreen,
-        )
+}
+
+internal fun queueHeaderTitleForUiTest(state: RuntimeDownloadState): String = queueHeaderTitle(state)
+
+private fun queueHeaderSummary(state: RuntimeDownloadState): String {
+    if (!state.hasRealTask) return "暂无真实下载任务"
+    return when (state.downloadStatus) {
+        "下载完成" -> "最近任务已完成"
+        "下载失败" -> "最近任务失败"
+        "已取消" -> "最近任务已取消"
+        else -> "1 个真实任务正在处理"
     }
-    item { SectionTitle("失败（1）") }
-    item {
-        QueueCard(
-            title = "样片下载测试",
-            subtitle = "解析失败：无法获取信息",
-            progress = 0f,
-            status = "!",
-            meta = "查看原因或重新分析",
-            accent = DownloadAccent,
-            modifier = Modifier.testTag("ytdl-queue-failed-card"),
-        )
+}
+
+internal fun queueHeaderSummaryForUiTest(state: RuntimeDownloadState): String = queueHeaderSummary(state)
+
+private fun queueCardSubtitle(state: RuntimeDownloadState): String {
+    val status = state.downloadStatus.ifBlank { "等待进度" }
+    return when (state.downloadStatus) {
+        "下载完成", "下载失败", "已取消" -> status
+        else -> "当前阶段 · $status"
+    }
+}
+
+internal fun queueCardSubtitleForUiTest(state: RuntimeDownloadState): String = queueCardSubtitle(state)
+
+private fun queueCardStatus(state: RuntimeDownloadState): String {
+    return when (state.downloadStatus) {
+        "下载完成" -> "100%"
+        "下载失败" -> "失败"
+        "已取消" -> "取消"
+        else -> "${(state.progressPercent ?: 0.0).toInt()}%"
+    }
+}
+
+internal fun queueCardStatusForUiTest(state: RuntimeDownloadState): String = queueCardStatus(state)
+
+private fun queueCardAccent(state: RuntimeDownloadState): Color {
+    return when (state.downloadStatus) {
+        "下载完成" -> SuccessGreen
+        "下载失败", "已取消" -> DownloadAccent
+        else -> QueueAccent
     }
 }
 
@@ -849,18 +897,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems() {
         )
     }
     item { SegmentedRow(listOf("全部", "视频", "音频"), selectedIndex = 0, accent = HistoryAccent) }
-    items(
-        listOf(
-            HistoryItem("公开授权测试片段", "06/19 14:32   312 MB", "本地"),
-            HistoryItem("城市延时摄影片段", "06/19 11:08   586 MB", "本地"),
-            HistoryItem("自然风光演示片段", "06/18 19:42   245 MB", "本地"),
-            HistoryItem("海边散步片段", "06/17 22:15   176 MB", "本地"),
-        ),
-    ) { item ->
-        HistoryCard(
-            item,
-            modifier = if (item.title == "公开授权测试片段") Modifier.testTag("ytdl-history-first-card") else Modifier,
-        )
+    item {
+        AppCard(modifier = Modifier.testTag("ytdl-history-empty-card")) {
+            Text("暂无真实历史记录，完成下载后会显示", color = Color(0xFF181B17), fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text("M7/M9 接入真实历史持久化前，这里不会展示样片记录。", color = SoftText, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -869,7 +911,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems() {
     item { SettingLineCard("Cookies 文件", "仅保存文件引用，不保存内容", "▤", "›", SettingsAccent) }
     item { SettingLineCard("解析器版本", "yt-dlp 2026.3.17", "◇", "›", Color(0xFFE7A600)) }
     item { SettingLineCard("媒体处理能力", "原生合并 · 字幕独立文件", "⚙", "›", SettingsAccent, modifier = Modifier.testTag("ytdl-settings-media-processor")) }
-    item { SettingLineCard("通知权限", "已允许", "●", "›", FormatAccent) }
+    item { SettingLineCard("通知权限", "待系统确认 · 前台验收待完成", "●", "›", FormatAccent) }
     item { SettingLineCard("隐私与授权说明", "查看说明", "◆", "›", SuccessGreen) }
     item { SettingLineCard("不适用网站提示", "该地址不适合 Play 版处理", "!", "›", DownloadAccent) }
     item {

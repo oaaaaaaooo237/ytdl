@@ -90,18 +90,49 @@ private fun buildRowForHeight(
     height: Int?,
 ): FormatResolutionRow {
     if (height == null) {
-        val best = bestVideoAndAudioChoice(analysis)
-        return if (best == null) {
-            unavailableRow(height, "自动（推荐）", selection, "当前视频未提供")
-        } else {
-            rowFromChoice(
-                height = null,
-                label = "自动（推荐）",
-                selection = selection,
-                choice = best,
-                selected = selection.selectedHeight == null,
-                prefix = "自动（推荐） · ",
-            )
+        return when (selection.mode) {
+            FormatMode.VideoAndAudio -> {
+                val best = bestVideoAndAudioChoice(analysis)
+                if (best == null) {
+                    unavailableRow(height, "自动（推荐）", selection, "当前视频未提供")
+                } else {
+                    rowFromChoice(
+                        height = null,
+                        label = "自动（推荐）",
+                        choice = best,
+                        selected = selection.selectedHeight == null,
+                        prefix = "自动（推荐） · ",
+                    )
+                }
+            }
+            FormatMode.VideoOnly -> {
+                val video = bestStandaloneVideo(analysis)
+                if (video == null) {
+                    unavailableRow(height, "自动（推荐）", selection, "当前视频未提供独立视频流")
+                } else {
+                    rowFromChoice(
+                        height = null,
+                        label = "自动（推荐）",
+                        choice = FormatChoice(video, null, false),
+                        selected = selection.selectedHeight == null,
+                        prefix = "自动（推荐） · ",
+                    )
+                }
+            }
+            FormatMode.AudioOnly -> {
+                val audio = bestStandaloneAudio(analysis)
+                if (audio == null) {
+                    unavailableRow(height, "自动（推荐）", selection, "当前视频未提供独立音频流")
+                } else {
+                    audioOnlyRow(
+                        height = null,
+                        label = "自动（推荐）",
+                        audio = audio,
+                        selected = selection.selectedHeight == null,
+                        prefix = "自动（推荐） · ",
+                    )
+                }
+            }
         }
     }
 
@@ -111,14 +142,14 @@ private fun buildRowForHeight(
                 .filter { it.isSupported && it.height == height && it.hasVideo && it.hasAudio }
                 .bestByQuality()
             if (direct != null) {
-                rowFromChoice(height, "${height}p", selection, FormatChoice(direct, null, false), selection.selectedHeight == height)
+                rowFromChoice(height, "${height}p", FormatChoice(direct, null, false), selection.selectedHeight == height)
             } else {
                 val video = analysis.formats
                     .filter { it.isSupported && it.height == height && it.hasVideo && !it.hasAudio }
                     .bestByQuality()
                 val audio = bestStandaloneAudio(analysis)
                 if (video != null && audio != null) {
-                    rowFromChoice(height, "${height}p", selection, FormatChoice(video, audio, true), selection.selectedHeight == height)
+                    rowFromChoice(height, "${height}p", FormatChoice(video, audio, true), selection.selectedHeight == height)
                 } else {
                     unavailableRow(height, "${height}p", selection, "当前视频未提供")
                 }
@@ -126,12 +157,12 @@ private fun buildRowForHeight(
         }
         FormatMode.VideoOnly -> {
             val video = analysis.formats
-                .filter { it.isSupported && it.height == height && it.hasVideo }
+                .filter { it.isSupported && it.height == height && it.hasVideo && !it.hasAudio }
                 .bestByQuality()
             if (video == null) {
-                unavailableRow(height, "${height}p", selection, "当前视频未提供")
+                unavailableRow(height, "${height}p", selection, "当前视频未提供独立视频流")
             } else {
-                rowFromChoice(height, "${height}p", selection, FormatChoice(video, null, false), selection.selectedHeight == height)
+                rowFromChoice(height, "${height}p", FormatChoice(video, null, false), selection.selectedHeight == height)
             }
         }
         FormatMode.AudioOnly -> unavailableRow(height, "${height}p", selection, "仅音频不使用分辨率")
@@ -141,7 +172,6 @@ private fun buildRowForHeight(
 private fun rowFromChoice(
     height: Int?,
     label: String,
-    selection: FormatSelection,
     choice: FormatChoice,
     selected: Boolean,
     prefix: String = "",
@@ -160,6 +190,28 @@ private fun rowFromChoice(
         summary = "$prefix$formatHeight $ext $capability",
         videoFormatId = choice.video.id,
         audioFormatId = choice.audio?.id,
+    )
+}
+
+private fun audioOnlyRow(
+    height: Int?,
+    label: String,
+    audio: VideoFormat,
+    selected: Boolean,
+    prefix: String = "",
+): FormatResolutionRow {
+    val ext = audio.ext.ifBlank { "audio" }.uppercase()
+    return FormatResolutionRow(
+        height = height,
+        label = label,
+        selectable = true,
+        selected = selected,
+        mergeRequired = false,
+        direct = true,
+        reason = null,
+        summary = "${prefix}音频 $ext 单文件",
+        videoFormatId = null,
+        audioFormatId = audio.id,
     )
 }
 
@@ -201,6 +253,12 @@ private fun bestVideoAndAudioChoice(analysis: VideoAnalysis): FormatChoice? {
 
     return listOfNotNull(direct?.let { FormatChoice(it, null, false) }, merged)
         .maxByOrNull { it.video.height ?: 0 }
+}
+
+private fun bestStandaloneVideo(analysis: VideoAnalysis): VideoFormat? {
+    return analysis.formats
+        .filter { it.isSupported && it.hasVideo && !it.hasAudio }
+        .bestByQuality()
 }
 
 private fun bestStandaloneAudio(analysis: VideoAnalysis): VideoFormat? {

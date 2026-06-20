@@ -52,7 +52,7 @@ class YtdlAppUiTest {
 
         tapTag("ytdl-tab-history")
         assertTagVisible("ytdl-screen-history")
-        assertTagVisible("ytdl-history-first-card")
+        assertTagVisible("ytdl-history-empty-card")
 
         tapTag("ytdl-tab-settings")
         assertTagVisible("ytdl-screen-settings")
@@ -60,17 +60,11 @@ class YtdlAppUiTest {
     }
 
     @Test
-    fun queueScreenCanScrollToFailureCard() {
+    fun queueScreenShowsEmptyStateWithoutDemoFailureCard() {
         tapTag("ytdl-tab-queue")
         assertTagVisible("ytdl-queue-active-card")
         assertTagVisible("ytdl-queue-scroll-indicator")
-
-        repeat(4) {
-            if (findTag("ytdl-queue-failed-card", timeoutMs = 500) != null) return@repeat
-            swipeContentUp()
-        }
-
-        assertTagVisible("ytdl-queue-failed-card")
+        assertTextContains("暂无真实下载任务", timeoutMs = 1_000)
     }
 
     @Test

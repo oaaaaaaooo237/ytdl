@@ -2,6 +2,7 @@ package com.garyapp.ytdl.core.ytdlp
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,6 +37,32 @@ class SplitDownloadRequestTest {
             download.outputPath,
         )
         assertEquals(123456L, download.bytesWritten)
+    }
+
+    @Test
+    fun parsesProgressiveMediaDownloadJsonWithRoleFormatIdBytesAndPath() {
+        val result = YtdlpBridge.parseDownloadJson(
+            """
+            {
+              "ok": true,
+              "title": "sample",
+              "formatId": "18",
+              "role": "media",
+              "outputPath": "/data/user/0/com.garyapp.ytdl/cache/download-tkxzMEfp49Q-18-media.mp4",
+              "bytesWritten": 44556988
+            }
+            """.trimIndent(),
+        )
+
+        assertTrue(result.exceptionOrNull()?.message.orEmpty(), result.isSuccess)
+        val download = result.getOrThrow()
+        assertEquals("18", download.formatId)
+        assertEquals(DownloadFormatRole.Media, download.role)
+        assertEquals(
+            "/data/user/0/com.garyapp.ytdl/cache/download-tkxzMEfp49Q-18-media.mp4",
+            download.outputPath,
+        )
+        assertEquals(44556988L, download.bytesWritten)
     }
 
     @Test
@@ -117,6 +144,53 @@ class SplitDownloadRequestTest {
     }
 
     @Test
+    fun downloadFormatDoesNotConvertFatalPythonProviderErrorsToResultFailure() {
+        val bridge = YtdlpBridge(
+            pythonProvider = {
+                throw AssertionError("fatal python bridge invariant")
+            },
+        )
+
+        assertThrows(AssertionError::class.java) {
+            bridge.downloadFormat(
+                url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+                outputDirectory = java.io.File("build/split-download-test"),
+                formatId = "18",
+                role = DownloadFormatRole.Media,
+            )
+        }
+    }
+
+    @Test
+    fun parseDownloadJsonMapsCanceledCategory() {
+        val result = YtdlpBridge.parseDownloadJson(
+            """
+            {
+              "ok": false,
+              "errorCategory": "canceled",
+              "errorMessage": "用户已取消下载。"
+            }
+            """.trimIndent(),
+        )
+
+        val error = result.exceptionOrNull() as YtdlpDownloadException
+        assertEquals(AnalysisErrorCategory.Canceled, error.category)
+        assertTrue(error.safeMessage.contains("取消"))
+    }
+
+    @Test
+    fun pythonProgressBridgeDoesNotSilentlySwallowListenerExceptions() {
+        val source = sourceFile(
+            "app/src/main/python/ytdl_bridge.py",
+            "src/main/python/ytdl_bridge.py",
+        ).readText()
+
+        assertTrue(source.contains("class ProgressListenerException"))
+        assertTrue(source.contains("raise ProgressListenerException"))
+        assertFalse(source.contains("except Exception:\n        pass"))
+    }
+
+    @Test
     fun rejectsSuccessfulDownloadJsonWithEmptyOutputPath() {
         val result = YtdlpBridge.parseDownloadJson(
             """
@@ -178,8 +252,16 @@ class SplitDownloadRequestTest {
 
     @Test
     fun splitDownloadRoleUsesYtDlpBridgeValues() {
+        assertEquals("media", DownloadFormatRole.Media.pythonValue)
         assertEquals("video", DownloadFormatRole.Video.pythonValue)
         assertEquals("audio", DownloadFormatRole.Audio.pythonValue)
         assertFalse(DownloadFormatRole.values().any { it.pythonValue == "18/worst" })
+    }
+
+    private fun sourceFile(vararg candidates: String): java.io.File {
+        return candidates
+            .map { java.io.File(it) }
+            .firstOrNull { it.isFile }
+            ?: error("source file not found: ${candidates.joinToString()}")
     }
 }

@@ -363,7 +363,7 @@ This section records the adjusted continuation order after user review. From 202
 
 ### Continuation Task M5: Subtitle File Output for MVP1
 
-**Status:** 当前执行任务；用户已确认 MVP1 不做字幕嵌入/烧录。
+**Status:** 已完成并通过 API37 真实字幕文件下载；保留为上下文，不再重新执行。
 
 **Purpose:** Add the MVP1 subtitle path: when subtitles are requested and available, download them as separate subtitle files and associate them with the merged video+audio output for queue, history, and export. Do not require video+audio+subtitle in one container for MVP1.
 
@@ -391,7 +391,7 @@ This section records the adjusted continuation order after user review. From 202
 
 ### Continuation Task M6: Download Orchestration and Foreground State
 
-**Status:** 未开始；M5 通过后执行。
+**Status:** 当前执行任务；已接入核心 pipeline、前台服务和真实队列状态，待审计与验证收口。
 
 **Purpose:** Build the real download pipeline that turns an analyzed format choice into direct download, split video/audio download, native merge, or separate subtitle-file download, while exposing honest queue progress and foreground-service state.
 
@@ -497,7 +497,7 @@ This section records the adjusted continuation order after user review. From 202
 - [ ] Analyze and confirm title, duration, thumbnail state, and real supported format rows.
 - [ ] Select a merge-required high-resolution `视频+音频` option.
 - [ ] Start download and observe queue states for video download, audio download, merge, and completion.
-- [ ] Exercise subtitle embed or burn path on a short fixture or a URL/subtitle case that the app can legally process.
+- [ ] Exercise separate subtitle-file output on a short fixture or a URL/subtitle case that the app can legally process; subtitle embed/burn remains MVP2 scope.
 - [ ] Inspect history, output summary, export/open behavior, settings parser/media status, and privacy/cookies boundary text.
 - [ ] Run one Shorts compatibility sample with `https://www.youtube.com/shorts/QBwpO9f0oAw` for analysis and a short download path, without duplicating every normal-video assertion.
 - [ ] Save screenshots and command/test outputs in `docs/qa/android-mvp-smoke.md`.

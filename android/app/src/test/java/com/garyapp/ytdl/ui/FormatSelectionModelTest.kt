@@ -5,6 +5,7 @@ import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -86,6 +87,80 @@ class FormatSelectionModelTest {
         assertTrue(row.summary.contains("单文件"))
     }
 
+    @Test
+    fun videoOnlyModeDoesNotSelectProgressiveFormatAtSameHeight() {
+        val rows = buildFormatResolutionRows(
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 1080),
+                videoOnlyFormat(id = "137", height = 1080),
+            ),
+            selection = FormatSelection(mode = FormatMode.VideoOnly, selectedHeight = 1080),
+        )
+
+        val row = rows.single { it.height == 1080 }
+        assertTrue(row.selectable)
+        assertTrue(row.selected)
+        assertEquals("137", row.videoFormatId)
+        assertNull(row.audioFormatId)
+    }
+
+    @Test
+    fun videoOnlyModeDisablesProgressiveRowWhenNoStandaloneVideoExists() {
+        val rows = buildFormatResolutionRows(
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+            ),
+            selection = FormatSelection(mode = FormatMode.VideoOnly, selectedHeight = 360),
+        )
+
+        val row = rows.single { it.height == 360 }
+        assertFalse(row.selectable)
+        assertFalse(row.selected)
+        assertNull(row.videoFormatId)
+        assertNull(row.audioFormatId)
+        assertTrue(row.reason.orEmpty().contains("独立视频"))
+    }
+
+    @Test
+    fun audioOnlyAutoRowSelectsBestStandaloneAudioWithoutResolution() {
+        val rows = buildFormatResolutionRows(
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+                audioOnlyFormat(id = "139", filesizeBytes = 1024),
+                audioOnlyFormat(id = "140", filesizeBytes = 4096),
+            ),
+            selection = FormatSelection(mode = FormatMode.AudioOnly, selectedHeight = null),
+        )
+
+        val row = rows.single { it.height == null }
+        assertEquals("自动（推荐）", row.label)
+        assertTrue(row.selectable)
+        assertTrue(row.selected)
+        assertTrue(row.direct)
+        assertFalse(row.mergeRequired)
+        assertNull(row.videoFormatId)
+        assertEquals("140", row.audioFormatId)
+        assertTrue(row.summary.contains("音频"))
+    }
+
+    @Test
+    fun audioOnlyResolutionRowsAreUnsupportedAndGreyedOut() {
+        val rows = buildFormatResolutionRows(
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+                audioOnlyFormat(id = "140", filesizeBytes = 4096),
+            ),
+            selection = FormatSelection(mode = FormatMode.AudioOnly, selectedHeight = 360),
+        )
+
+        val row = rows.single { it.height == 360 }
+        assertFalse(row.selectable)
+        assertFalse(row.selected)
+        assertNull(row.videoFormatId)
+        assertNull(row.audioFormatId)
+        assertEquals("仅音频不使用分辨率", row.reason)
+    }
+
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(
         title = "测试视频",
         durationSeconds = 60,
@@ -120,7 +195,7 @@ class FormatSelectionModelTest {
         audioCodec = "none",
     )
 
-    private fun audioOnlyFormat(id: String) = VideoFormat(
+    private fun audioOnlyFormat(id: String, filesizeBytes: Long? = null) = VideoFormat(
         id = id,
         ext = "m4a",
         height = null,
@@ -131,5 +206,6 @@ class FormatSelectionModelTest {
         isSupported = false,
         videoCodec = "none",
         audioCodec = "mp4a",
+        filesizeBytes = filesizeBytes,
     )
 }
