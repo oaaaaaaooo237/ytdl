@@ -15,6 +15,12 @@ object SensitiveText {
     private val bearerPattern =
         Regex("""(?i)\b(bearer)\s+[^\s,;]+""")
 
+    private val cookiesArgumentPattern =
+        Regex("""(?i)--cookies(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)""")
+
+    private val cookiesFromBrowserArgumentPattern =
+        Regex("""(?i)--cookies-from-browser(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)""")
+
     private val sensitiveQueryPattern =
         Regex("""(?i)\b(access_token|token|auth|cookie|cookies|password|pass|session|sig|signature|secret|api_key|key|sid|jwt)=([^&#\s]+)""")
 
@@ -38,6 +44,12 @@ object SensitiveText {
             }
             .replace(bearerPattern) { match ->
                 "${match.groupValues[1]} $Hidden"
+            }
+            .replace(cookiesFromBrowserArgumentPattern) {
+                "--cookies-from-browser $Hidden"
+            }
+            .replace(cookiesArgumentPattern) {
+                "--cookies $Hidden"
             }
             .replace(sensitiveQueryPattern) { match ->
                 "${match.groupValues[1]}=$Hidden"

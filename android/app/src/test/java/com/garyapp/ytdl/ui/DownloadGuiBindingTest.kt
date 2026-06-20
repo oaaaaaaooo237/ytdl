@@ -4,6 +4,7 @@ import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadTaskState
@@ -56,6 +57,75 @@ class DownloadGuiBindingTest {
         assertEquals(null, selection.selectedHeight)
         assertEquals("140", selection.selectedAudioFormatId)
         assertEquals(DownloadRoute.AudioOnly(audioFormatId = "140"), request.route)
+    }
+
+    @Test
+    fun buildAppliedDownloadRequestCarriesManagedTemporaryCookiesPath() {
+        val analysis = analysisWith(progressiveFormat(id = "18", height = 360))
+        val selection = selectBestAvailableFormatSelection(
+            analysis = analysis,
+            mode = FormatMode.VideoAndAudio,
+            preferredHeight = 360,
+        )
+
+        val request = buildAppliedDownloadRequest(
+            url = TestUrl,
+            analysis = analysis,
+            appliedSelection = selection,
+            cookiesPath = "/data/user/0/com.garyapp.ytdl/cache/temporary-cookies/ytdl-cookies-task.txt",
+        ).getOrThrow()
+
+        assertEquals("/data/user/0/com.garyapp.ytdl/cache/temporary-cookies/ytdl-cookies-task.txt", request.cookiesPath)
+    }
+
+    @Test
+    fun historyRowsRenderAsRealHistoryCardsWithoutRawSecrets() {
+        val rows = listOf(
+            HistoryItemEntity.createSafe(
+                "完成视频 Cookie: SID=secret",
+                60,
+                "https",
+                "host-hash",
+                "youtube",
+                "app-private://outputs/video.mp4",
+                "1080p --cookies D:/private/cookies.txt",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                null,
+                1_000,
+                1_000,
+                1_000,
+            ),
+            HistoryItemEntity.createSafe(
+                "失败视频",
+                60,
+                "https",
+                "host-hash",
+                "web",
+                "",
+                "720p",
+                HistoryItemEntity.STATUS_FAILED,
+                0,
+                "",
+                "",
+                "network failed Authorization: Bearer raw-token",
+                2_000,
+                2_000,
+                2_000,
+            ),
+        )
+
+        val cards = historyUiItemsFromRows(rows)
+        val serialized = cards.joinToString()
+
+        assertEquals(listOf("完成", "失败"), cards.map { it.badge })
+        assertTrue(serialized.contains("完成视频"))
+        assertTrue(serialized.contains("失败视频"))
+        listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {
+            assertFalse("history UI leaked $it", serialized.contains(it))
+        }
     }
 
     @Test

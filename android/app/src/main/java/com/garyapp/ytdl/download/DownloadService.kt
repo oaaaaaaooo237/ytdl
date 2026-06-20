@@ -5,15 +5,20 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.media.NativeMuxerMediaProcessor
 
 class DownloadService : Service() {
     private lateinit var notificationController: NotificationController
+    private lateinit var historyRecorder: DownloadHistoryRecorder
 
     override fun onCreate() {
         super.onCreate()
         notificationController = NotificationController(this)
         notificationController.ensureChannel()
+        historyRecorder = DownloadHistoryRecorder(
+            historyDao = YtdlDatabaseProvider.get(this).historyDao(),
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -64,7 +69,11 @@ class DownloadService : Service() {
             ) { state ->
                 publishForegroundState(state)
             }
-            publishForegroundState(result.state)
+            val finalState = applyHistoryRecordingResult(
+                state = result.state,
+                recordResult = historyRecorder.recordTerminal(result.state),
+            )
+            publishForegroundState(finalState)
         } finally {
             DownloadCoordinator.clearCancellation(cancellation)
             stopForegroundAfterTerminalState()

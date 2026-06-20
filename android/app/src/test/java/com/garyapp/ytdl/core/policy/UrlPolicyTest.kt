@@ -36,37 +36,31 @@ class UrlPolicyTest {
     }
 
     @Test
-    fun blocksAdultDomainsAndSubdomainsWithoutEchoingUrl() {
-        val result = UrlPolicy.evaluate("https://video.pornhub.com/watch?v=private&token=secret")
+    fun allowsHttpHostsForExtractorHandling() {
+        val result = UrlPolicy.evaluate("https://video.example.com/watch?v=private&token=secret")
 
-        assertFalse(result.isAllowed)
-        assertEquals(UrlPolicyBlockReason.AdultDomain, result.blockReason)
-        assertEquals("此地址不适合 Google Play 版使用，请更换已授权的公开视频地址。", result.userMessage)
-        assertFalse(result.userMessage.orEmpty().contains("pornhub", ignoreCase = true))
-        assertFalse(result.userMessage.orEmpty().contains("secret", ignoreCase = true))
-        assertEquals("blocked_adult_domain", result.logSummary.category)
-        assertNotNull(result.logSummary.hostHash)
-        assertFalse(result.logSummary.toString().contains("pornhub", ignoreCase = true))
+        assertTrue(result.isAllowed)
+        assertEquals("allowed", result.logSummary.category)
+        assertEquals("https://video.example.com/watch?v=private&token=secret", result.rawUrlForExecution)
+        assertFalse(result.logSummary.toString().contains("example.com", ignoreCase = true))
         assertFalse(result.logSummary.toString().contains("token=secret", ignoreCase = true))
     }
 
     @Test
-    fun blocksEveryConfiguredAdultDomainIncludingSubdomains() {
-        val blockedUrls = listOf(
-            "https://pornhub.com/view",
-            "https://m.xvideos.com/view",
-            "https://cdn.xnxx.com/view",
-            "https://watch.xhamster.com/view",
-            "https://redtube.com/view",
-            "https://video.youporn.com/view",
-            "https://onlyfans.com/example",
+    fun doesNotHardBlockDomainsBeyondBasicUrlValidation() {
+        val urls = listOf(
+            "https://example.com/view",
+            "https://m.example.net/view",
+            "https://cdn.example.org/view",
+            "http://localhost:8080/view",
+            "https://sub.domain.example/view",
         )
 
-        blockedUrls.forEach { url ->
+        urls.forEach { url ->
             val result = UrlPolicy.evaluate(url)
 
-            assertFalse("Expected blocked: $url", result.isAllowed)
-            assertEquals("Expected adult block: $url", UrlPolicyBlockReason.AdultDomain, result.blockReason)
+            assertTrue("Expected policy to allow http(s) URL for extractor handling: $url", result.isAllowed)
+            assertEquals("allowed", result.logSummary.category)
         }
     }
 

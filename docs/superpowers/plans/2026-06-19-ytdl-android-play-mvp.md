@@ -74,8 +74,8 @@
 - Create: `android/app/src/test/java/com/garyapp/ytdl/core/privacy/SensitiveTextTest.kt`
 
 **Steps:**
-- [ ] Add URL risk checks for empty URLs, unsupported schemes, known adult domains, and local static deny rules.
-- [ ] Return neutral Chinese user messages without echoing blocked adult URLs.
+- [ ] Add only basic URL checks for empty input, malformed URLs, and non-http/https schemes.
+- [ ] Do not hard-block domains in `UrlPolicy`; domain-specific policy belongs outside the first Android MVP unless the user explicitly approves it.
 - [ ] Add cookies reference model that stores only URI/path references, never contents.
 - [ ] Add sanitizer tests proving cookies, authorization headers, and query secrets are redacted.
 - [ ] Add storage target model for app-private, MediaStore Downloads, single-document export, and SAF tree URI.
@@ -472,7 +472,7 @@ This section records the adjusted continuation order after user review. From 202
 - [ ] Persist completed and failed tasks to history without cookies contents, authorization headers, raw command lines, or sensitive query strings.
 - [ ] Implement app-private output discovery plus ACTION_CREATE_DOCUMENT/MediaStore export path.
 - [ ] Store only cookies URI/path references; materialize temporary cookies files per task and delete them after completion/failure/cancel.
-- [ ] Add failure messages for blank URL, invalid URL, unsupported domain, network failure, missing subtitle, processing failure, save/export denial, and cancellation.
+- [ ] Add failure messages for blank URL, invalid URL, non-http/https URL, network failure, missing subtitle, processing failure, save/export denial, and cancellation.
 - [ ] Add tests proving sensitive strings are redacted from settings, history, logs, and error text.
 - [ ] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`

@@ -3,6 +3,7 @@ package com.garyapp.ytdl.core.ytdlp
 import com.chaquo.python.Python
 import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.policy.UrlPolicyBlockReason
+import com.garyapp.ytdl.core.privacy.SensitiveText
 import org.json.JSONObject
 import java.io.File
 
@@ -424,12 +425,8 @@ class YtdlpBridge(
         }
 
         private fun sanitizeFailureMessage(message: String): String {
-            val redacted = message
+            val redacted = SensitiveText.redact(message)
                 .replace(Regex("""https?://\S+"""), "[已隐藏]")
-                .replace(Regex("""(?i)--cookies\s+(?:"[^"]+"|'[^']+'|\S+)"""), "--cookies [已隐藏]")
-                .replace(Regex("""(?i)authorization:\s*[^\s]+(?:\s+[^\s]+)?"""), "Authorization: [已隐藏]")
-                .replace(Regex("""(?i)cookie:\s*[^\r\n]+"""), "Cookie: [已隐藏]")
-                .replace(Regex("""(?i)(token|access_token|auth|signature|sig|key)=([^&\s]+)"""), "$1=[已隐藏]")
                 .trim()
 
             return redacted
@@ -442,7 +439,6 @@ class YtdlpBridge(
                 UrlPolicyBlockReason.BlankInput,
                 UrlPolicyBlockReason.UnsupportedScheme,
                 UrlPolicyBlockReason.InvalidUrl,
-                UrlPolicyBlockReason.AdultDomain,
                 null,
                 -> AnalysisErrorCategory.Unsupported
             }

@@ -1,9 +1,14 @@
 package com.garyapp.ytdl.ui
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,8 +62,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.garyapp.ytdl.core.settings.AppSettings
+import com.garyapp.ytdl.core.settings.CookiesReference as SettingsCookiesReference
+import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
 import com.garyapp.ytdl.download.DownloadOutputKind
 import com.garyapp.ytdl.download.DownloadStage
@@ -177,14 +186,56 @@ fun YtdlApp() {
     val destinations = ytdlNavigationDestinations()
     var selectedRoute by rememberSaveable { mutableStateOf(destinations.first().route) }
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
+    val settingsRepository = remember { SettingsRepository.fromContext(context.applicationContext) }
+    var appSettings by remember { mutableStateOf(settingsRepository.getSettings()) }
+    var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val bridge = remember { YtdlpBridge() }
     val selected = destinations.firstOrNull { it.route == selectedRoute } ?: destinations.first()
+
+    fun refreshHistory() {
+        Thread {
+            val rows = YtdlDatabaseProvider.get(context.applicationContext)
+                .historyDao()
+                .listRecent(50)
+            val items = historyUiItemsFromRows(rows)
+            mainHandler.post {
+                historyItems = items
+            }
+        }.start()
+    }
+
+    fun selectRoute(route: String) {
+        selectedRoute = route
+        if (route == "history") {
+            refreshHistory()
+        }
+    }
+
+    val cookiesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val reference = SettingsCookiesReference.fromUserReference(
+            reference = uri.toString(),
+            displayName = displayNameForUri(context, uri),
+        )
+        if (reference == null) {
+            runtimeState = runtimeState.copy(userMessage = "cookies 文件引用无效，请重新选择 cookies.txt。")
+        } else {
+            appSettings = settingsRepository.setCookiesReference(reference)
+            runtimeState = runtimeState.copy(userMessage = "已保存 cookies 文件引用，仅任务运行时临时读取。")
+        }
+    }
 
     DisposableEffect(Unit) {
         val subscription = DownloadCoordinator.addListener { state ->
             mainHandler.post {
                 runtimeState = runtimeState.withPipelineState(state)
+                if (state.stage in TerminalDownloadStages && selectedRoute == "history") {
+                    refreshHistory()
+                }
             }
         }
         onDispose { subscription.close() }
@@ -221,7 +272,26 @@ fun YtdlApp() {
             thumbnailStatus = "",
         )
         Thread {
-            val result = bridge.analyze(url)
+            val temporaryCookiesResult = prepareTemporaryCookiesForDownload(
+                settingsReference = appSettings.cookiesReference,
+                context = context.applicationContext,
+                taskId = "analyze-${System.currentTimeMillis()}",
+            )
+            if (temporaryCookiesResult.isFailure) {
+                mainHandler.post {
+                    runtimeState = runtimeState.copy(
+                        isAnalyzing = false,
+                        userMessage = "cookies 文件读取失败，请重新选择 cookies 文件。",
+                    )
+                }
+                return@Thread
+            }
+            val temporaryCookies = temporaryCookiesResult.getOrNull()
+            val result = try {
+                bridge.analyze(url, temporaryCookies?.file?.absolutePath)
+            } finally {
+                temporaryCookies?.delete()
+            }
             mainHandler.post {
                 runtimeState = result.fold(
                     onSuccess = { analysis ->
@@ -243,12 +313,25 @@ fun YtdlApp() {
 
     fun startRealDownload() {
         val url = runtimeState.url.trim()
+        val temporaryCookies = prepareTemporaryCookiesForDownload(
+            settingsReference = appSettings.cookiesReference,
+            context = context.applicationContext,
+            taskId = "download-${System.currentTimeMillis()}",
+        ).getOrElse {
+            runtimeState = runtimeState.copy(
+                isDownloading = false,
+                userMessage = "cookies 文件读取失败，请重新选择 cookies 文件。",
+            )
+            return
+        }
         val requestResult = buildAppliedDownloadRequest(
             url = url,
             analysis = runtimeState.analysis,
             appliedSelection = runtimeState.appliedFormatSelection,
+            cookiesPath = temporaryCookies?.file?.absolutePath,
         )
         if (requestResult.isFailure) {
+            temporaryCookies?.delete()
             val message = requestResult.exceptionOrNull()?.message.orEmpty()
                 .ifBlank { "格式选择错误，请重新分析或应用格式。" }
             runtimeState = runtimeState.copy(
@@ -270,6 +353,7 @@ fun YtdlApp() {
                 runtimeState.withForegroundStartState(waiting)
             },
             onFailure = { error ->
+                temporaryCookies?.delete()
                 runtimeState.withPipelineState(DownloadTaskState.idle()).copy(
                     isDownloading = false,
                     userMessage = "启动前台下载失败：${error.message.orEmpty().ifBlank { "请检查系统权限。" }}",
@@ -284,7 +368,7 @@ fun YtdlApp() {
             YtdlBottomBar(
                 destinations = destinations,
                 selectedRoute = selected.route,
-                onSelected = { selectedRoute = it },
+                onSelected = ::selectRoute,
             )
         },
     ) { innerPadding ->
@@ -337,8 +421,13 @@ fun YtdlApp() {
                         },
                     )
                     "queue" -> queuePageItems(runtimeState)
-                    "history" -> historyPageItems()
-                    "settings" -> settingsPageItems()
+                    "history" -> historyPageItems(historyItems)
+                    "settings" -> settingsPageItems(
+                        settings = appSettings,
+                        onSelectCookies = {
+                            cookiesPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+                        },
+                    )
                 }
             }
             if (selected.route == "queue") {
@@ -452,6 +541,22 @@ private fun loadThumbnailBitmap(thumbnailUrl: String): Bitmap? {
             BitmapFactory.decodeStream(stream)
         }
     }.getOrNull()
+}
+
+private fun displayNameForUri(context: android.content.Context, uri: Uri): String {
+    val queriedName = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getString(0)
+            } else {
+                null
+            }
+        }
+    }.getOrNull()
+    return queriedName
+        ?.takeIf { it.isNotBlank() }
+        ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+        ?: "cookies 文件"
 }
 
 @Composable
@@ -985,7 +1090,13 @@ private fun formatBytes(bytes: Long): String {
     return "%.2f GB".format(mib / 1024.0)
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems() {
+private fun settingsCookiesSubtitle(settings: AppSettings): String {
+    val reference = settings.cookiesReference
+        ?: return "未选择 · 仅保存文件引用，不保存内容"
+    return "${reference.displayName ?: "cookies 文件"} · 仅保存引用"
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(historyItems: List<HistoryUiItem>) {
     item {
         OutlinedTextField(
             value = "",
@@ -998,23 +1109,43 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems() {
         )
     }
     item { SegmentedRow(listOf("全部", "视频", "音频"), selectedIndex = 0, accent = HistoryAccent) }
-    item {
-        AppCard(modifier = Modifier.testTag("ytdl-history-empty-card")) {
-            Text("暂无真实历史记录，完成下载后会显示", color = Color(0xFF181B17), fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text("M7/M9 接入真实历史持久化前，这里不会展示样片记录。", color = SoftText, style = MaterialTheme.typography.bodySmall)
+    if (historyItems.isEmpty()) {
+        item {
+            AppCard(modifier = Modifier.testTag("ytdl-history-empty-card")) {
+                Text("暂无真实历史记录，完成下载后会显示", color = Color(0xFF181B17), fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Text("历史页已接入本地 Room 记录；当前数据库为空。", color = SoftText, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    } else {
+        items(historyItems) { item ->
+            HistoryCard(item, modifier = Modifier.testTag("ytdl-history-real-card"))
         }
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems() {
+private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
+    settings: AppSettings,
+    onSelectCookies: () -> Unit,
+) {
     item { SettingLineCard("默认保存位置", "App 私有目录", "▣", "›", SettingsAccent) }
-    item { SettingLineCard("Cookies 文件", "仅保存文件引用，不保存内容", "▤", "›", SettingsAccent) }
+    item {
+        SettingLineCard(
+            "Cookies 文件",
+            settingsCookiesSubtitle(settings),
+            "▤",
+            "选择",
+            SettingsAccent,
+            modifier = Modifier
+                .clickable(onClick = onSelectCookies)
+                .testTag("ytdl-settings-cookies-picker"),
+        )
+    }
     item { SettingLineCard("解析器版本", settingsParserVersionLabel(), "◇", "›", Color(0xFFE7A600)) }
     item { SettingLineCard("媒体处理能力", settingsMediaProcessorLabel(), "⚙", "›", SettingsAccent, modifier = Modifier.testTag("ytdl-settings-media-processor")) }
     item { SettingLineCard("通知权限", "待系统确认 · 前台验收待完成", "●", "›", FormatAccent) }
     item { SettingLineCard("隐私与授权说明", "查看说明", "◆", "›", SuccessGreen) }
-    item { SettingLineCard("不适用网站提示", "该地址不适合 Play 版处理", "!", "›", DownloadAccent) }
+    item { SettingLineCard("地址校验提示", "仅校验空地址、非法地址和非 http/https", "!", "›", DownloadAccent) }
     item {
         AppCard {
             SectionTitle("外观与颜色")
@@ -1263,10 +1394,8 @@ private fun QueueCard(
     }
 }
 
-private data class HistoryItem(val title: String, val meta: String, val badge: String)
-
 @Composable
-private fun HistoryCard(item: HistoryItem, modifier: Modifier = Modifier) {
+private fun HistoryCard(item: HistoryUiItem, modifier: Modifier = Modifier) {
     AppCard(modifier = modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(

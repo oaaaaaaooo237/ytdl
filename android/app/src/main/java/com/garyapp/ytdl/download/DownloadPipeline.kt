@@ -1,5 +1,6 @@
 package com.garyapp.ytdl.download
 
+import com.garyapp.ytdl.cookies.TemporaryCookiesFile
 import com.garyapp.ytdl.core.ytdlp.DownloadFormatRole
 import com.garyapp.ytdl.core.ytdlp.DownloadProgressListener
 import com.garyapp.ytdl.core.ytdlp.DownloadResult
@@ -127,7 +128,13 @@ class DownloadPipeline(
 
         emit(state)
 
-        return try {
+        val cookiesValidationError = validateCookiesPath(request.cookiesPath)
+        if (cookiesValidationError != null) {
+            emit(state.failed(cookiesValidationError))
+            return DownloadPipelineResult(state = state, outputs = finalOutputs)
+        }
+
+        val result = try {
             ensureActive()
             when (val route = request.route) {
                 is DownloadRoute.DirectSingleFile -> {
@@ -221,10 +228,18 @@ class DownloadPipeline(
             if (exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Canceled) {
                 emit(state.canceled())
             } else {
-                emit(state.failed(exc.message.orEmpty().ifBlank { "下载失败。" }))
+                emit(state.failed(DownloadFailureMessages.fromException(exc)))
             }
             DownloadPipelineResult(state = state, outputs = finalOutputs)
         }
+
+        val cleanupError = cleanupTemporaryCookies(request.cookiesPath)
+        if (cleanupError != null) {
+            emit(state.failed(cleanupError))
+            return DownloadPipelineResult(state = state, outputs = finalOutputs)
+        }
+
+        return result
     }
 
     private fun downloadFormatPart(
@@ -274,6 +289,26 @@ class DownloadPipeline(
             throw DownloadStateException("下载结果 role 与请求不一致。")
         }
         return download
+    }
+
+    private fun validateCookiesPath(path: String?): String? {
+        if (path.isNullOrBlank()) return null
+        return if (TemporaryCookiesFile.isManagedTemporaryPath(path)) {
+            null
+        } else {
+            DownloadFailureMessages.unmanagedCookiesReference()
+        }
+    }
+
+    private fun cleanupTemporaryCookies(path: String?): String? {
+        if (path.isNullOrBlank() || !TemporaryCookiesFile.isManagedTemporaryPath(path)) {
+            return null
+        }
+        return if (TemporaryCookiesFile.deleteIfManagedPath(path)) {
+            null
+        } else {
+            DownloadFailureMessages.cookiesCleanupFailed()
+        }
     }
 
     private fun DownloadResult.toOutputFile(

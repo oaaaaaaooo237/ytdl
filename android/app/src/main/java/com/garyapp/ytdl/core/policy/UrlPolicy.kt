@@ -6,16 +6,6 @@ import java.security.MessageDigest
 object UrlPolicy {
     private val allowedSchemes = setOf("http", "https")
 
-    private val adultDomains = setOf(
-        "pornhub.com",
-        "xvideos.com",
-        "xnxx.com",
-        "xhamster.com",
-        "redtube.com",
-        "youporn.com",
-        "onlyfans.com",
-    )
-
     fun evaluate(userInput: String): UrlPolicyResult {
         val trimmed = userInput.trim()
         if (trimmed.isEmpty()) {
@@ -50,17 +40,6 @@ object UrlPolicy {
         }
 
         val hostHash = host.sha256Prefix()
-        if (adultDomains.any { host == it || host.endsWith(".$it") }) {
-            return UrlPolicyResult.rejected(
-                blockReason = UrlPolicyBlockReason.AdultDomain,
-                userMessage = "此地址不适合 Google Play 版使用，请更换已授权的公开视频地址。",
-                logSummary = UrlLogSummary(
-                    category = "blocked_adult_domain",
-                    hostHash = hostHash,
-                ),
-            )
-        }
-
         return UrlPolicyResult.allowed(
             rawUrlForExecution = trimmed,
             safeUrlSummary = SafeUrlSummary(
@@ -93,7 +72,6 @@ enum class UrlPolicyBlockReason {
     BlankInput,
     UnsupportedScheme,
     InvalidUrl,
-    AdultDomain,
 }
 
 data class UrlLogSummary(

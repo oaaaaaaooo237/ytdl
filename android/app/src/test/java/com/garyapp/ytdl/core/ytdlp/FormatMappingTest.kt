@@ -120,20 +120,50 @@ class FormatMappingTest {
     }
 
     @Test
-    fun analyzeRejectsBlockedAdultDomainBeforeStartingPython() {
+    fun failureParsingUsesSharedSensitiveRedactorForCookieArgumentsAndQuerySecrets() {
+        val result = YtdlpBridge.parseAnalysisJson(
+            """
+            {
+              "ok": false,
+              "errorCategory": "parser",
+              "errorMessage": "failed https://example.com/watch?v=abc&cookies=SID-secret&jwt=raw-jwt --cookies=C:/Users/me/private/cookies.txt --cookies-from-browser chrome session=browser-session"
+            }
+            """.trimIndent(),
+        )
+
+        val error = result.exceptionOrNull() as YtdlpAnalysisException
+        assertEquals(AnalysisErrorCategory.Parser, error.category)
+        listOf(
+            "SID-secret",
+            "raw-jwt",
+            "cookies.txt",
+            "private",
+            "--cookies-from-browser chrome",
+            "browser-session",
+            "session=browser-session",
+            "watch?v=abc",
+        ).forEach {
+            assertFalse("safeMessage leaked $it", error.safeMessage.contains(it, ignoreCase = true))
+        }
+        assertTrue(error.safeMessage.contains("[已隐藏]"))
+    }
+
+    @Test
+    fun analyzeDoesNotPolicyBlockHttpDomainBeforeStartingPython() {
+        var pythonProviderCalled = false
         val bridge = YtdlpBridge(
             pythonProvider = {
-                throw AssertionError("Python provider must not be called for policy-rejected URLs")
+                pythonProviderCalled = true
+                throw RuntimeException("python reached")
             },
         )
 
-        val result = bridge.analyze("https://video.pornhub.com/watch?v=private&token=secret")
+        val result = bridge.analyze("https://video.example.com/watch?v=private&token=secret")
 
         val error = result.exceptionOrNull() as YtdlpAnalysisException
-        assertEquals(AnalysisErrorCategory.Unsupported, error.category)
-        assertTrue(error.safeMessage.contains("Google Play"))
-        assertFalse(error.safeMessage.contains("pornhub", ignoreCase = true))
-        assertFalse(error.safeMessage.contains("token=secret", ignoreCase = true))
+        assertTrue(pythonProviderCalled)
+        assertEquals(AnalysisErrorCategory.Parser, error.category)
+        assertTrue(error.safeMessage.contains("python reached"))
     }
 
     @Test

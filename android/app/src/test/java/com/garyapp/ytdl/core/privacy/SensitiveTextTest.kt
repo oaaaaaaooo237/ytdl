@@ -76,4 +76,19 @@ class SensitiveTextTest {
         assertTrue(redacted.contains("token=[已隐藏]"))
         assertTrue(redacted.contains("access_token=[已隐藏]"))
     }
+
+    @Test
+    fun redactsCookieCommandArgumentsForLogsAndErrors() {
+        val raw = """
+            yt-dlp --cookies "D:/private cookies/cookies.txt" --cookies-from-browser chrome https://example.com/watch?v=1&cookies=SID-secret
+            failure log: --cookies 'C:/Users/Gary/private/cookies.txt' Authorization: Bearer raw-token
+        """.trimIndent()
+
+        val redacted = SensitiveText.redact(raw)
+
+        listOf("D:/private", "private cookies", "cookies.txt", "SID-secret", "raw-token", "--cookies-from-browser chrome").forEach {
+            assertFalse("Should redact $it", redacted.contains(it))
+        }
+        assertTrue(redacted.contains("[已隐藏]"))
+    }
 }

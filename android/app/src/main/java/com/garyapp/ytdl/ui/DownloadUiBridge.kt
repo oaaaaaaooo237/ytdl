@@ -1,14 +1,21 @@
 package com.garyapp.ytdl.ui
 
+import android.content.Context
+import com.garyapp.ytdl.cookies.CookiesReference
+import com.garyapp.ytdl.cookies.TemporaryCookiesFile
+import com.garyapp.ytdl.core.privacy.SensitiveText
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadStage
+import java.io.File
 
 fun buildAppliedDownloadRequest(
     url: String,
     analysis: VideoAnalysis?,
     appliedSelection: FormatSelection,
+    cookiesPath: String? = null,
 ): Result<DownloadRequest> {
     return runCatching {
         val normalizedUrl = url.trim()
@@ -23,8 +30,78 @@ fun buildAppliedDownloadRequest(
             analysis = currentAnalysis,
             selection = appliedSelection,
             selectedSubtitles = emptyList(),
+            cookiesPath = cookiesPath,
         ).getOrThrow()
     }
+}
+
+data class HistoryUiItem(
+    val title: String,
+    val meta: String,
+    val badge: String,
+)
+
+fun historyUiItemsFromRows(rows: List<HistoryItemEntity>): List<HistoryUiItem> {
+    return rows.map { row ->
+        HistoryUiItem(
+            title = redactHistoryUiText(row.title.orEmpty()).ifBlank { "未命名任务" },
+            meta = historyMeta(row),
+            badge = historyBadge(row.status.orEmpty()),
+        )
+    }
+}
+
+fun prepareTemporaryCookiesForDownload(
+    settingsReference: com.garyapp.ytdl.core.settings.CookiesReference?,
+    context: Context,
+    taskId: String,
+): Result<TemporaryCookiesFile?> {
+    return runCatching {
+        val reference = CookiesReference.fromSettings(settingsReference) ?: return@runCatching null
+        TemporaryCookiesFile.materialize(
+            context = context,
+            reference = reference,
+            taskId = taskId,
+        ).getOrThrow()
+    }
+}
+
+fun prepareTemporaryCookiesForDownload(
+    settingsReference: com.garyapp.ytdl.core.settings.CookiesReference?,
+    privateCacheDirectory: File,
+    taskId: String,
+): Result<TemporaryCookiesFile?> {
+    return runCatching {
+        val reference = CookiesReference.fromSettings(settingsReference) ?: return@runCatching null
+        TemporaryCookiesFile.materialize(
+            reference = reference,
+            privateCacheDirectory = privateCacheDirectory,
+            taskId = taskId,
+        ).getOrThrow()
+    }
+}
+
+private fun historyMeta(row: HistoryItemEntity): String {
+    val parts = listOfNotNull(
+        row.formatSummary?.takeIf { it.isNotBlank() },
+        row.sourceCategory?.takeIf { it.isNotBlank() },
+        row.errorSummary?.takeIf { it.isNotBlank() },
+    )
+    return redactHistoryUiText(parts.joinToString(" · ")).ifBlank { "本地记录" }
+}
+
+private fun historyBadge(status: String): String {
+    return when (status) {
+        HistoryItemEntity.STATUS_COMPLETED -> "完成"
+        HistoryItemEntity.STATUS_FAILED -> "失败"
+        HistoryItemEntity.STATUS_CANCELED -> "取消"
+        else -> "记录"
+    }
+}
+
+private fun redactHistoryUiText(value: String): String {
+    return SensitiveText.redact(value)
+        .replace(Regex("""(?i)\b(authorization|cookie|cookies)\b"""), "[已隐藏]")
 }
 
 fun userVisibleDownloadStatus(stage: DownloadStage): String {

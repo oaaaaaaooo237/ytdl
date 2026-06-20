@@ -5,6 +5,8 @@ import androidx.room.Insert;
 import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
 
+import com.garyapp.ytdl.download.DownloadTaskState;
+
 import java.util.List;
 
 @Dao
@@ -17,5 +19,13 @@ public abstract class HistoryDao {
 
     public long insert(HistoryItemEntity item) {
         return insertRaw(item.sanitizedCopy());
+    }
+
+    public long insertFromTaskState(
+            DownloadTaskState state,
+            String formatSummary,
+            long eventTime
+    ) {
+        return insert(HistoryItemEntity.fromTaskState(state, formatSummary, eventTime));
     }
 }
