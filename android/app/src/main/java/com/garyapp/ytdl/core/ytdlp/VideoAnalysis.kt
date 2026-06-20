@@ -26,6 +26,7 @@ data class VideoFormat(
 data class SubtitleInfo(
     val language: String,
     val ext: String,
+    val source: SubtitleSource = SubtitleSource.Manual,
 )
 
 data class DownloadProgress(
@@ -46,8 +47,29 @@ data class DownloadResult(
     val role: DownloadFormatRole? = null,
 )
 
+data class SubtitleDownloadResult(
+    val outputPath: String,
+    val bytesWritten: Long,
+    val language: String,
+    val ext: String,
+    val source: SubtitleSource,
+    val title: String,
+)
+
 fun interface DownloadProgressListener {
     fun onProgress(progress: DownloadProgress)
+}
+
+enum class SubtitleSource(val pythonValue: String) {
+    Manual("manual"),
+    Automatic("automatic"),
+    ;
+
+    companion object {
+        fun fromPythonValue(value: String): SubtitleSource? {
+            return entries.firstOrNull { it.pythonValue == value }
+        }
+    }
 }
 
 enum class DownloadFormatRole(val pythonValue: String) {

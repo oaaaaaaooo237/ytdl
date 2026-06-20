@@ -56,7 +56,7 @@ Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api3
 
 后续仍未完成：
 
-- 还没有把独立字幕文件下载接入任务结果、历史和导出；这是 M5/T8E。
+- 独立字幕文件已能通过 yt-dlp bridge 输出到 app 私有目录；队列、历史和导出绑定仍在 M6/M8。
 
 ## M3/T8C 指定格式分离下载状态
 
@@ -84,7 +84,7 @@ Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api3
 
 后续仍未完成：
 
-- 还没有独立字幕文件下载能力；这是 M5/T8E。
+- 独立字幕文件下载能力已在 M5/T8E 补齐；后续还要把该结果接入真实下载编排、队列、历史和导出。
 
 ## M4/T8D required URL 核心合并 smoke 状态
 
@@ -108,6 +108,30 @@ Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api3
 报告：android/app/build/outputs/androidTest-results/connected/debug/TEST-ytdl_api37_play_x86_64(AVD) - 17-_app-.xml
 Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api37_play_x86_64(AVD) - 17/logcat-com.garyapp.ytdl.media.RequiredUrlMergeInstrumentedTest-analyzesDownloadsSplitStreamsAndMergesRequiredUrlIntoMp4.txt
 ```
+
+## M5/T8E 独立字幕文件输出状态
+
+当前已实现 MVP1 独立字幕文件输出能力：
+
+- `VideoAnalysis.subtitles` 会同时包含普通字幕和自动字幕，并用 `SubtitleSource.Manual` / `SubtitleSource.Automatic` 区分来源。
+- Kotlin bridge 新增 `downloadSubtitle(url, outputDirectory, language, ext, source, cookiesPath, listener)`，调用方必须显式选择分析结果中的语言、扩展名和来源类型。
+- 字幕语言和扩展名只接受单个明确值；`all`、`best`、`en/zh-Hans`、`vtt/srt`、`vtt,ttml`、`en.*` 等 selector/fallback 表达式会在调用 Python 前被拒绝。
+- Python bridge 新增 `download_subtitle()`，使用 yt-dlp 的 `skip_download`、`writesubtitles` / `writeautomaticsub`、`subtitleslangs` 和 `subtitlesformat` 只下载独立字幕文件，不下载视频，不嵌入字幕，不烧录字幕。
+- 成功结果返回 `outputPath`、`bytesWritten`、`language`、`ext`、`source` 和 `title`，供后续同一下载任务的队列、历史和导出绑定。
+- 失败信息会转为安全中文摘要，不记录或返回 cookies 内容、Authorization、Cookie 或敏感 URL query。
+
+本轮 API37 instrumentation 证据：
+
+```text
+命令：cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.SubtitleDownloadInstrumentedTest"
+结果：BUILD SUCCESSFUL，tests=1 failures=0 errors=0 skipped=0，时间戳 2026-06-20T12:44:32
+设备：sdk_gphone16k_x86_64，SDK 37
+证据：YTDL_SUBTITLE_DOWNLOAD_SMOKE sdk=37 device=sdk_gphone16k_x86_64 language=en ext=vtt source=automatic bytes=61664 path=/data/user/0/com.garyapp.ytdl/cache/subtitle-download-smoke-0/download-tkxzMEfp49Q-subtitle-automatic.en.vtt
+报告：android/app/build/outputs/androidTest-results/connected/debug/TEST-ytdl_api37_play_x86_64(AVD) - 17-_app-.xml
+Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api37_play_x86_64(AVD) - 17/logcat-com.garyapp.ytdl.core.ytdlp.SubtitleDownloadInstrumentedTest-analyzesAndDownloadsOneAvailableSubtitleOrReportsNone.txt
+```
+
+注意：本项是能力层通过，不是 GUI、队列、历史、导出或最终 MVP 可视验收通过。
 
 ## 已确认事实
 
@@ -174,7 +198,7 @@ MVP2 FFmpeg 路线以后重新立项；不得把未审计 AAR 或退役 FFmpegKi
 - M2/T8B：实现并测试原生合并处理器。
 - M3/T8C：实现 yt-dlp 指定 format id 的分离下载。
 - M4/T8D：已用 `tkxzMEfp49Q` 完成核心分析、分离下载、合并 smoke，并由 `MediaExtractor` 证明输出含 1 条视频轨和 1 条音频轨。
-- M5/T8E：补 MVP1 独立字幕文件下载、历史关联和导出；`MediaMuxer` 仍是兼容分离音视频合并的优先快速路径。
+- M5/T8E：已补 MVP1 独立字幕文件下载结果模型和能力层 smoke；历史关联和导出留给 M8，`MediaMuxer` 仍是兼容分离音视频合并的优先快速路径。
 - M6：实现下载编排、前台服务、通知和真实队列状态，禁止 360p 单文件假回退。
 - M7：把真实合并、字幕文件和队列状态接入五页 GUI，确保格式选择、队列和状态文案都来自真实能力。
 - M8：补历史、导出、cookies 隐私和失败恢复。

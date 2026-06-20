@@ -107,6 +107,55 @@ class YtdlpBridge(
         }
     }
 
+    fun downloadSubtitle(
+        url: String,
+        outputDirectory: File,
+        language: String,
+        ext: String,
+        source: SubtitleSource,
+        cookiesPath: String? = null,
+        listener: DownloadProgressListener? = null,
+    ): Result<SubtitleDownloadResult> {
+        val normalizedLanguage = language.trim()
+        val normalizedExt = ext.trim()
+        if (!isExplicitSubtitleToken(normalizedLanguage) || !isExplicitSubtitleToken(normalizedExt)) {
+            return Result.failure(
+                YtdlpDownloadException(
+                    category = AnalysisErrorCategory.Unsupported,
+                    safeMessage = "字幕语言和扩展名必须是分析结果中的明确值。",
+                ),
+            )
+        }
+
+        val policy = UrlPolicy.evaluate(url)
+        if (!policy.isAllowed) {
+            return Result.failure(
+                YtdlpDownloadException(
+                    category = policy.blockReason.toAnalysisCategory(),
+                    safeMessage = sanitizeFailureMessage(policy.userMessage.orEmpty()),
+                ),
+            )
+        }
+
+        return try {
+            outputDirectory.mkdirs()
+            val module = pythonProvider().getModule("ytdl_bridge")
+            val json = module.callAttr(
+                "download_subtitle",
+                policy.rawUrlForExecution,
+                outputDirectory.absolutePath,
+                normalizedLanguage,
+                normalizedExt,
+                source.pythonValue,
+                cookiesPath,
+                PythonProgressProxy(listener),
+            ).toString()
+            parseSubtitleDownloadJson(json)
+        } catch (exc: Throwable) {
+            Result.failure(exc.toSafeDownloadException())
+        }
+    }
+
     companion object {
         fun mapFormat(
             raw: Map<String, Any?>,
@@ -143,11 +192,14 @@ class YtdlpBridge(
             )
         }
 
-        fun mapSubtitles(raw: Map<String, List<Map<String, Any?>>>): List<SubtitleInfo> {
+        fun mapSubtitles(
+            raw: Map<String, List<Map<String, Any?>>>,
+            source: SubtitleSource = SubtitleSource.Manual,
+        ): List<SubtitleInfo> {
             return raw.flatMap { (language, entries) ->
                 entries.mapNotNull { item ->
                     val ext = item["ext"]?.toString()?.takeIf { it.isNotBlank() }
-                    ext?.let { SubtitleInfo(language = language, ext = it) }
+                    ext?.let { SubtitleInfo(language = language, ext = it, source = source) }
                 }
             }
         }
@@ -184,17 +236,8 @@ class YtdlpBridge(
                 it["vcodec"]?.toString() == "none" && it["acodec"]?.toString() != "none"
             }
 
-            val subtitlesObject = root.optJSONObject("subtitles")
-            val subtitlesRaw = mutableMapOf<String, List<Map<String, Any?>>>()
-            subtitlesObject?.keys()?.forEach { language ->
-                val entries = subtitlesObject.optJSONArray(language)
-                subtitlesRaw[language] = buildList {
-                    for (index in 0 until (entries?.length() ?: 0)) {
-                        val item = entries?.optJSONObject(index) ?: continue
-                        add(item.toMap())
-                    }
-                }
-            }
+            val subtitlesRaw = root.optJSONObject("subtitles").toSubtitleMap()
+            val automaticCaptionsRaw = root.optJSONObject("automatic_captions").toSubtitleMap()
 
             return Result.success(
                 VideoAnalysis(
@@ -202,7 +245,8 @@ class YtdlpBridge(
                     durationSeconds = root.optLong("duration"),
                     thumbnailUrl = root.optString("thumbnail").takeIf { it.isNotBlank() },
                     formats = rawFormats.map { mapFormat(it, hasStandaloneAudio) },
-                    subtitles = mapSubtitles(subtitlesRaw),
+                    subtitles = mapSubtitles(subtitlesRaw, SubtitleSource.Manual) +
+                        mapSubtitles(automaticCaptionsRaw, SubtitleSource.Automatic),
                 ),
             )
         }
@@ -250,7 +294,66 @@ class YtdlpBridge(
             )
         }
 
+        fun parseSubtitleDownloadJson(json: String): Result<SubtitleDownloadResult> {
+            val root = JSONObject(json)
+            if (!root.optBoolean("ok", false)) {
+                return Result.failure(
+                    YtdlpDownloadException(
+                        category = mapErrorCategory(root.optString("errorCategory")),
+                        safeMessage = sanitizeFailureMessage(root.optString("errorMessage")),
+                    ),
+                )
+            }
+
+            val outputPath = root.optString("outputPath")
+            val bytesWritten = root.optLong("bytesWritten")
+            if (outputPath.isBlank() || bytesWritten <= 0L) {
+                return Result.failure(
+                    YtdlpDownloadException(
+                        category = AnalysisErrorCategory.Unknown,
+                        safeMessage = "字幕文件无效，请重新下载。",
+                    ),
+                )
+            }
+
+            val language = root.optString("language").trim()
+            val ext = root.optString("ext").trim()
+            if (!isExplicitSubtitleToken(language) || !isExplicitSubtitleToken(ext)) {
+                return Result.failure(
+                    YtdlpDownloadException(
+                        category = AnalysisErrorCategory.Unsupported,
+                        safeMessage = "字幕语言和扩展名必须来自分析结果。",
+                    ),
+                )
+            }
+
+            val source = SubtitleSource.fromPythonValue(root.optString("source"))
+                ?: return Result.failure(
+                    YtdlpDownloadException(
+                        category = AnalysisErrorCategory.Unsupported,
+                        safeMessage = "字幕下载结果 source 无效。",
+                    ),
+                )
+
+            return Result.success(
+                SubtitleDownloadResult(
+                    outputPath = outputPath,
+                    bytesWritten = bytesWritten,
+                    language = language,
+                    ext = ext,
+                    source = source,
+                    title = root.optString("title"),
+                ),
+            )
+        }
+
         private fun isExplicitFormatId(value: String): Boolean {
+            val lower = value.lowercase()
+            return Regex("""^[A-Za-z0-9._-]+$""").matches(value) &&
+                YTDLP_SELECTOR_ALIASES.none { alias -> lower == alias || lower.startsWith("$alias.") }
+        }
+
+        private fun isExplicitSubtitleToken(value: String): Boolean {
             val lower = value.lowercase()
             return Regex("""^[A-Za-z0-9._-]+$""").matches(value) &&
                 YTDLP_SELECTOR_ALIASES.none { alias -> lower == alias || lower.startsWith("$alias.") }
@@ -275,6 +378,19 @@ class YtdlpBridge(
 
         private fun JSONObject.toMap(): Map<String, Any?> {
             return keys().asSequence().associateWith { key -> opt(key) }
+        }
+
+        private fun JSONObject?.toSubtitleMap(): Map<String, List<Map<String, Any?>>> {
+            if (this == null) return emptyMap()
+            return keys().asSequence().associateWith { language ->
+                val entries = optJSONArray(language)
+                buildList {
+                    for (index in 0 until (entries?.length() ?: 0)) {
+                        val item = entries?.optJSONObject(index) ?: continue
+                        add(item.toMap())
+                    }
+                }
+            }
         }
 
         private fun Any?.asIntOrNull(): Int? {
@@ -307,7 +423,7 @@ class YtdlpBridge(
         private fun sanitizeFailureMessage(message: String): String {
             val redacted = message
                 .replace(Regex("""https?://\S+"""), "[已隐藏]")
-                .replace(Regex("""(?i)--cookies\s+\S+"""), "--cookies [已隐藏]")
+                .replace(Regex("""(?i)--cookies\s+(?:"[^"]+"|'[^']+'|\S+)"""), "--cookies [已隐藏]")
                 .replace(Regex("""(?i)authorization:\s*[^\s]+(?:\s+[^\s]+)?"""), "Authorization: [已隐藏]")
                 .replace(Regex("""(?i)cookie:\s*[^\r\n]+"""), "Cookie: [已隐藏]")
                 .replace(Regex("""(?i)(token|access_token|auth|signature|sig|key)=([^&\s]+)"""), "$1=[已隐藏]")

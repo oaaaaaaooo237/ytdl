@@ -136,6 +136,82 @@ def download_format(url, output_dir, format_id, role, cookies_path=None, progres
         )
 
 
+def download_subtitle(
+    url,
+    output_dir,
+    language,
+    ext,
+    source,
+    cookies_path=None,
+    progress_listener=None,
+):
+    try:
+        normalized_language = str(language or "").strip()
+        normalized_ext = str(ext or "").strip()
+        normalized_source = str(source or "").strip()
+        if not _is_explicit_subtitle_token(normalized_language):
+            raise ValueError("subtitle language must be a single explicit value")
+        if not _is_explicit_subtitle_token(normalized_ext):
+            raise ValueError("subtitle extension must be a single explicit value")
+        if normalized_source not in ("manual", "automatic"):
+            raise ValueError("subtitle source must be manual or automatic")
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        def progress_hook(event):
+            _emit_progress(progress_listener, event)
+
+        options = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "skip_download": True,
+            "writesubtitles": normalized_source == "manual",
+            "writeautomaticsub": normalized_source == "automatic",
+            "subtitleslangs": [normalized_language],
+            "subtitlesformat": normalized_ext,
+            "outtmpl": os.path.join(output_dir, f"download-%(id)s-subtitle-{normalized_source}.%(ext)s"),
+            "progress_hooks": [progress_hook],
+            "continuedl": True,
+            "nopart": False,
+        }
+        if cookies_path:
+            options["cookiefile"] = cookies_path
+
+        with yt_dlp.YoutubeDL({**options, "writesubtitles": False, "writeautomaticsub": False}) as ydl:
+            analysis_info = ydl.extract_info(url, download=False)
+        if not _subtitle_available(analysis_info, normalized_language, normalized_ext, normalized_source):
+            raise ValueError("requested subtitle is not available")
+
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=True)
+        output_path = _find_subtitle_file(info, output_dir, normalized_language, normalized_ext, normalized_source)
+        bytes_written = _downloaded_file_size(output_path)
+        if bytes_written <= 0:
+            raise RuntimeError("subtitle output file was not created")
+        return json.dumps(
+            {
+                "ok": True,
+                "title": info.get("title") or "",
+                "language": normalized_language,
+                "ext": normalized_ext,
+                "source": normalized_source,
+                "outputPath": output_path,
+                "bytesWritten": bytes_written,
+            },
+            ensure_ascii=False,
+        )
+    except Exception as exc:  # yt-dlp has multiple extractor/downloader exception types.
+        return json.dumps(
+            {
+                "ok": False,
+                "errorCategory": _error_category(exc),
+                "errorMessage": _safe_error_message(exc),
+            },
+            ensure_ascii=False,
+        )
+
+
 def _to_result(info):
     return {
         "ok": True,
@@ -144,6 +220,7 @@ def _to_result(info):
         "thumbnail": info.get("thumbnail") or "",
         "formats": [_safe_format(item) for item in info.get("formats") or []],
         "subtitles": _safe_subtitles(info.get("subtitles") or {}),
+        "automatic_captions": _safe_subtitles(info.get("automatic_captions") or {}),
     }
 
 
@@ -211,6 +288,29 @@ def _is_explicit_format_id(value):
     )
 
 
+def _is_explicit_subtitle_token(value):
+    selector_aliases = {
+        "best",
+        "worst",
+        "all",
+    }
+    lowered = value.lower() if value else ""
+    return bool(
+        value
+        and re.fullmatch(r"[A-Za-z0-9._-]+", value)
+        and not any(lowered == alias or lowered.startswith(f"{alias}.") for alias in selector_aliases)
+    )
+
+
+def _subtitle_available(info, language, ext, source):
+    if not isinstance(info, dict):
+        return False
+    key = "subtitles" if source == "manual" else "automatic_captions"
+    subtitles = info.get(key) or {}
+    entries = subtitles.get(language) or []
+    return any(str(entry.get("ext") or "").lower() == ext.lower() for entry in entries or [])
+
+
 def _progress_percent(event, downloaded, total):
     status = str(event.get("status") or "")
     if status == "finished":
@@ -246,6 +346,27 @@ def _find_downloaded_file(info, output_dir, format_id=None, role=None):
     return os.path.abspath(newest) if newest else ""
 
 
+def _find_subtitle_file(info, output_dir, language, ext, source):
+    for candidate in _candidate_paths(info):
+        if candidate and os.path.isfile(candidate) and _matches_subtitle_download_name(candidate, info, language, ext, source):
+            return os.path.abspath(candidate)
+
+    newest = None
+    newest_mtime = -1
+    for root, _, files in os.walk(output_dir):
+        for name in files:
+            if name.endswith(".part"):
+                continue
+            path = os.path.join(root, name)
+            if not _matches_subtitle_download_name(path, info, language, ext, source):
+                continue
+            mtime = os.path.getmtime(path)
+            if mtime > newest_mtime:
+                newest = path
+                newest_mtime = mtime
+    return os.path.abspath(newest) if newest else ""
+
+
 def _matches_split_download_name(path, info, format_id, role):
     if not format_id and not role:
         return True
@@ -256,6 +377,16 @@ def _matches_split_download_name(path, info, format_id, role):
         return False
     expected_prefix = f"download-{video_id}-{format_id}-{role}."
     return os.path.basename(path).startswith(expected_prefix)
+
+
+def _matches_subtitle_download_name(path, info, language, ext, source):
+    if not isinstance(info, dict):
+        return False
+    video_id = str(info.get("id") or "")
+    if not video_id:
+        return False
+    name = os.path.basename(path)
+    return name.startswith(f"download-{video_id}-subtitle-{source}.") and name.endswith(f".{language}.{ext}")
 
 
 def _downloaded_file_size(path):
@@ -299,6 +430,8 @@ def _error_category(exc):
         return "network"
     if "unsupported" in text or "no suitable extractor" in text:
         return "unsupported"
+    if "subtitle" in text or "subtitles" in text or "language" in text or "extension" in text:
+        return "unsupported"
     if "private" in text or "sign in" in text or "login" in text or "permission" in text:
         return "permission"
     if "format id" in text or "role" in text:
@@ -310,6 +443,8 @@ def _error_category(exc):
 
 def _safe_error_message(exc):
     category = _error_category(exc)
+    if "subtitle" in str(exc).lower() or "subtitles" in str(exc).lower():
+        return "没有可用的匹配字幕文件，请选择分析结果中的语言和格式。"
     if category == "network":
         return "网络连接失败，请稍后重试。"
     if category == "unsupported":
