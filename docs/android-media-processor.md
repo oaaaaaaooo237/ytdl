@@ -119,6 +119,42 @@ Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api3
 - `MediaMuxer` 不是字幕烧录工具，也不是通用转码/滤镜工具；字幕烧录仍需要 ffmpeg 或等价处理链。
 - `ffmpeg-kit` 官方仓库已经归档并退休，不能把它当成长期稳定的默认路线；如果后续采用 fork 或自行打包，必须记录来源、许可证、ABI、包体积和维护风险。
 
+## M5 路线审计结果
+
+2026-06-20 审计结论：`mobile-ffmpeg` / `bihe0832` AAR 试验不能作为 Android Play MVP 主线方案。该试验只证明“可以探索 FFmpeg 能力”，不能证明 SDK37、Android 17、Google Play、16KB page size、许可证、包体积、源码可追溯和长期维护都合格。
+
+采用路线：
+
+- 高分辨率分离视频流 + 音频流的兼容 MP4 合并：优先继续使用已实测的 Android 原生 `MediaExtractor + MediaMuxer` 快速路径，不转码，不调用 shell，不引入 FFmpeg 成本。
+- 字幕嵌入、字幕烧录、滤镜、非兼容容器/编码和原生 muxer 不能处理的场景：使用项目自编译的最小 LGPL FFmpeg 8.1.x 动态库，并通过项目自有 JNI/命令桥调用。
+- 默认许可证目标是 LGPL；不得启用 `--enable-gpl` 或 nonfree 组件，除非用户明确批准 GPL 路线和对应分发义务。
+
+已拒绝路线：
+
+- FFmpegKit / arthenica / mobile-ffmpeg：官方项目已退役，不作为长期默认基础。
+- `com.bihe0832.android:lib-ffmpeg-mobile-aaf`：AAR 来源、源码配置、许可证覆盖、全 ABI/16KB/AAB 证据不足，不进入主线依赖。
+- `io.github.pao11:ffmpeg-android`：本地探针发现缺少 `x86_64`，不能满足 API37 模拟器验收。
+- Bytedeco / JavaCV FFmpeg：维护活跃，但包体积、许可证组合和 API 控制成本过高，不作为当前 MVP 最优路线。
+
+当前本机 FFmpeg 构建环境事实：
+
+- 已有 Android NDK `28.2.13676358`。
+- 已有 NDK LLVM Windows 工具链：`D:\Softwares\Android\SDK\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64`。
+- 已有 Git Bash：`C:\Program Files\Git\bin\bash.exe`，其中 Perl 可用。
+- Windows PATH 当前没有 `make`、`python`、`python3`、`pkg-config`。
+- WSL 可执行入口存在，但当前没有已安装 Linux distro，不能直接用 WSL 构建 FFmpeg。
+
+M5 必须保留的验收证据：
+
+- FFmpeg 源码版本、来源 URL、签名或 hash。
+- configure flags、启用外部库清单、LGPL/GPL/nonfree 判断。
+- ABI：至少 `x86_64` 用于 API37 模拟器，`arm64-v8a` 用于小米 14 或同级真机验收。
+- 每个打包 `.so` 的 ELF LOAD alignment，AAB/APK 16KB page-size 证据。
+- API37 x86_64 16KB 模拟器运行 `ffmpeg -version` 或等价 bridge 版本探针。
+- 字幕嵌入输出中可识别字幕流。
+- 字幕烧录输出中可识别视频/音频轨，且显示不依赖外置字幕流。
+- APK/AAB 体积分解、第三方许可证/NOTICE、源码获取说明。
+
 ## 路线边界
 
 ### 原生 MediaProcessor 第一阶段
@@ -136,21 +172,22 @@ Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api3
 - 不承诺所有 codec/container 都能无转码合并。
 - 不做 DRM 绕过，不做未授权内容访问。
 
-### Android ffmpeg 后续阶段
+### Android FFmpeg 后续阶段
 
 目标：
 
-- 提供 `ffmpeg -version` 或等价能力探针。
+- 自编译最小 LGPL FFmpeg 8.1.x 动态库。
+- 提供 `ffmpeg -version` 或等价 JNI bridge 能力探针。
 - 支持字幕嵌入。
 - 支持字幕烧录。
 - 覆盖原生 muxer 不支持的媒体处理场景。
 
 准入要求：
 
-- 明确二进制来源或构建方式。
-- 明确 LGPL/GPL 许可证边界。
+- 明确源码来源、签名/hash 和构建方式。
+- 明确 LGPL/GPL/nonfree 许可证边界。
 - 明确 ABI：至少 `x86_64` 用于模拟器，`arm64-v8a` 用于手机。
-- 明确包体积影响和 Play 分发风险。
+- 明确包体积影响、16KB page-size 证据和 Play 分发风险。
 
 ## 后续任务映射
 
@@ -158,7 +195,7 @@ Logcat：android/app/build/outputs/androidTest-results/connected/debug/ytdl_api3
 - M2/T8B：实现并测试原生合并处理器。
 - M3/T8C：实现 yt-dlp 指定 format id 的分离下载。
 - M4/T8D：已用 `tkxzMEfp49Q` 完成核心分析、分离下载、合并 smoke，并由 `MediaExtractor` 证明输出含 1 条视频轨和 1 条音频轨。
-- M5/T8E：补 Android ffmpeg 字幕嵌入/烧录能力。
+- M5/T8E：按 M5a-M5e 补 Android FFmpeg 字幕嵌入/烧录能力；`MediaMuxer` 仍是兼容分离音视频合并的优先快速路径。
 - M6：实现下载编排、前台服务、通知和真实队列状态，禁止 360p 单文件假回退。
 - M7：把真实合并与 ffmpeg 能力接入五页 GUI，确保格式选择、队列和状态文案都来自真实能力。
 - M8：补历史、导出、cookies 隐私和失败恢复。

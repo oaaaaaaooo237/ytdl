@@ -165,26 +165,18 @@
 - [ ] Real check on API37: start one download for the test URL, observe in-app queue progress and output file existence.
 - [ ] Commit with message `android: add real foreground download flow`.
 
-### Task 6: Android ffmpeg MediaProcessor
+### Task 6: Android MediaProcessor
 
-**Purpose:** Provide first-phase real media operations: audio/video merge, subtitle embed, and subtitle burn on Android.
+**Status:** 历史任务入口，已被下方 `Continuation Task M1` 到 `M5e` 细分路线取代。不要按本节创建 `FfmpegBinary.kt`、旧 mobile-ffmpeg wrapper，或直接提交不明来源的 `jniLibs/.../ffmpeg` 二进制。
 
-**Files:**
-- Create: `android/app/src/main/java/com/garyapp/ytdl/media/MediaProcessor.kt`
-- Create: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegBinary.kt`
-- Create: `android/app/src/main/assets/licenses/ffmpeg.md`
-- Create: `android/app/src/test/java/com/garyapp/ytdl/media/MediaProcessorCommandTest.kt`
-- Create or add after chosen binary source: `android/app/src/main/jniLibs/x86_64/ffmpeg`
-- Create or add after chosen binary source: `android/app/src/main/jniLibs/arm64-v8a/ffmpeg`
+**Purpose:** Provide first-phase real media operations on Android.
 
-**Steps:**
-- [ ] Select an auditable Android ffmpeg binary/library route with license text recorded in `ffmpeg.md`.
-- [ ] Package only `x86_64` and `arm64-v8a` first-phase ABIs.
-- [ ] Implement command building for merge, subtitle embed, and subtitle burn with safe paths.
-- [ ] Add tests asserting command arguments and output paths are quoted/safe.
-- [ ] Verify `.\gradlew.bat :app:testDebugUnitTest` and `.\gradlew.bat :app:assembleDebug`.
-- [ ] Real check on API37: execute ffmpeg `-version`, then run at least one short merge or subtitle operation.
-- [ ] Commit with message `android: add ffmpeg media processor`.
+**Current Split:**
+- M1/M2: Android 原生 `MediaExtractor + MediaMuxer` 合同与真实兼容流合并，已完成。
+- M3/M4: yt-dlp 指定 format id 分离下载和 required URL 核心合并 smoke，已完成能力层验证。
+- M5a-M5e: 自编译最小 LGPL FFmpeg 8.1.x 动态库、自有 JNI/命令桥、字幕嵌入/烧录、许可证/ABI/16KB/体积证据，当前执行。
+
+**Execution Rule:** 后续 worker 必须执行 M5a-M5e 的细分任务，不得回到旧的 FFmpegKit/mobile-ffmpeg/AAR 路线。
 
 ### Task 7: Five-Page Compose UI
 
@@ -367,33 +359,113 @@ This section records the adjusted continuation order after user review. From 202
 
 **Acceptance:** This task is accepted only when the merged file exists and is proven to contain both tracks. No GUI flow is considered complete before this passes.
 
-### Continuation Task M5: Android ffmpeg Subtitle Processor
+### Continuation Task M5: Android FFmpeg Subtitle Processor
 
-**Status:** 下一项执行任务。
+**Status:** 当前执行任务；2026-06-20 审计已拒绝 `mobile-ffmpeg` / `bihe0832` AAR 作为主线方案。
 
-**Purpose:** Add the Android ffmpeg route required by first-phase requirements for subtitle embed, subtitle burn, and non-native-muxer media operations. Native `MediaMuxer` remains the preferred compatible stream-copy merge path; ffmpeg covers the operations native muxer cannot honestly claim.
+**Purpose:** Add the Android FFmpeg route required by first-phase requirements for subtitle embed, subtitle burn, and non-native-muxer media operations. Native `MediaMuxer` remains the preferred compatible MP4 stream-copy path for split video+audio merge; FFmpeg covers subtitle embed/burn, filters, incompatible containers/codecs, and other work native muxer cannot honestly claim.
+
+**Accepted Architecture:** Use two media lanes. Lane 1 is the existing Android `MediaExtractor + MediaMuxer` processor for compatible stream-copy merge. Lane 2 is a project-owned minimal LGPL FFmpeg 8.1.x dynamic-library build, loaded through a project-owned JNI/command bridge. Do not adopt retired FFmpegKit/mobile-ffmpeg wrappers or opaque Maven AARs as the product route.
+
+#### M5a: Route Cleanup and Build Environment Gate
 
 **Files:**
+- Modify: `.gitignore`
+- Modify: `android/app/build.gradle.kts`
 - Modify: `docs/android-media-processor.md`
-- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegMediaProcessor.kt`
-- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegBinary.kt`
-- Create or modify: `android/app/src/main/assets/licenses/ffmpeg.md`
-- Create: `android/app/src/test/java/com/garyapp/ytdl/media/FfmpegCommandTest.kt`
-- Create or update: `android/app/src/androidTest/java/com/garyapp/ytdl/media/FfmpegMediaProcessorInstrumentedTest.kt`
+- Modify: `docs/qa/android-full-visual-test-plan.md`
+- Modify: `docs/superpowers/plans/2026-06-19-ytdl-android-play-mvp.md`
+- Delete if present: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegBinary.kt`
+- Delete if present: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegMediaProcessor.kt`
+- Delete if present: `android/app/src/main/assets/licenses/ffmpeg.md`
+- Delete if present: `android/app/src/test/java/com/garyapp/ytdl/media/FfmpegCommandTest.kt`
+- Delete if present: `android/app/src/androidTest/java/com/garyapp/ytdl/media/FfmpegMediaProcessorInstrumentedTest.kt`
 
 **Steps:**
-- [ ] Select an auditable Android ffmpeg packaging route and record source, license, ABI, and package-size implications in `docs/android-media-processor.md`.
-- [ ] Package or load ffmpeg for at least API37 x86_64 emulator validation and define the path for `arm64-v8a` release validation.
-- [ ] Implement safe command construction for `-version`, subtitle embed, subtitle burn, and fallback merge operations.
-- [ ] Unit-test command arguments, output path controls, and sensitive path/log redaction.
-- [ ] Add an API37 instrumentation test that runs ffmpeg `-version`.
-- [ ] Add an API37 instrumentation test that uses tiny local media/subtitle fixtures to produce an embedded-subtitle output and a burned-subtitle output.
+- [ ] Remove the rejected `com.bihe0832.android:lib-ffmpeg-mobile-aaf` dependency and untracked mobile-ffmpeg wrapper code from product paths.
+- [ ] Keep local probe artifacts out of git with `.qa-android-ffmpeg-*.aar` and `.qa-ffmpeg-inspect/` ignore rules.
+- [ ] Record rejected trials: retired FFmpegKit/mobile-ffmpeg, opaque bihe0832/mobile-ffmpeg AAR, pao11 AAR without x86_64, and Bytedeco/JavaCV not chosen for the MVP because of size/license/API-control cost.
+- [ ] Record current local build facts: NDK `28.2.13676358` exists; NDK LLVM Windows toolchain exists; Git Bash exists and has Perl; Windows PATH has no `make`, `python`, `python3`, or `pkg-config`; WSL has no installed Linux distro.
 - [ ] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`
   - `cd android; .\gradlew.bat :app:assembleDebug`
+
+**Acceptance:** M5a is accepted when the rejected AAR route is no longer referenced by product code, the worktree contains only intentional tracked doc/build cleanup, and build/unit tests still pass. M5a does not complete Android FFmpeg capability.
+
+#### M5b: Minimal LGPL FFmpeg Build Inputs
+
+**Files:**
+- Create or modify: `scripts/android_ffmpeg_env.ps1`
+- Create or modify: `scripts/build_android_ffmpeg.ps1`
+- Create or modify: `third_party/ffmpeg/README.md`
+- Create or modify: `docs/android-media-processor.md`
+
+**Steps:**
+- [ ] Add a preflight script that prints exact pass/fail status for NDK, CMake, Git Bash, Perl, make, Python 3, pkg-config, LLVM target tools, and output directories.
+- [ ] Add a build script skeleton for FFmpeg 8.1.x LGPL dynamic libraries, with explicit source archive path, SHA/signature fields, configure flags, ABI list, API level, and output directory.
+- [ ] Configure the first build target as `x86_64` for API37 emulator and `arm64-v8a` for Xiaomi 14-class release validation.
+- [ ] Keep GPL/nonfree disabled unless the user explicitly approves a GPL route.
+- [ ] Document required subtitle burn libraries and risks: libass, freetype, fribidi, fontconfig or explicit bundled font handling.
+
+**Acceptance:** M5b is accepted only when the build preflight produces exact local pass/fail facts and the build scripts are reproducible enough for a worker to run without hidden manual steps. If tools are missing, the script must report the missing tool by name and path expectation.
+
+#### M5c: FFmpeg JNI/Command Bridge
+
+**Files:**
+- Create or modify: `android/app/src/main/cpp/ffmpeg_bridge.cpp`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegBridge.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegMediaProcessor.kt`
+- Create or modify: `android/app/src/test/java/com/garyapp/ytdl/media/FfmpegCommandTest.kt`
+- Modify: `android/app/build.gradle.kts`
+
+**Steps:**
+- [ ] Load only project-built native libraries from app packaging, not shell binaries from system PATH.
+- [ ] Expose `version()`, `embedSubtitle(...)`, `burnSubtitle(...)`, and `fallbackMerge(...)` through argument arrays or JNI-safe structures; no shell string concatenation.
+- [ ] Redact cookies paths and sensitive URLs from logs/errors.
+- [ ] Unit-test command construction, output-root enforcement, extension/container choices, and redaction.
+- [ ] Verify:
+  - `cd android; .\gradlew.bat :app:testDebugUnitTest`
+  - `cd android; .\gradlew.bat :app:assembleDebug`
+
+**Acceptance:** M5c is accepted only when Kotlin can call the packaged bridge and unit tests prove command/path safety. This still does not prove real subtitle output.
+
+#### M5d: Subtitle Embed and Burn Runtime Proof
+
+**Files:**
+- Create or modify: `android/app/src/androidTest/java/com/garyapp/ytdl/media/FfmpegMediaProcessorInstrumentedTest.kt`
+- Create or modify: `android/app/src/androidTest/assets/media/`
+- Modify: `docs/android-media-processor.md`
+- Modify: `docs/qa/android-full-visual-test-plan.md`
+
+**Steps:**
+- [ ] Add tiny local media fixtures or generate tiny media during instrumentation.
+- [ ] Run FFmpeg `-version` on API37 x86_64 16KB emulator.
+- [ ] Produce a subtitle-embedded output and verify the output contains a subtitle stream.
+- [ ] Produce a subtitle-burned output and verify the output contains readable video/audio tracks and no separate subtitle stream is required for display.
+- [ ] Include at least one Chinese subtitle/font-path case or document the exact reason it cannot run yet and keep M5d incomplete.
+- [ ] Verify:
   - `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.media.FfmpegMediaProcessorInstrumentedTest"`
 
-**Acceptance:** This task is accepted only when Android API37 can execute the packaged ffmpeg route and produce real subtitle embed/burn outputs. Until this passes, no wording may claim first-phase Android ffmpeg capability is complete.
+**Acceptance:** M5d is accepted only when API37 executes the packaged FFmpeg route and produces real embed and burn outputs. Until this passes, no wording may claim first-phase Android FFmpeg subtitle capability is complete.
+
+#### M5e: Play, License, ABI, Size, and Device Evidence
+
+**Files:**
+- Create or modify: `android/app/src/main/assets/licenses/ffmpeg.md`
+- Create or modify: `docs/android-media-processor.md`
+- Create or modify: `docs/qa/android-full-visual-test-plan.md`
+- Create or modify: `docs/android-release-evidence.md`
+
+**Steps:**
+- [ ] Record FFmpeg source version, source URL, signature/hash, configure flags, enabled libraries, disabled GPL/nonfree status, and exact build command.
+- [ ] Check every packaged `.so` ELF LOAD alignment for 16KB compatibility.
+- [ ] Build APK/AAB and record package-size impact.
+- [ ] Check AAB 16KB page-size readiness with Android tooling available locally.
+- [ ] Run x86_64 API37 emulator proof and record command output.
+- [ ] Run `arm64-v8a` true-device proof when Xiaomi 14 or equivalent is available; until then mark arm64 release validation incomplete.
+- [ ] Provide LGPL source/notice instructions in app assets/docs.
+
+**Acceptance:** M5e is accepted only when license, ABI, 16KB, package size, emulator runtime, and arm64 validation status are recorded with current evidence. Missing true-device evidence blocks release acceptance but does not erase emulator capability evidence.
 
 ### Continuation Task M6: Download Orchestration and Foreground State
 

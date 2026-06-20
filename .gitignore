@@ -31,6 +31,8 @@ logs/
 .qa-data/
 .qa-real-smoke/
 .qa-android-env/
+.qa-android-ffmpeg-*.aar
+.qa-ffmpeg-inspect/
 .qa-window.xml
 config.json
 history.json
