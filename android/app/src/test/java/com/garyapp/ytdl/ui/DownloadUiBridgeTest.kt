@@ -41,10 +41,23 @@ class DownloadUiBridgeTest {
         assertFalse(source.contains("自然风光演示片段"))
         assertFalse(source.contains("海边散步片段"))
         assertFalse(source.contains("SettingLineCard(\"通知权限\", \"已允许\""))
-        assertTrue(source.contains("M6 下载管线"))
+        assertFalse(source.contains("M6 下载管线"))
+        assertTrue(source.contains("真实任务队列"))
         assertTrue(source.contains("暂无真实下载任务"))
         assertTrue(source.contains("暂无真实历史记录，完成下载后会显示"))
         assertTrue(source.contains("前台验收待完成"))
+    }
+
+    @Test
+    fun ytdlAppRegistersCoordinatorListenerForRealForegroundProgress() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("DownloadCoordinator.addListener"))
+        assertTrue(source.contains("runtimeState.withPipelineState(state)"))
+        assertTrue(source.contains("subscription.close()"))
     }
 
     @Test
@@ -87,13 +100,12 @@ class DownloadUiBridgeTest {
 
     @Test
     fun formatPageDoesNotPretendSubtitleFileIsAlreadySelected() {
-        val source = sourceFile(
-            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
-            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
-        ).readText()
+        val label = subtitleSelectionLabelForUiTest()
 
-        assertFalse(source.contains("SettingLineCard(\"字幕\", \"下载文件\""))
-        assertTrue(source.contains("字幕待选择"))
+        assertFalse(label.contains("已选择"))
+        assertFalse(label.contains("下载文件"))
+        assertTrue(label.contains("字幕待选择"))
+        assertTrue(label.contains("默认不下载"))
     }
 
     @Test
@@ -154,13 +166,35 @@ class DownloadUiBridgeTest {
     @Test
     fun terminalQueueHeaderDoesNotSayDownloading() {
         val request = request()
-        val completed = RuntimeDownloadState().withPipelineStateForUiTest(DownloadTaskState(stage = DownloadStage.Completed, request = request))
+        val completed = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Completed,
+                request = request,
+                outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, "done.mp4", 10L)),
+            ),
+        )
         val failed = RuntimeDownloadState().withPipelineStateForUiTest(DownloadTaskState.waiting(request).failed("下载失败"))
         val canceled = RuntimeDownloadState().withPipelineStateForUiTest(DownloadTaskState.waiting(request).canceled())
 
         assertEquals("最近任务已完成", queueHeaderTitleForUiTest(completed))
         assertEquals("最近任务失败", queueHeaderTitleForUiTest(failed))
         assertEquals("最近任务已取消", queueHeaderTitleForUiTest(canceled))
+    }
+
+    @Test
+    fun completedStateWithoutMediaOutputDoesNotRenderAsCompletedDownload() {
+        val state = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Completed,
+                request = request(),
+                outputs = emptyList(),
+            ),
+        )
+
+        assertEquals("下载失败", state.downloadStatus)
+        assertEquals(null, state.progressPercent)
+        assertFalse(state.userMessage.contains("下载完成"))
+        assertEquals("最近任务失败", queueHeaderTitleForUiTest(state))
     }
 
     @Test

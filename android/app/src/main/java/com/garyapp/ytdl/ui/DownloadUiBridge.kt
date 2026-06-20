@@ -1,6 +1,7 @@
 package com.garyapp.ytdl.ui
 
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
+import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadStage
 
@@ -41,3 +42,15 @@ fun userVisibleDownloadStatus(stage: DownloadStage): String {
         DownloadStage.Canceled -> "已取消"
     }
 }
+
+fun settingsParserVersionLabel(): String = "yt-dlp ${YtdlpBridge.PINNED_YTDLP_VERSION}"
+
+fun settingsMediaProcessorLabel(): String = "原生合并 · 字幕独立文件 · 字幕嵌入/烧录属 MVP2"
+
+fun subtitleSelectionLabel(): String = "字幕待选择 / 本阶段默认不下载"
+
+internal fun settingsParserVersionLabelForUiTest(): String = settingsParserVersionLabel()
+
+internal fun settingsMediaProcessorLabelForUiTest(): String = settingsMediaProcessorLabel()
+
+internal fun subtitleSelectionLabelForUiTest(): String = subtitleSelectionLabel()

@@ -422,7 +422,7 @@ This section records the adjusted continuation order after user review. From 202
 
 ### Continuation Task M7: GUI Binding and Anti-Fallback UX
 
-**Status:** 未开始；M6 通过后执行。
+**Status:** 绑定层已完成并通过审计；最终前台可视全量验收仍在 M9/T12。
 
 **Purpose:** Bind the approved five-page GUI to the real pipeline from M4-M6, so visible choices, queue progress, settings, and errors reflect actual capabilities instead of demo values.
 
@@ -437,14 +437,14 @@ This section records the adjusted continuation order after user review. From 202
 - Modify: `docs/qa/android-full-visual-test-plan.md`
 
 **Steps:**
-- [ ] Analyze button must call the real `YtdlpBridge.analyze()` and never block startup.
-- [ ] Format page must display only choices derived from the current `VideoAnalysis`; unsupported visible rows are disabled with a reason.
-- [ ] Download page summary must update when the user applies a format choice; it must not keep showing stale 360p/default summary.
-- [ ] Start-download feedback must be immediate and visible: task added, current state, and queue entry.
-- [ ] Queue page must show real stage names and progress from `DownloadState`, not static sample rows.
-- [ ] Settings page must show real parser version and media processor status, including native muxer support and MVP2 FFmpeg note.
-- [ ] Unit-test UI model binding for supported/unsupported formats, stale summary prevention, and stage text.
-- [ ] Verify:
+- [x] Analyze button must call the real `YtdlpBridge.analyze()` and never block startup.
+- [x] Format page must display only choices derived from the current `VideoAnalysis`; unsupported visible rows are disabled with a reason.
+- [x] Download page summary must update when the user applies a format choice; it must not keep showing stale 360p/default summary.
+- [x] Start-download feedback must be immediate and visible: task added, current state, and queue entry.
+- [x] Queue page must show real stage names and progress from `DownloadState`, not static sample rows.
+- [x] Settings page must show real parser version and media processor status, including native muxer support and MVP2 FFmpeg note.
+- [x] Unit-test UI model binding for supported/unsupported formats, stale summary prevention, and stage text.
+- [x] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`
   - `cd android; .\gradlew.bat :app:assembleDebug`
 

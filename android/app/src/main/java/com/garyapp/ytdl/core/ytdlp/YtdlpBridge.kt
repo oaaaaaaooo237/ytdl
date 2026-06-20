@@ -157,6 +157,8 @@ class YtdlpBridge(
     }
 
     companion object {
+        const val PINNED_YTDLP_VERSION = "2026.3.17"
+
         fun mapFormat(
             raw: Map<String, Any?>,
             hasStandaloneAudio: Boolean = false,

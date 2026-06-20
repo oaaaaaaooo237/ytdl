@@ -66,6 +66,7 @@ import com.garyapp.ytdl.download.DownloadTaskState
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 private val AppBackground = Color(0xFFFFFCF7)
 private val BottomBarBackground = Color(0xFFF8F0FB)
@@ -111,6 +112,12 @@ internal data class RuntimeDownloadState(
     val hasRealTask: Boolean
         get() = downloadStatus.isNotBlank() || progressPercent != null || outputPath.isNotBlank() || outputBytes > 0L || isDownloading
 }
+
+internal data class FormatSettingSummaries(
+    val frameRate: String,
+    val videoCodec: String,
+    val container: String,
+)
 
 fun ytdlNavigationDestinations(): List<YtdlDestination> = listOf(
     YtdlDestination(
@@ -158,10 +165,10 @@ fun ytdlNavigationDestinations(): List<YtdlDestination> = listOf(
 
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
     "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "保存位置", "下载模式", "开始下载"),
-    "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕"),
+    "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕", "本阶段默认不下载"),
     "queue" to listOf("下载进行中", "当前阶段", "等待真实任务", "暂无真实下载任务", "最近任务已完成", "最近任务失败", "最近任务已取消", "下载视频", "下载音频", "原生合并", "已取消"),
     "history" to listOf("搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
-    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "前台验收待完成", "隐私与授权说明", "外观与颜色", "Codex 风格"),
+    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "前台验收待完成", "隐私与授权说明", "外观与颜色", "Codex 风格", "MVP2"),
 )
 
 @Composable
@@ -208,6 +215,8 @@ fun YtdlApp() {
             isAnalyzing = true,
             userMessage = "正在真实分析地址...",
             analysis = null,
+            formatSelection = FormatSelection(),
+            appliedFormatSelection = FormatSelection(),
             thumbnailBitmap = null,
             thumbnailStatus = "",
         )
@@ -216,19 +225,7 @@ fun YtdlApp() {
             mainHandler.post {
                 runtimeState = result.fold(
                     onSuccess = { analysis ->
-                        runtimeState.copy(
-                            analysis = analysis,
-                            formatSelection = defaultFormatSelection(analysis),
-                            appliedFormatSelection = defaultFormatSelection(analysis),
-                            thumbnailBitmap = null,
-                            thumbnailStatus = if (analysis.thumbnailUrl.isNullOrBlank()) {
-                                "无可用预览图"
-                            } else {
-                                "正在加载预览图"
-                            },
-                            isAnalyzing = false,
-                            userMessage = "分析完成，可以开始下载。",
-                        )
+                        runtimeState.withAnalysisResult(analysis)
                     },
                     onFailure = { error ->
                         runtimeState.copy(
@@ -270,7 +267,7 @@ fun YtdlApp() {
         )
         runtimeState = startResult.fold(
             onSuccess = { waiting ->
-                runtimeState.withPipelineState(waiting).copy(userMessage = "真实下载已加入前台队列。")
+                runtimeState.withForegroundStartState(waiting)
             },
             onFailure = { error ->
                 runtimeState.withPipelineState(DownloadTaskState.idle()).copy(
@@ -357,12 +354,52 @@ fun YtdlApp() {
     }
 }
 
+internal fun RuntimeDownloadState.withAnalysisForUiTest(analysis: VideoAnalysis): RuntimeDownloadState = withAnalysisResult(analysis)
+
+private fun RuntimeDownloadState.withAnalysisResult(analysis: VideoAnalysis): RuntimeDownloadState {
+    val freshSelection = defaultFormatSelection(analysis)
+    return copy(
+        analysis = analysis,
+        formatSelection = freshSelection,
+        appliedFormatSelection = freshSelection,
+        thumbnailBitmap = null,
+        thumbnailStatus = if (analysis.thumbnailUrl.isNullOrBlank()) {
+            "无可用预览图"
+        } else {
+            "正在加载预览图"
+        },
+        isAnalyzing = false,
+        userMessage = "分析完成，可以开始下载。",
+    )
+}
+
+internal fun RuntimeDownloadState.withForegroundStartStateForUiTest(state: DownloadTaskState): RuntimeDownloadState = withForegroundStartState(state)
+
+private fun RuntimeDownloadState.withForegroundStartState(state: DownloadTaskState): RuntimeDownloadState {
+    val stageText = userVisibleDownloadStatus(state.stage)
+    return withPipelineState(state).copy(
+        userMessage = "真实下载已加入前台队列，当前阶段：$stageText。",
+    )
+}
+
 internal fun RuntimeDownloadState.withPipelineStateForUiTest(state: DownloadTaskState): RuntimeDownloadState = withPipelineState(state)
 
 private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): RuntimeDownloadState {
     val statusText = userVisibleDownloadStatus(state.stage)
     val progress = state.progress
     val mediaOutput = state.outputs.firstOrNull { it.kind == DownloadOutputKind.Media }
+    if (state.stage == DownloadStage.Completed && mediaOutput == null) {
+        return copy(
+            isDownloading = false,
+            userMessage = "下载结果无有效输出，请重试。",
+            progressPercent = null,
+            downloadedBytes = null,
+            totalBytes = null,
+            downloadStatus = userVisibleDownloadStatus(DownloadStage.Failed),
+            outputPath = "",
+            outputBytes = 0L,
+        )
+    }
     if (state.stage == DownloadStage.Idle || (state.request == null && state.outputs.isEmpty() && state.stage == DownloadStage.Failed)) {
         return copy(
             isDownloading = false,
@@ -541,6 +578,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     onAnalyze: () -> Unit,
     onStartDownload: () -> Unit,
 ) {
+    val modeSelections = downloadModeSelections(state)
     item {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -592,9 +630,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     item {
         SectionTitle("下载模式")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ModeCard("♫", "仅音频", selected = false, modifier = Modifier.weight(1f))
-            ModeCard("▣", "视频+音频", selected = true, modifier = Modifier.weight(1f))
-            ModeCard("▤", "仅视频", selected = false, modifier = Modifier.weight(1f))
+            ModeCard("♫", "仅音频", selected = modeSelections[FormatMode.AudioOnly] == true, modifier = Modifier.weight(1f))
+            ModeCard("▣", "视频+音频", selected = modeSelections[FormatMode.VideoAndAudio] == true, modifier = Modifier.weight(1f))
+            ModeCard("▤", "仅视频", selected = modeSelections[FormatMode.VideoOnly] == true, modifier = Modifier.weight(1f))
         }
     }
     item {
@@ -619,12 +657,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     }
 }
 
+internal fun downloadModeSelectionsForUiTest(state: RuntimeDownloadState): Map<FormatMode, Boolean> = downloadModeSelections(state)
+
+private fun downloadModeSelections(state: RuntimeDownloadState): Map<FormatMode, Boolean> {
+    return FormatMode.entries.associateWith { mode -> mode == state.appliedFormatSelection.mode }
+}
+
 @Composable
 private fun DownloadPreviewCard(state: RuntimeDownloadState) {
     val analysis = state.analysis
     val duration = analysis?.durationSeconds?.let(::formatDuration) ?: "未分析"
     val title = analysis?.title?.ifBlank { "未命名视频" } ?: "等待真实分析"
-    val formatSummary = formatSelectionSummary(analysis, state.appliedFormatSelection)
+    val formatSummary = downloadPreviewFormatSummary(state)
 
     AppCard {
         Box(
@@ -684,6 +728,12 @@ private fun DownloadPreviewCard(state: RuntimeDownloadState) {
     }
 }
 
+internal fun downloadPreviewFormatSummaryForUiTest(state: RuntimeDownloadState): String = downloadPreviewFormatSummary(state)
+
+private fun downloadPreviewFormatSummary(state: RuntimeDownloadState): String {
+    return formatSelectionSummary(state.analysis, state.appliedFormatSelection)
+}
+
 private fun formatDuration(totalSeconds: Long): String {
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
@@ -709,12 +759,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             testTagPrefix = "ytdl-format-mode",
             onSelected = { index ->
                 val mode = FormatMode.entries[index]
-                val baseSelection = FormatSelection(mode = mode, selectedHeight = selection.selectedHeight)
-                val nextSelection = buildFormatResolutionRows(analysis, baseSelection)
-                    .firstOrNull { it.selectable && (it.height == selection.selectedHeight || selection.selectedHeight == null) }
-                    ?.let { selectionFromRow(mode, it) }
-                    ?: baseSelection
-                onSelectionChange(nextSelection)
+                onSelectionChange(
+                    selectBestAvailableFormatSelection(
+                        analysis = analysis,
+                        mode = mode,
+                        preferredHeight = selection.selectedHeight,
+                    ),
+                )
             },
         )
     }
@@ -728,6 +779,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
         return
     }
     val rows = buildFormatResolutionRows(analysis, selection)
+    val summaries = formatSettingSummaries(analysis, selection)
     item {
         AppCard(modifier = Modifier.testTag("ytdl-format-resolution-card")) {
             SectionTitle("分辨率")
@@ -743,10 +795,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             }
         }
     }
-    item { SettingLineCard("帧率", "自动（推荐）", "▾", "›") }
-    item { SettingLineCard("视频编码", "H.264（推荐）", "▾", "›") }
-    item { SettingLineCard("容器格式", "MP4（推荐）", "▾", "›") }
-    item { SettingLineCard("字幕", "字幕待选择", "▾", "›") }
+    item { SettingLineCard("帧率", summaries.frameRate, "▾", "›") }
+    item { SettingLineCard("视频编码", summaries.videoCodec, "▾", "›") }
+    item { SettingLineCard("容器格式", summaries.container, "▾", "›") }
+    item { SettingLineCard("字幕", subtitleSelectionLabel(), "▾", "›") }
     item {
         Surface(
             modifier = Modifier.testTag("ytdl-format-summary"),
@@ -756,7 +808,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("实际下载：${formatSelectionSummary(analysis, selection)}", color = FormatAccent, fontWeight = FontWeight.Bold)
-                Text("已接入 M6 下载管线；开始下载会按当前格式选择进入真实路由。", color = SoftText, style = MaterialTheme.typography.bodySmall)
+                Text("开始下载会按当前格式选择进入真实任务队列。", color = SoftText, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -773,6 +825,55 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             Text("应用选择", fontWeight = FontWeight.Bold)
         }
     }
+}
+
+internal fun formatSettingSummariesForUiTest(
+    analysis: VideoAnalysis?,
+    selection: FormatSelection,
+): FormatSettingSummaries = formatSettingSummaries(analysis, selection)
+
+private fun formatSettingSummaries(
+    analysis: VideoAnalysis?,
+    selection: FormatSelection,
+): FormatSettingSummaries {
+    if (analysis == null) {
+        return FormatSettingSummaries(
+            frameRate = "分析后显示",
+            videoCodec = "分析后显示",
+            container = "分析后显示",
+        )
+    }
+    val row = buildFormatResolutionRows(analysis, selection).firstOrNull { it.selected && it.selectable }
+        ?: return FormatSettingSummaries(
+            frameRate = "请选择可用格式",
+            videoCodec = "请选择可用格式",
+            container = "请选择可用格式",
+        )
+    val video = row.videoFormatId?.let { id -> analysis.formats.firstOrNull { it.id == id } }
+    val audio = row.audioFormatId?.let { id -> analysis.formats.firstOrNull { it.id == id } }
+
+    val frameRate = when {
+        selection.mode == FormatMode.AudioOnly -> "不适用"
+        video?.fps != null -> "${String.format(Locale.US, "%.2f", video.fps).trimEnd('0').trimEnd('.')}fps"
+        else -> "未提供"
+    }
+    val videoCodec = when {
+        selection.mode == FormatMode.AudioOnly -> "不适用"
+        else -> video?.videoCodec
+            ?.takeIf { it.isNotBlank() && it != "none" }
+            ?: "未提供"
+    }
+    val container = when {
+        row.mergeRequired -> "MP4（原生合并输出）"
+        selection.mode == FormatMode.AudioOnly -> audio?.ext?.uppercase(Locale.US)?.ifBlank { null } ?: "音频容器未提供"
+        else -> video?.ext?.uppercase(Locale.US)?.ifBlank { null } ?: "未提供"
+    }
+
+    return FormatSettingSummaries(
+        frameRate = frameRate,
+        videoCodec = videoCodec,
+        container = container,
+    )
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(state: RuntimeDownloadState) {
@@ -909,8 +1010,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems() {
 private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems() {
     item { SettingLineCard("默认保存位置", "App 私有目录", "▣", "›", SettingsAccent) }
     item { SettingLineCard("Cookies 文件", "仅保存文件引用，不保存内容", "▤", "›", SettingsAccent) }
-    item { SettingLineCard("解析器版本", "yt-dlp 2026.3.17", "◇", "›", Color(0xFFE7A600)) }
-    item { SettingLineCard("媒体处理能力", "原生合并 · 字幕独立文件", "⚙", "›", SettingsAccent, modifier = Modifier.testTag("ytdl-settings-media-processor")) }
+    item { SettingLineCard("解析器版本", settingsParserVersionLabel(), "◇", "›", Color(0xFFE7A600)) }
+    item { SettingLineCard("媒体处理能力", settingsMediaProcessorLabel(), "⚙", "›", SettingsAccent, modifier = Modifier.testTag("ytdl-settings-media-processor")) }
     item { SettingLineCard("通知权限", "待系统确认 · 前台验收待完成", "●", "›", FormatAccent) }
     item { SettingLineCard("隐私与授权说明", "查看说明", "◆", "›", SuccessGreen) }
     item { SettingLineCard("不适用网站提示", "该地址不适合 Play 版处理", "!", "›", DownloadAccent) }

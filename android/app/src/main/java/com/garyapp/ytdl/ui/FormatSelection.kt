@@ -69,8 +69,24 @@ fun selectionFromRow(mode: FormatMode, row: FormatResolutionRow): FormatSelectio
 }
 
 fun defaultFormatSelection(analysis: VideoAnalysis?): FormatSelection {
-    val auto = buildFormatResolutionRows(analysis, FormatSelection()).first()
-    return selectionFromRow(FormatMode.VideoAndAudio, auto)
+    return selectBestAvailableFormatSelection(
+        analysis = analysis,
+        mode = FormatMode.VideoAndAudio,
+    )
+}
+
+fun selectBestAvailableFormatSelection(
+    analysis: VideoAnalysis?,
+    mode: FormatMode,
+    preferredHeight: Int? = null,
+): FormatSelection {
+    val baseSelection = FormatSelection(mode = mode, selectedHeight = preferredHeight)
+    val rows = buildFormatResolutionRows(analysis, baseSelection)
+    val row = rows.firstOrNull { it.selectable && it.height == preferredHeight }
+        ?: rows.firstOrNull { it.selectable && it.height == null }
+        ?: rows.firstOrNull { it.selectable }
+
+    return row?.let { selectionFromRow(mode, it) } ?: baseSelection
 }
 
 fun formatSelectionSummary(
