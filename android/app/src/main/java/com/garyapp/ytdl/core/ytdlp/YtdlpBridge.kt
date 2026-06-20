@@ -4,6 +4,7 @@ import com.chaquo.python.Python
 import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.policy.UrlPolicyBlockReason
 import org.json.JSONObject
+import java.io.File
 
 class YtdlpBridge(
     private val pythonProvider: () -> Python = { Python.getInstance() },
@@ -25,6 +26,84 @@ class YtdlpBridge(
             parseAnalysisJson(json)
         } catch (exc: Throwable) {
             Result.failure(exc.toSafeAnalysisException())
+        }
+    }
+
+    fun downloadSingleFile(
+        url: String,
+        outputDirectory: File,
+        cookiesPath: String? = null,
+        listener: DownloadProgressListener? = null,
+    ): Result<DownloadResult> {
+        val policy = UrlPolicy.evaluate(url)
+        if (!policy.isAllowed) {
+            return Result.failure(
+                YtdlpDownloadException(
+                    category = policy.blockReason.toAnalysisCategory(),
+                    safeMessage = sanitizeFailureMessage(policy.userMessage.orEmpty()),
+                ),
+            )
+        }
+
+        return try {
+            outputDirectory.mkdirs()
+            val module = pythonProvider().getModule("ytdl_bridge")
+            val json = module.callAttr(
+                "download_single_file",
+                policy.rawUrlForExecution,
+                outputDirectory.absolutePath,
+                cookiesPath,
+                PythonProgressProxy(listener),
+            ).toString()
+            parseDownloadJson(json)
+        } catch (exc: Throwable) {
+            Result.failure(exc.toSafeDownloadException())
+        }
+    }
+
+    fun downloadFormat(
+        url: String,
+        outputDirectory: File,
+        formatId: String,
+        role: DownloadFormatRole,
+        cookiesPath: String? = null,
+        listener: DownloadProgressListener? = null,
+    ): Result<DownloadResult> {
+        val normalizedFormatId = formatId.trim()
+        if (normalizedFormatId.isBlank() || !isExplicitFormatId(normalizedFormatId)) {
+            return Result.failure(
+                YtdlpDownloadException(
+                    category = AnalysisErrorCategory.Unsupported,
+                    safeMessage = "format id 必须是单个明确格式编号。",
+                ),
+            )
+        }
+
+        val policy = UrlPolicy.evaluate(url)
+        if (!policy.isAllowed) {
+            return Result.failure(
+                YtdlpDownloadException(
+                    category = policy.blockReason.toAnalysisCategory(),
+                    safeMessage = sanitizeFailureMessage(policy.userMessage.orEmpty()),
+                ),
+            )
+        }
+
+        return try {
+            outputDirectory.mkdirs()
+            val module = pythonProvider().getModule("ytdl_bridge")
+            val json = module.callAttr(
+                "download_format",
+                policy.rawUrlForExecution,
+                outputDirectory.absolutePath,
+                normalizedFormatId,
+                role.pythonValue,
+                cookiesPath,
+                PythonProgressProxy(listener),
+            ).toString()
+            parseDownloadJson(json)
+        } catch (exc: Throwable) {
+            Result.failure(exc.toSafeDownloadException())
         }
     }
 
@@ -128,6 +207,72 @@ class YtdlpBridge(
             )
         }
 
+        fun parseDownloadJson(json: String): Result<DownloadResult> {
+            val root = JSONObject(json)
+            if (!root.optBoolean("ok", false)) {
+                return Result.failure(
+                    YtdlpDownloadException(
+                        category = mapErrorCategory(root.optString("errorCategory")),
+                        safeMessage = sanitizeFailureMessage(root.optString("errorMessage")),
+                    ),
+                )
+            }
+
+            val outputPath = root.optString("outputPath")
+            val bytesWritten = root.optLong("bytesWritten")
+            if (outputPath.isBlank() || bytesWritten <= 0L) {
+                return Result.failure(
+                    YtdlpDownloadException(
+                        category = AnalysisErrorCategory.Unknown,
+                        safeMessage = "输出文件无效，请重新下载。",
+                    ),
+                )
+            }
+
+            val role = root.optString("role").takeIf { it.isNotBlank() }?.let { rawRole ->
+                DownloadFormatRole.fromPythonValue(rawRole)
+                    ?: return Result.failure(
+                        YtdlpDownloadException(
+                            category = AnalysisErrorCategory.Unsupported,
+                            safeMessage = "下载结果 role 无效。",
+                        ),
+                    )
+            }
+
+            return Result.success(
+                DownloadResult(
+                    outputPath = outputPath,
+                    bytesWritten = bytesWritten,
+                    title = root.optString("title"),
+                    formatId = root.optString("formatId").takeIf { it.isNotBlank() },
+                    role = role,
+                ),
+            )
+        }
+
+        private fun isExplicitFormatId(value: String): Boolean {
+            val lower = value.lowercase()
+            return Regex("""^[A-Za-z0-9._-]+$""").matches(value) &&
+                YTDLP_SELECTOR_ALIASES.none { alias -> lower == alias || lower.startsWith("$alias.") }
+        }
+
+        private val YTDLP_SELECTOR_ALIASES = setOf(
+            "best",
+            "worst",
+            "bestvideo",
+            "bestaudio",
+            "worstvideo",
+            "worstaudio",
+            "bv",
+            "ba",
+            "wv",
+            "wa",
+            "b",
+            "w",
+            "all",
+            "mergeall",
+        )
+
         private fun JSONObject.toMap(): Map<String, Any?> {
             return keys().asSequence().associateWith { key -> opt(key) }
         }
@@ -193,10 +338,52 @@ class YtdlpBridge(
                 safeMessage = sanitizeFailureMessage(message.orEmpty()),
             )
         }
+
+        private fun Throwable.toSafeDownloadException(): YtdlpDownloadException {
+            if (this is YtdlpDownloadException) {
+                return this
+            }
+            return YtdlpDownloadException(
+                category = AnalysisErrorCategory.Unknown,
+                safeMessage = sanitizeFailureMessage(message.orEmpty()),
+            )
+        }
+    }
+
+    private class PythonProgressProxy(
+        private val listener: DownloadProgressListener?,
+    ) {
+        @Suppress("unused")
+        fun onProgress(
+            status: String?,
+            percent: Double?,
+            downloadedBytes: Long?,
+            totalBytes: Long?,
+            speedBytesPerSecond: Double?,
+            etaSeconds: Long?,
+            filename: String?,
+        ) {
+            listener?.onProgress(
+                DownloadProgress(
+                    status = status.orEmpty(),
+                    percent = percent,
+                    downloadedBytes = downloadedBytes,
+                    totalBytes = totalBytes,
+                    speedBytesPerSecond = speedBytesPerSecond,
+                    etaSeconds = etaSeconds,
+                    filename = filename,
+                ),
+            )
+        }
     }
 }
 
 class YtdlpAnalysisException(
+    val category: AnalysisErrorCategory,
+    val safeMessage: String,
+) : RuntimeException(safeMessage)
+
+class YtdlpDownloadException(
     val category: AnalysisErrorCategory,
     val safeMessage: String,
 ) : RuntimeException(safeMessage)

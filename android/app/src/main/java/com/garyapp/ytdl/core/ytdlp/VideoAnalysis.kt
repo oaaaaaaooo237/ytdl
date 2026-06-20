@@ -28,6 +28,40 @@ data class SubtitleInfo(
     val ext: String,
 )
 
+data class DownloadProgress(
+    val status: String,
+    val percent: Double?,
+    val downloadedBytes: Long?,
+    val totalBytes: Long?,
+    val speedBytesPerSecond: Double?,
+    val etaSeconds: Long?,
+    val filename: String?,
+)
+
+data class DownloadResult(
+    val outputPath: String,
+    val bytesWritten: Long,
+    val title: String,
+    val formatId: String?,
+    val role: DownloadFormatRole? = null,
+)
+
+fun interface DownloadProgressListener {
+    fun onProgress(progress: DownloadProgress)
+}
+
+enum class DownloadFormatRole(val pythonValue: String) {
+    Video("video"),
+    Audio("audio"),
+    ;
+
+    companion object {
+        fun fromPythonValue(value: String): DownloadFormatRole? {
+            return entries.firstOrNull { it.pythonValue == value }
+        }
+    }
+}
+
 enum class AnalysisErrorCategory {
     Network,
     Unsupported,

@@ -31,6 +31,7 @@ logs/
 .qa-data/
 .qa-real-smoke/
 .qa-android-env/
+.qa-window.xml
 config.json
 history.json
 ytdlp-update-state.json

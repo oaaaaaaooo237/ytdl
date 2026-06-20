@@ -19,7 +19,9 @@
 - Do not mark a task complete until its tests and required real runtime check have fresh output.
 - UI fidelity is a hard requirement, not a loose theme hint: final Android screens must visually match `docs/android-gui-reference-v3.png` as closely as the native Android runtime allows, including the five-page composition, bottom navigation, card density, accent colors, top safe area, queue scrolling, and progress presentation.
 - The Settings page must include an appearance/color section modeled after Codex-style appearance settings: mode selection plus color preset selection. The default preset remains `reference_v3`; a `codex` preset must be available.
-- Corrective priority after Task 4: before continuing to download worker/media tasks, implement and visibly verify the five-page Android GUI shell against `docs/android-gui-reference-v3.png`. Backend, instrumentation, adb, and build checks are supporting evidence only; Android stage acceptance requires a foreground visible emulator window GUI run for the relevant flow.
+- Current corrective priority after user review: stop treating GUI shell/label checks as progress until the core media path exists. Immediate order is required URL core merge -> Android ffmpeg subtitle/embed/burn capability -> download orchestration/foreground state -> GUI binding -> history/export/privacy/failure coverage -> foreground Computer Use full acceptance. Backend, instrumentation, adb, and build checks remain supporting evidence only; Android acceptance requires a foreground visible emulator window GUI run for the relevant flow.
+- Agent hygiene: use one fresh subagent only for the active plan task or its audit, close it as soon as the result is integrated, and do not keep explorer/audit/worker agents idle. Do not reuse an old worker to continue a different task. If an old agent ID is unavailable after compaction, do not assume it is still active; continue with the current manager state and create a fresh task-scoped agent only when needed.
+- Testing hygiene: no mock download, mock progress, static queue demo, background-only automation, or Android soft-keyboard driven path can be counted as acceptance. Such checks may be recorded only as auxiliary evidence, never as final pass.
 
 ## Task Map
 
@@ -251,6 +253,262 @@
 - [ ] Push `feature/android-play-mvp-1`.
 
 ## Per-Task Review Gate
+
+## Current Continuation Plan - 2026-06-20
+
+This section records the adjusted continuation order after user review. From 2026-06-20 onward, the M4-M9 queue below is the executable continuation queue. Earlier Task 5-9 sections remain as scope inventory, but if their order conflicts with this queue, use this queue.
+
+**Last recorded proven state:**
+
+- Environment preflight passed with `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`; API37 `emulator-5554` was connected in the recorded run.
+- The app can analyze the required URL through Chaquopy/yt-dlp and can perform the older direct single-file download path in the recorded run.
+- The Format page now has an initial real selection model, but GUI format selection is not the next acceptance target.
+- Native MediaProcessor contract, native `MediaMuxer` merge, real YouTube split-stream download, and required URL merge smoke evidence exist in the current working tree/test ledger.
+- yt-dlp explicit split-stream download evidence exists in the current working tree/test ledger for `tkxzMEfp49Q`: video-only format `394` and audio-only format `139` downloaded as separate files on API37.
+- Android ffmpeg is not packaged; subtitle embed and subtitle burn are not complete. This is the next execution target.
+- High-resolution YouTube video+audio merge through the full app path is not complete.
+- Previous visible GUI evidence that used the Android soft keyboard is not valid as final acceptance evidence.
+
+**Adjusted priority:** stop repeating GUI tests around `需 ffmpeg 合并` labels until the media capability exists. Build the real media processing/download capability first, including Android ffmpeg subtitle/embed/burn capability before GUI acceptance, then bind it to foreground service, queue, history, export/privacy flows, and perform one complete foreground visible test path.
+
+**Execution rule:** one active implementation task at a time. Each task gets one fresh worker, then a fresh audit reviewer. After the main session integrates fixes, close the worker/reviewer. Do not keep idle agents open.
+
+**Acceptance rule:** capability tests prove internals; GUI binding tests prove UI is wired; only the final Computer Use foreground visible run proves user acceptance. A task can be marked "ability passed" or "binding passed" before final acceptance, but not "MVP accepted".
+
+### Continuation Task M1: MediaProcessor Route Decision and Contract
+
+**Status:** 已完成并通过主会话复核；保留为上下文，不再重新执行。
+
+**Purpose:** Establish the first real Android media-processing contract for separated video and audio downloads. The immediate implementation route is Android native `MediaExtractor + MediaMuxer` for stream copy merge into MP4 when codecs/containers are compatible; Android ffmpeg remains required later for subtitle burn and non-muxer cases.
+
+**Files:**
+- Create: `docs/android-media-processor.md`
+- Create: `android/app/src/main/java/com/garyapp/ytdl/media/MediaProcessor.kt`
+- Create: `android/app/src/main/java/com/garyapp/ytdl/media/MediaProcessingModels.kt`
+- Create: `android/app/src/test/java/com/garyapp/ytdl/media/MediaProcessorContractTest.kt`
+- Modify: `docs/qa/android-full-visual-test-plan.md`
+
+**Steps:**
+- [ ] Document the current facts: no Android ffmpeg binary in the repo, Windows `ffmpeg.exe` is unusable on Android, and Gradle cache has no existing ffmpeg-kit artifact.
+- [ ] Define `MediaMergeRequest(videoInput, audioInput, outputFile, outputContainer, expectedVideoFormatId, expectedAudioFormatId)`.
+- [ ] Define `MediaProcessingResult(outputFile, bytesWritten, videoTrackCount, audioTrackCount, processorName)`.
+- [ ] Define `MediaProcessor` with `mergeVideoAndAudio(request): Result<MediaProcessingResult>`.
+- [ ] Unit-test that merge requests require distinct readable video/audio inputs and an app-private output file.
+- [ ] Unit-test that subtitle burn is explicitly unsupported by the native muxer processor and must route to the later ffmpeg processor.
+- [ ] Verify:
+  - `cd android; .\gradlew.bat :app:testDebugUnitTest`
+  - `cd android; .\gradlew.bat :app:assembleDebug`
+
+**Acceptance:** This task is accepted only when the media-processing contract exists, native-muxer vs ffmpeg responsibilities are documented, and tests prove subtitle burn cannot be falsely claimed by the native muxer.
+
+### Continuation Task M2: Native Audio+Video Merge Processor
+
+**Status:** 已完成并通过 API37 instrumentation；保留为上下文，不再重新执行。
+
+**Purpose:** Implement real Android MP4 stream-copy merging for a downloaded video-only file and a downloaded audio-only file, using `MediaExtractor` and `MediaMuxer`.
+
+**Files:**
+- Modify: `android/app/src/main/java/com/garyapp/ytdl/media/MediaProcessor.kt`
+- Create: `android/app/src/main/java/com/garyapp/ytdl/media/NativeMuxerMediaProcessor.kt`
+- Create: `android/app/src/androidTest/java/com/garyapp/ytdl/media/NativeMuxerMediaProcessorInstrumentedTest.kt`
+- Create or update: `docs/android-media-processor.md`
+
+**Steps:**
+- [ ] Add a small test asset generator in the instrumented test using Android `MediaMuxer`/`MediaCodec` or copy a minimal generated fixture into app-private test storage.
+- [ ] Write a failing instrumented test that calls `mergeVideoAndAudio()` and asserts the output file exists and has both video and audio tracks.
+- [ ] Implement `NativeMuxerMediaProcessor` by copying encoded samples from the source video track and audio track into a new MP4 muxer output without shell commands.
+- [ ] Add defensive checks for missing tracks, unreadable inputs, zero-byte outputs, and unsupported container choices.
+- [ ] Verify:
+  - `cd android; .\gradlew.bat :app:testDebugUnitTest`
+  - `cd android; .\gradlew.bat :app:assembleDebug`
+  - `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.media.NativeMuxerMediaProcessorInstrumentedTest"`
+
+**Acceptance:** This task is accepted only when API37 produces a real merged MP4 file and the instrumented test inspects the output with `MediaExtractor` to prove one video track and one audio track exist.
+
+### Continuation Task M3: yt-dlp Split-Stream Download
+
+**Status:** 已完成并通过 API37 真实分离下载；保留为上下文，不再重新执行。
+
+**Purpose:** Download the selected video-only format and selected audio-only format as separate files, instead of forcing the old `18/worst` single-file fallback.
+
+**Files:**
+- Modify: `android/app/src/main/python/ytdl_bridge.py`
+- Modify: `android/app/src/main/java/com/garyapp/ytdl/core/ytdlp/YtdlpBridge.kt`
+- Modify: `android/app/src/main/java/com/garyapp/ytdl/core/ytdlp/VideoAnalysis.kt`
+- Create: `android/app/src/test/java/com/garyapp/ytdl/core/ytdlp/SplitDownloadRequestTest.kt`
+- Modify: `android/app/src/androidTest/java/com/garyapp/ytdl/core/ytdlp/YtdlpBridgeInstrumentedTest.kt`
+
+**Steps:**
+- [ ] Add `download_format(url, output_dir, format_id, role, cookies_path, progress_listener)` in Python and return output path, bytes, title, and actual format id.
+- [ ] Add Kotlin `downloadFormat()` wrapper that accepts an explicit format id and never substitutes `18/worst` unless the request says direct fallback is allowed.
+- [ ] Unit-test JSON parsing and request validation for explicit video/audio format ids.
+- [ ] Add an API37 instrumentation test against `https://www.youtube.com/watch?v=tkxzMEfp49Q` that downloads one selected video-only format and one selected audio-only format to app-private storage.
+- [ ] Verify output files are non-empty and have separate roles recorded.
+
+**Acceptance:** This task is accepted only when the required URL can produce two real files on API37: one video-only and one audio-only. This is still not GUI acceptance.
+
+### Continuation Task M4: End-to-End Core Merge Smoke
+
+**Status:** 已完成并通过 API37 required URL 能力层 smoke；保留为上下文，不再重新执行。
+
+**Purpose:** Prove the non-GUI core can analyze the required URL, select separated streams, download both streams, and merge them into one playable MP4 file with audio and video tracks.
+
+**Files:**
+- Create: `android/app/src/androidTest/java/com/garyapp/ytdl/media/RequiredUrlMergeInstrumentedTest.kt`
+- Create or update: `docs/android-media-processor.md`
+
+**Steps:**
+- [ ] Analyze `https://www.youtube.com/watch?v=tkxzMEfp49Q` on API37.
+- [ ] Select a video-only format and a standalone audio format from actual `VideoAnalysis.formats`.
+- [ ] Download both selected formats with `downloadFormat()`.
+- [ ] Merge them with `NativeMuxerMediaProcessor.mergeVideoAndAudio()`.
+- [ ] Inspect the merged output with `MediaExtractor` and assert video track count is 1 and audio track count is 1.
+- [ ] Record output file path, bytes, format ids, SDK, device, and test timestamp in `docs/android-media-processor.md`.
+
+**Acceptance:** This task is accepted only when the merged file exists and is proven to contain both tracks. No GUI flow is considered complete before this passes.
+
+### Continuation Task M5: Android ffmpeg Subtitle Processor
+
+**Status:** 下一项执行任务。
+
+**Purpose:** Add the Android ffmpeg route required by first-phase requirements for subtitle embed, subtitle burn, and non-native-muxer media operations. Native `MediaMuxer` remains the preferred compatible stream-copy merge path; ffmpeg covers the operations native muxer cannot honestly claim.
+
+**Files:**
+- Modify: `docs/android-media-processor.md`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegMediaProcessor.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/media/FfmpegBinary.kt`
+- Create or modify: `android/app/src/main/assets/licenses/ffmpeg.md`
+- Create: `android/app/src/test/java/com/garyapp/ytdl/media/FfmpegCommandTest.kt`
+- Create or update: `android/app/src/androidTest/java/com/garyapp/ytdl/media/FfmpegMediaProcessorInstrumentedTest.kt`
+
+**Steps:**
+- [ ] Select an auditable Android ffmpeg packaging route and record source, license, ABI, and package-size implications in `docs/android-media-processor.md`.
+- [ ] Package or load ffmpeg for at least API37 x86_64 emulator validation and define the path for `arm64-v8a` release validation.
+- [ ] Implement safe command construction for `-version`, subtitle embed, subtitle burn, and fallback merge operations.
+- [ ] Unit-test command arguments, output path controls, and sensitive path/log redaction.
+- [ ] Add an API37 instrumentation test that runs ffmpeg `-version`.
+- [ ] Add an API37 instrumentation test that uses tiny local media/subtitle fixtures to produce an embedded-subtitle output and a burned-subtitle output.
+- [ ] Verify:
+  - `cd android; .\gradlew.bat :app:testDebugUnitTest`
+  - `cd android; .\gradlew.bat :app:assembleDebug`
+  - `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.media.FfmpegMediaProcessorInstrumentedTest"`
+
+**Acceptance:** This task is accepted only when Android API37 can execute the packaged ffmpeg route and produce real subtitle embed/burn outputs. Until this passes, no wording may claim first-phase Android ffmpeg capability is complete.
+
+### Continuation Task M6: Download Orchestration and Foreground State
+
+**Status:** 未开始；M5 通过后执行。
+
+**Purpose:** Build the real download pipeline that turns an analyzed format choice into direct download, split video/audio download, native merge, or ffmpeg subtitle processing, while exposing honest queue progress and foreground-service state.
+
+**Files:**
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/download/DownloadRequest.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/download/DownloadPipeline.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/download/DownloadState.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/download/NotificationController.kt`
+- Modify: `android/app/src/main/AndroidManifest.xml`
+- Create or modify: `android/app/src/test/java/com/garyapp/ytdl/download/DownloadRequestRoutingTest.kt`
+- Create or modify: `android/app/src/test/java/com/garyapp/ytdl/download/DownloadStateTest.kt`
+- Modify: `docs/qa/android-full-visual-test-plan.md`
+
+**Steps:**
+- [ ] Build `DownloadRequest` from `VideoAnalysis` and applied `FormatSelection`.
+- [ ] Route direct single-file choices to the existing single-file path only when the chosen format truly contains both audio and video.
+- [ ] Route merge-required choices to explicit video/audio format downloads and `MediaProcessor`; they must not call `downloadSingleFile()`.
+- [ ] Route subtitle embed/burn choices to the Android ffmpeg processor after M5 passes.
+- [ ] Model queue states separately: analyzing, waiting, downloading video, downloading audio, merging, embedding subtitles, burning subtitles, exporting, completed, failed, canceled.
+- [ ] Add foreground service declaration and notification controller; notification permission denial must not hide in-app progress.
+- [ ] Unit-test direct, video-only, audio-only, merge-required, subtitle-embed, subtitle-burn, cancellation, and failure routing.
+- [ ] Verify:
+  - `cd android; .\gradlew.bat :app:testDebugUnitTest`
+  - `cd android; .\gradlew.bat :app:assembleDebug`
+
+**Acceptance:** This task is accepted only when tests prove merge-required and subtitle-required selections cannot silently fall back to 360p/direct single-file downloads, and queue state cannot show completed before the final output exists.
+
+### Continuation Task M7: GUI Binding and Anti-Fallback UX
+
+**Status:** 未开始；M6 通过后执行。
+
+**Purpose:** Bind the approved five-page GUI to the real pipeline from M4-M6, so visible choices, queue progress, settings, and errors reflect actual capabilities instead of demo values.
+
+**Files:**
+- Modify: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt`
+- Modify: `android/app/src/main/java/com/garyapp/ytdl/ui/FormatSelection.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/ui/download/DownloadScreen.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/ui/formats/FormatsScreen.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/ui/queue/QueueScreen.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/ui/settings/SettingsScreen.kt`
+- Create or modify: `android/app/src/test/java/com/garyapp/ytdl/ui/DownloadGuiBindingTest.kt`
+- Modify: `docs/qa/android-full-visual-test-plan.md`
+
+**Steps:**
+- [ ] Analyze button must call the real `YtdlpBridge.analyze()` and never block startup.
+- [ ] Format page must display only choices derived from the current `VideoAnalysis`; unsupported visible rows are disabled with a reason.
+- [ ] Download page summary must update when the user applies a format choice; it must not keep showing stale 360p/default summary.
+- [ ] Start-download feedback must be immediate and visible: task added, current state, and queue entry.
+- [ ] Queue page must show real stage names and progress from `DownloadState`, not static sample rows.
+- [ ] Settings page must show real parser version and media processor status, including ffmpeg available/unavailable state.
+- [ ] Unit-test UI model binding for supported/unsupported formats, stale summary prevention, and stage text.
+- [ ] Verify:
+  - `cd android; .\gradlew.bat :app:testDebugUnitTest`
+  - `cd android; .\gradlew.bat :app:assembleDebug`
+
+**Acceptance:** GUI binding is accepted only after tests prove the five pages consume real state and cannot present unavailable formats or completed downloads that the pipeline did not produce.
+
+### Continuation Task M8: History, Export, Cookies Privacy, and Failure Recovery
+
+**Status:** 未开始；M7 通过后执行。
+
+**Purpose:** Complete the non-happy-path and Play-facing behavior before final visible acceptance: output discovery/export, local history, cookies reference safety, and user-readable failures.
+
+**Files:**
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/storage/ExportController.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/cookies/CookiesReference.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/cookies/TemporaryCookiesFile.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/data/HistoryItemEntity.kt`
+- Create or modify: `android/app/src/main/java/com/garyapp/ytdl/core/privacy/SensitiveText.kt`
+- Create or modify: `android/app/src/test/java/com/garyapp/ytdl/cookies/TemporaryCookiesFileTest.kt`
+- Create or modify: `android/app/src/test/java/com/garyapp/ytdl/data/HistoryPrivacyTest.kt`
+- Create or modify: `docs/android-play-data-safety.md`
+- Create or modify: `docs/android-privacy-policy-draft.md`
+- Modify: `docs/qa/android-full-visual-test-plan.md`
+
+**Steps:**
+- [ ] Persist completed and failed tasks to history without cookies contents, authorization headers, raw command lines, or sensitive query strings.
+- [ ] Implement app-private output discovery plus ACTION_CREATE_DOCUMENT/MediaStore export path.
+- [ ] Store only cookies URI/path references; materialize temporary cookies files per task and delete them after completion/failure/cancel.
+- [ ] Add failure messages for blank URL, invalid URL, unsupported domain, network failure, missing ffmpeg, processing failure, save/export denial, and cancellation.
+- [ ] Add tests proving sensitive strings are redacted from settings, history, logs, and error text.
+- [ ] Verify:
+  - `cd android; .\gradlew.bat :app:testDebugUnitTest`
+  - `cd android; .\gradlew.bat :app:assembleDebug`
+
+**Acceptance:** This task is accepted only when the Play-facing privacy/storage behavior is test-covered and failure states are recoverable without sensitive leakage.
+
+### Continuation Task M9: Full Foreground Visible Acceptance Flow
+
+**Status:** 未开始；M8 通过后执行。
+
+**Purpose:** Run the meaningful GUI test only after media capability, ffmpeg, queue, history, export, and privacy behavior exist: user-visible analysis, format choice, split download, merge, ffmpeg subtitle path where applicable, foreground progress, history, export, settings, and failures.
+
+**Files:**
+- Create or update: `docs/qa/android-mvp-smoke.md`
+- Modify: `docs/qa/android-full-visual-test-plan.md`
+
+**Steps:**
+- [ ] Install the current APK on `ytdl_api37_play_x86_64`.
+- [ ] Use Computer Use in the foreground visible emulator window; do not use Android soft keyboard, candidate bar, Gboard menu, or background-only automation.
+- [ ] Input `https://www.youtube.com/watch?v=tkxzMEfp49Q`.
+- [ ] Analyze and confirm title, duration, thumbnail state, and real supported format rows.
+- [ ] Select a merge-required high-resolution `视频+音频` option.
+- [ ] Start download and observe queue states for video download, audio download, merge, and completion.
+- [ ] Exercise subtitle embed or burn path on a short fixture or a URL/subtitle case that the app can legally process.
+- [ ] Inspect history, output summary, export/open behavior, settings parser/media status, and privacy/cookies boundary text.
+- [ ] Run one Shorts compatibility sample with `https://www.youtube.com/shorts/QBwpO9f0oAw` for analysis and a short download path, without duplicating every normal-video assertion.
+- [ ] Save screenshots and command/test outputs in `docs/qa/android-mvp-smoke.md`.
+
+**Acceptance:** This is the first point where the Android MVP can be called accepted. Earlier unit, instrumentation, adb, UIAutomator, or screenshot checks are necessary evidence but not final acceptance.
 
 After each task commit:
 
