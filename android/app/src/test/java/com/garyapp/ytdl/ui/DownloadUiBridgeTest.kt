@@ -132,7 +132,7 @@ class DownloadUiBridgeTest {
         assertEquals("下载音频", userVisibleDownloadStatus(DownloadStage.DownloadingAudio))
         assertEquals("下载字幕", userVisibleDownloadStatus(DownloadStage.DownloadingSubtitles))
         assertEquals("原生合并", userVisibleDownloadStatus(DownloadStage.Merging))
-        assertEquals("导出待接入", userVisibleDownloadStatus(DownloadStage.Exporting))
+        assertEquals("导出中", userVisibleDownloadStatus(DownloadStage.Exporting))
         assertEquals("下载完成", userVisibleDownloadStatus(DownloadStage.Completed))
         assertEquals("下载失败", userVisibleDownloadStatus(DownloadStage.Failed))
         assertEquals("已取消", userVisibleDownloadStatus(DownloadStage.Canceled))

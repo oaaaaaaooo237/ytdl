@@ -152,7 +152,7 @@ fun userVisibleDownloadStatus(stage: DownloadStage): String {
         DownloadStage.DownloadingAudio -> "下载音频"
         DownloadStage.DownloadingSubtitles -> "下载字幕"
         DownloadStage.Merging -> "原生合并"
-        DownloadStage.Exporting -> "导出待接入"
+        DownloadStage.Exporting -> "导出中"
         DownloadStage.Completed -> "下载完成"
         DownloadStage.Failed -> "下载失败"
         DownloadStage.Canceled -> "已取消"

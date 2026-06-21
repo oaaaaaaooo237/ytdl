@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Icon
 import android.os.Build
 
 class NotificationController(
@@ -50,7 +51,7 @@ class NotificationController(
                 if (state.stage !in TerminalStages) {
                     addAction(
                         Notification.Action.Builder(
-                            android.R.drawable.ic_menu_close_clear_cancel,
+                            Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
                             "取消",
                             cancelPendingIntent(),
                         ).build(),
@@ -74,7 +75,7 @@ class NotificationController(
             DownloadStage.DownloadingAudio -> "正在下载音频"
             DownloadStage.DownloadingSubtitles -> "正在下载字幕文件"
             DownloadStage.Merging -> "正在原生合并"
-            DownloadStage.Exporting -> "导出待接入"
+            DownloadStage.Exporting -> "正在导出"
             DownloadStage.Completed -> "下载完成"
             DownloadStage.Failed -> "下载失败"
             DownloadStage.Canceled -> "已取消"
