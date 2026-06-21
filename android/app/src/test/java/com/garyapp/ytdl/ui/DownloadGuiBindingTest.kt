@@ -90,7 +90,7 @@ class DownloadGuiBindingTest {
                 "https",
                 "host-hash",
                 "youtube",
-                "app-private://outputs/video.mp4",
+                "app-private://outputs/%E6%B5%8B%E8%AF%95%20video.mp4",
                 "1080p --cookies D:/private/cookies.txt",
                 HistoryItemEntity.STATUS_COMPLETED,
                 100,
@@ -126,7 +126,10 @@ class DownloadGuiBindingTest {
         assertEquals(listOf("完成", "失败"), cards.map { it.badge })
         assertTrue(serialized.contains("完成视频"))
         assertTrue(serialized.contains("失败视频"))
-        assertTrue(serialized.contains("app-private://outputs/video.mp4"))
+        assertTrue(serialized.contains("app-private://outputs/%E6%B5%8B%E8%AF%95%20video.mp4"))
+        assertFalse(cards.first().meta.contains("app-private://"))
+        assertFalse(cards.first().meta.contains("%20"))
+        assertTrue(cards.first().meta.contains("测试 video.mp4"))
         assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(cards.first()))
         assertEquals(listOf("删除"), historyActionLabelsForUiTest(cards.last()))
         listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {

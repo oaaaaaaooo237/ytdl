@@ -12,6 +12,7 @@ import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadStage
 import java.io.File
+import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -103,10 +104,17 @@ private fun historyMeta(row: HistoryItemEntity): String {
         row.formatSummary?.takeIf { it.isNotBlank() },
         row.sourceCategory?.takeIf { it.isNotBlank() },
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
-        row.outputUri?.takeIf { it.isNotBlank() },
+        row.outputUri?.takeIf { it.isNotBlank() }?.let(::historyOutputLabel),
         row.errorSummary?.takeIf { it.isNotBlank() },
     )
     return redactHistoryUiText(parts.joinToString(" · ")).ifBlank { "本地记录" }
+}
+
+private fun historyOutputLabel(outputUri: String): String {
+    val leaf = outputUri.substringAfterLast('/').substringBefore('?').trim()
+    return runCatching {
+        URLDecoder.decode(leaf, Charsets.UTF_8.name())
+    }.getOrDefault(leaf).ifBlank { "本地文件" }
 }
 
 private fun formatHistoryTime(timestampMillis: Long): String {
