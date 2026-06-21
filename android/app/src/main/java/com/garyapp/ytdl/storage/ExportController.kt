@@ -2,10 +2,13 @@ package com.garyapp.ytdl.storage
 
 import android.content.ContentValues
 import android.content.Intent
-import android.net.Uri
 import android.provider.MediaStore
 import java.io.File
 import java.io.OutputStream
+import java.net.URI
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.file.Path
 
 object ExportController {
     class AppPrivateOutput internal constructor(
@@ -39,9 +42,34 @@ object ExportController {
                 displayName = displayName,
                 mimeType = mimeTypeFor(displayName),
                 bytesWritten = canonicalOutput.length(),
-                appPrivateUri = appPrivateOutputUri(canonicalOutput.absolutePath),
+                appPrivateUri = appPrivateOutputUri(canonicalOutput.absolutePath, canonicalRoot.absolutePath),
                 sourceFile = canonicalOutput,
             )
+        }
+    }
+
+    fun discoverAppPrivateOutputUri(
+        appPrivateUri: String?,
+        appPrivateRoot: File,
+    ): Result<AppPrivateOutput> {
+        return runCatching {
+            val uri = URI(appPrivateUri.orEmpty())
+            require(uri.scheme == "app-private" && uri.host == "outputs") {
+                "历史记录没有可导出的本地输出。"
+            }
+            val relativeSegments = uri.rawPath.orEmpty()
+                .trimStart('/')
+                .split('/')
+                .filter { it.isNotBlank() }
+                .map { decodeSegment(it).safeDisplayName() }
+                .filter { it.isNotBlank() }
+            require(relativeSegments.isNotEmpty()) {
+                "历史记录没有可导出的本地输出。"
+            }
+            val relativePath = relativeSegments.fold(File("")) { current, segment ->
+                File(current, segment)
+            }
+            discoverAppPrivateOutput(File(appPrivateRoot, relativePath.path), appPrivateRoot).getOrThrow()
         }
     }
 
@@ -74,12 +102,21 @@ object ExportController {
 
     @JvmStatic
     fun appPrivateOutputUri(path: String?): String {
+        return appPrivateOutputUri(path, null)
+    }
+
+    @JvmStatic
+    fun appPrivateOutputUri(path: String?, appPrivateRootPath: String?): String {
+        val relativeSegments = relativeSegments(path, appPrivateRootPath)
+        if (relativeSegments.isNotEmpty()) {
+            return "app-private://outputs/${relativeSegments.joinToString("/") { encodeSegment(it.safeDisplayName()) }}"
+        }
         val displayName = path
             ?.takeIf { it.isNotBlank() }
             ?.let { File(it).name }
             ?.safeDisplayName()
             ?: "output"
-        return "app-private://outputs/${Uri.encode(displayName)}"
+        return "app-private://outputs/${encodeSegment(displayName)}"
     }
 
     fun exportDeniedMessage(detail: String? = null): String {
@@ -100,6 +137,40 @@ object ExportController {
             .take(96)
             .trim('.', ' ')
         return normalized.ifBlank { "output" }
+    }
+
+    private fun relativeSegments(path: String?, appPrivateRootPath: String?): List<String> {
+        if (path.isNullOrBlank() || appPrivateRootPath.isNullOrBlank()) {
+            return emptyList()
+        }
+        return runCatching {
+            val root = File(appPrivateRootPath).canonicalFile
+            val output = File(path).canonicalFile
+            if (!isInside(output, root)) {
+                return emptyList()
+            }
+            root.toPath()
+                .relativize(output.toPath())
+                .safePathSegments()
+                .map { it.safeDisplayName() }
+                .filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun Path.safePathSegments(): List<String> {
+        return map { it.toString() }
+            .filter { it.isNotBlank() && it != "." && it != ".." }
+    }
+
+    private fun encodeSegment(segment: String): String {
+        return URLEncoder.encode(segment, Charsets.UTF_8.name())
+            .replace("+", "%20")
+    }
+
+    private fun decodeSegment(segment: String): String {
+        return runCatching {
+            URLDecoder.decode(segment, Charsets.UTF_8.name())
+        }.getOrDefault(segment)
     }
 
     private fun mimeTypeFor(displayName: String): String {

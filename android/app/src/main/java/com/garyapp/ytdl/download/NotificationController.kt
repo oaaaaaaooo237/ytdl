@@ -4,7 +4,9 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 
@@ -44,6 +46,17 @@ class NotificationController(
             .setContentText(state.stage.notificationText())
             .setOngoing(state.stage !in TerminalStages)
             .setOnlyAlertOnce(true)
+            .apply {
+                if (state.stage !in TerminalStages) {
+                    addAction(
+                        Notification.Action.Builder(
+                            android.R.drawable.ic_menu_close_clear_cancel,
+                            "取消",
+                            cancelPendingIntent(),
+                        ).build(),
+                    )
+                }
+            }
             .build()
     }
 
@@ -66,6 +79,14 @@ class NotificationController(
             DownloadStage.Failed -> "下载失败"
             DownloadStage.Canceled -> "已取消"
         }
+    }
+
+    private fun cancelPendingIntent(): PendingIntent {
+        val intent = Intent(context, DownloadService::class.java)
+            .setAction(DownloadService.ActionCancel)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        return PendingIntent.getService(context, 2, intent, flags)
     }
 
     companion object {

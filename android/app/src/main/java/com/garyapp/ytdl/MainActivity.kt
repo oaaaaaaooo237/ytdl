@@ -9,7 +9,6 @@ import androidx.activity.compose.setContent
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.garyapp.ytdl.ui.YtdlApp
-import com.garyapp.ytdl.ui.theme.YtdlTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,9 +18,7 @@ class MainActivity : ComponentActivity() {
         }
         configureLightSystemBars()
         setContent {
-            YtdlTheme {
-                YtdlApp()
-            }
+            YtdlApp()
         }
     }
 

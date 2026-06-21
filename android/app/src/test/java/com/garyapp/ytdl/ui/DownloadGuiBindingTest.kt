@@ -1,12 +1,15 @@
 package com.garyapp.ytdl.ui
 
+import com.garyapp.ytdl.core.ytdlp.DownloadProgress
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
+import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -123,6 +126,9 @@ class DownloadGuiBindingTest {
         assertEquals(listOf("完成", "失败"), cards.map { it.badge })
         assertTrue(serialized.contains("完成视频"))
         assertTrue(serialized.contains("失败视频"))
+        assertTrue(serialized.contains("app-private://outputs/video.mp4"))
+        assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(cards.first()))
+        assertEquals(listOf("删除"), historyActionLabelsForUiTest(cards.last()))
         listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {
             assertFalse("history UI leaked $it", serialized.contains(it))
         }
@@ -168,6 +174,32 @@ class DownloadGuiBindingTest {
         assertEquals("当前阶段 · 等待中", queueCardSubtitleForUiTest(state))
         assertTrue(state.userMessage.contains("已加入前台队列"))
         assertTrue(state.userMessage.contains("当前阶段：等待中"))
+    }
+
+    @Test
+    fun queueActionsOnlyExposeRealCancelForRunningTask() {
+        val request = requestFor(progressiveFormat(id = "18", height = 360))
+        val running = RuntimeDownloadState()
+            .withPipelineStateForUiTest(
+                DownloadTaskState.waiting(request)
+                    .atStage(DownloadStage.DownloadingVideo)
+                    .withProgress(
+                        DownloadProgress(
+                            status = "downloading",
+                            percent = 42.0,
+                            downloadedBytes = 42,
+                            totalBytes = 100,
+                            speedBytesPerSecond = 10.0,
+                            etaSeconds = 6,
+                            filename = "video.mp4",
+                        ),
+                    ),
+            )
+        val completed = RuntimeDownloadState()
+            .withPipelineStateForUiTest(DownloadTaskState.waiting(request).atStage(DownloadStage.Completed))
+
+        assertEquals(listOf("取消"), queueCardActionsForUiTest(running))
+        assertTrue(queueCardActionsForUiTest(completed).isEmpty())
     }
 
     @Test
@@ -220,10 +252,28 @@ class DownloadGuiBindingTest {
 
     @Test
     fun subtitleLabelDoesNotPretendGuiHasSelectedSubtitles() {
-        assertEquals("字幕待选择 / 本阶段默认不下载", subtitleSelectionLabelForUiTest())
+        assertEquals("本阶段默认不下载字幕", subtitleSelectionLabelForUiTest(null, emptyList()))
 
         val request = requestFor(progressiveFormat(id = "18", height = 360))
         assertTrue(request.selectedSubtitles.isEmpty())
+    }
+
+    @Test
+    fun selectedSubtitleIsCarriedIntoDownloadRequestAsSeparateFile() {
+        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+        val analysis = analysisWith(progressiveFormat(id = "18", height = 360)).copy(subtitles = listOf(subtitle))
+        val selection = defaultFormatSelection(analysis)
+
+        val request = buildAppliedDownloadRequest(
+            url = TestUrl,
+            analysis = analysis,
+            appliedSelection = selection,
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+
+        assertEquals(listOf(subtitle), request.selectedSubtitles)
+        assertEquals("已选择 en vtt 自动字幕 · 独立字幕文件", subtitleSelectionLabelForUiTest(analysis, listOf(subtitle)))
+        assertEquals("有 1 个字幕可选 · 当前不下载", subtitleSelectionLabelForUiTest(analysis, emptyList()))
     }
 
     @Test

@@ -11,14 +11,17 @@ import com.garyapp.ytdl.core.ytdlp.SubtitleSource
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.YtdlpDownloadException
+import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.media.MediaMergeRequest
 import com.garyapp.ytdl.media.MediaOutputContainer
 import com.garyapp.ytdl.media.MediaProcessingResult
 import com.garyapp.ytdl.media.MediaProcessor
+import com.garyapp.ytdl.storage.ExportController
 import com.garyapp.ytdl.ui.FormatMode
 import com.garyapp.ytdl.ui.FormatSelection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -135,6 +138,41 @@ class DownloadRequestRoutingTest {
         assertFalse(engine.calls.contains("single"))
         assertTrue(stages.indexOf(DownloadStage.Merging) < stages.indexOf(DownloadStage.Completed))
         assertFalse(stages.contains(DownloadStage.Exporting))
+    }
+
+    @Test
+    fun repeatedMergeRunsCreateDistinctHistoryUrisThatResolveToOriginalFiles() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val outputRoot = temp.newFolder("app-private-outputs")
+
+        val first = DownloadPipeline(RecordingDownloadEngine(temp.root), RecordingMediaProcessor())
+            .run(request, outputRoot)
+        val second = DownloadPipeline(RecordingDownloadEngine(temp.root), RecordingMediaProcessor())
+            .run(request, outputRoot)
+        val firstHistory = HistoryItemEntity.fromTaskState(first.state, "1080p", 1_000L)
+        val secondHistory = HistoryItemEntity.fromTaskState(second.state, "1080p", 2_000L)
+        val firstOutput = ExportController.discoverAppPrivateOutputUri(firstHistory.outputUri, outputRoot).getOrThrow()
+        val secondOutput = ExportController.discoverAppPrivateOutputUri(secondHistory.outputUri, outputRoot).getOrThrow()
+
+        assertEquals(DownloadStage.Completed, first.state.stage)
+        assertEquals(DownloadStage.Completed, second.state.stage)
+        assertNotEquals(first.outputs.single { it.kind == DownloadOutputKind.Media }.path, second.outputs.single { it.kind == DownloadOutputKind.Media }.path)
+        assertNotEquals(firstHistory.outputUri, secondHistory.outputUri)
+        assertEquals(File(first.outputs.single { it.kind == DownloadOutputKind.Media }.path).canonicalFile, firstOutput.sourceFile.canonicalFile)
+        assertEquals(File(second.outputs.single { it.kind == DownloadOutputKind.Media }.path).canonicalFile, secondOutput.sourceFile.canonicalFile)
     }
 
     @Test
@@ -450,7 +488,7 @@ class DownloadRequestRoutingTest {
     }
 
     private class RecordingDownloadEngine(
-        private val root: File,
+        private val fallbackRoot: File,
     ) : DownloadEngine {
         val calls = mutableListOf<String>()
         var failingRole: DownloadFormatRole? = null
@@ -490,7 +528,7 @@ class DownloadRequestRoutingTest {
                 ),
             )
             continuedAfterProgress = true
-            val file = writeFile("$formatId-${role.pythonValue}.${if (role == DownloadFormatRole.Audio) "m4a" else "mp4"}")
+            val file = writeFile(outputDirectory, "$formatId-${role.pythonValue}.${if (role == DownloadFormatRole.Audio) "m4a" else "mp4"}")
             if (role == DownloadFormatRole.Video) {
                 onVideoDownload()
             }
@@ -515,7 +553,7 @@ class DownloadRequestRoutingTest {
             listener: DownloadProgressListener?,
         ): Result<SubtitleDownloadResult> {
             calls += "subtitle:${source.pythonValue}:$language:$ext"
-            val file = writeFile("subtitle-${source.pythonValue}.$language.$ext")
+            val file = writeFile(outputDirectory, "subtitle-${source.pythonValue}.$language.$ext")
             return Result.success(
                 SubtitleDownloadResult(
                     outputPath = file.absolutePath,
@@ -528,8 +566,9 @@ class DownloadRequestRoutingTest {
             )
         }
 
-        private fun writeFile(name: String): File {
-            return File(root, name).apply {
+        private fun writeFile(outputDirectory: File, name: String): File {
+            val targetRoot = outputDirectory.takeIf { it.path.isNotBlank() } ?: fallbackRoot
+            return File(targetRoot, name).apply {
                 parentFile?.mkdirs()
                 writeText("download-$name")
             }

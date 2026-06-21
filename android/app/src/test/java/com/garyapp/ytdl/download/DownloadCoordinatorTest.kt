@@ -57,6 +57,9 @@ class DownloadCoordinatorTest {
         assertTrue(source.contains("notificationController.notifyForegroundState"))
         assertTrue(source.contains("DownloadCoordinator.publish"))
         assertTrue(source.contains("Thread"))
+        assertTrue(source.contains("if (intent?.action == ActionCancel)"))
+        assertTrue(source.contains("DownloadCoordinator.cancelActive()"))
+        assertTrue(source.contains("stopSelf(startId)"))
     }
 
     private fun request(): DownloadRequest {

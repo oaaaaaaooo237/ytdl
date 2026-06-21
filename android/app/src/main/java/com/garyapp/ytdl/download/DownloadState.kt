@@ -26,6 +26,7 @@ data class DownloadOutputFile(
     val kind: DownloadOutputKind,
     val path: String,
     val bytesWritten: Long,
+    val appPrivateRootPath: String? = null,
 )
 
 data class DownloadTaskState(

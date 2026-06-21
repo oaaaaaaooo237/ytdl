@@ -504,6 +504,8 @@ This section records the adjusted continuation order after user review. From 202
 
 **Acceptance:** This is the first point where the Android MVP can be called accepted. Earlier unit, instrumentation, adb, UIAutomator, or screenshot checks are necessary evidence but not final acceptance.
 
+**M9 preflight fixes, 2026-06-21:** Before attempting T12, the main session closed several GUI-binding gaps found by review: appearance mode/color preset now persist and apply through `YtdlTheme`, queue and notification cancellation call the real cancellation path, history cards expose real open/share/export/delete actions through app-private output resolution and Room deletion, the format page can select an available subtitle as an independent subtitle-file output, repeated downloads now use unique task output directories with app-private relative history URIs, and notification cancel stops the service start id. `testDebugUnitTest`、`assembleDebug`、`connectedDebugAndroidTest` have fresh passing output, but foreground visible Computer Use acceptance is still blocked by the current Computer Use tool bootstrap error and must not be counted as passed.
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.

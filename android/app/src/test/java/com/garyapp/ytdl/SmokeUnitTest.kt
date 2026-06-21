@@ -2,10 +2,15 @@ package com.garyapp.ytdl
 
 import com.garyapp.ytdl.ui.ytdlNavigationDestinations
 import com.garyapp.ytdl.ui.ytdlVisibleContentLabels
+import com.garyapp.ytdl.core.settings.AppSettings
+import com.garyapp.ytdl.core.settings.AppearanceSettings
 import com.garyapp.ytdl.ui.theme.YtdlThemeMode
 import com.garyapp.ytdl.ui.theme.defaultYtdlThemeConfig
+import com.garyapp.ytdl.ui.theme.themeConfigForSettings
+import com.garyapp.ytdl.ui.theme.ytdlAppPaletteForPreset
 import com.garyapp.ytdl.ui.theme.ytdlColorPresets
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -46,5 +51,28 @@ class SmokeUnitTest {
         assertEquals("reference_v3", defaultConfig.colorPreset.id)
         assertTrue(presets.any { it.id == "reference_v3" && it.label == "基准图配色" })
         assertTrue(presets.any { it.id == "codex" && it.label == "Codex 风格" })
+    }
+
+    @Test
+    fun themeConfigUsesPersistedAppearanceSettings() {
+        val config = themeConfigForSettings(
+            AppSettings(
+                themeModeId = AppearanceSettings.ThemeModeDark,
+                colorPresetId = AppearanceSettings.ColorPresetCodex,
+            ),
+        )
+
+        assertEquals(YtdlThemeMode.Dark, config.mode)
+        assertEquals("codex", config.colorPreset.id)
+    }
+
+    @Test
+    fun codexPaletteChangesVisibleAppAccents() {
+        val reference = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
+        val codex = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetCodex)
+
+        assertNotEquals(reference.appBackground, codex.appBackground)
+        assertNotEquals(reference.downloadAccent, codex.downloadAccent)
+        assertNotEquals(reference.formatAccent, codex.formatAccent)
     }
 }

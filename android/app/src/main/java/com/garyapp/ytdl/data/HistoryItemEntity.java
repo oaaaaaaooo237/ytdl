@@ -243,7 +243,7 @@ public class HistoryItemEntity {
     private static String safeOutputUri(List<DownloadOutputFile> outputs) {
         for (DownloadOutputFile output : outputs) {
             if (output.getKind() == DownloadOutputKind.Media) {
-                return ExportController.appPrivateOutputUri(output.getPath());
+                return ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath());
             }
         }
         return "";

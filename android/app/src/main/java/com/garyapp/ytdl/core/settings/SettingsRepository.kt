@@ -8,7 +8,7 @@ class SettingsRepository(
     initialSettings: AppSettings = AppSettings(),
     private val preferences: SharedPreferences? = null,
 ) {
-    private var currentSettings: AppSettings = initialSettings
+    private var currentSettings: AppSettings = initialSettings.sanitized()
 
     fun getSettings(): AppSettings = currentSettings
 
@@ -26,18 +26,35 @@ class SettingsRepository(
         it.copy(defaultStorageTarget = target)
     }
 
+    fun setThemeMode(modeId: String): AppSettings = update {
+        it.copy(themeModeId = AppearanceSettings.normalizeThemeModeId(modeId))
+    }
+
+    fun setColorPreset(presetId: String): AppSettings = update {
+        it.copy(colorPresetId = AppearanceSettings.normalizeColorPresetId(presetId))
+    }
+
     private fun persist(settings: AppSettings) {
         val prefs = preferences ?: return
         prefs.edit()
             .putString(KeyCookiesReference, settings.cookiesReference?.value)
             .putString(KeyCookiesDisplayName, settings.cookiesReference?.displayName)
+            .putString(KeyThemeMode, settings.themeModeId)
+            .putString(KeyColorPreset, settings.colorPresetId)
             .apply()
     }
+
+    private fun AppSettings.sanitized(): AppSettings = copy(
+        themeModeId = AppearanceSettings.normalizeThemeModeId(themeModeId),
+        colorPresetId = AppearanceSettings.normalizeColorPresetId(colorPresetId),
+    )
 
     companion object {
         private const val PreferencesName = "ytdl-settings"
         private const val KeyCookiesReference = "cookies_reference"
         private const val KeyCookiesDisplayName = "cookies_display_name"
+        private const val KeyThemeMode = "theme_mode"
+        private const val KeyColorPreset = "color_preset"
 
         fun fromContext(context: Context): SettingsRepository {
             val prefs = context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
@@ -47,6 +64,8 @@ class SettingsRepository(
                         reference = prefs.getString(KeyCookiesReference, null).orEmpty(),
                         displayName = prefs.getString(KeyCookiesDisplayName, null),
                     ),
+                    themeModeId = prefs.getString(KeyThemeMode, null).orEmpty(),
+                    colorPresetId = prefs.getString(KeyColorPreset, null).orEmpty(),
                 ),
                 preferences = prefs,
             )

@@ -105,9 +105,9 @@ cd android
 - 两条命令都 `BUILD SUCCESSFUL`。
 - 无新增失败测试。
 
-当前状态：部分通过。
+当前状态：已测。
 
-本轮证据：2026-06-20 已运行 `:app:testDebugUnitTest` 和 `:app:assembleDebug`，均 `BUILD SUCCESSFUL`。
+本轮证据：2026-06-20 已运行 `:app:testDebugUnitTest` 和 `:app:assembleDebug`，均 `BUILD SUCCESSFUL`。2026-06-21 审计修复后再次顺序运行 `:app:testDebugUnitTest` 和 `:app:assembleDebug`，均 `BUILD SUCCESSFUL`。
 
 ### T2 真实 URL 分析核心测试
 
@@ -474,6 +474,8 @@ M8 本轮证据：
 - 单元 RED/GREEN：先运行目标测试失败于缺少 M8 API；实现后 `HistoryPrivacyTest` 目标测试通过。
 - 最终命令复核：2026-06-21 顺序运行目标 M8/URL/脱敏测试、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug`，均 `BUILD SUCCESSFUL`。
 - 运行 smoke：2026-06-21 将 `app-debug.apk` 安装到 API37 `emulator-5554` 并启动 `com.garyapp.ytdl/.MainActivity`，`dumpsys activity` 显示 `topResumedActivity` 为本应用且 `visible=true`。该 smoke 只证明启动级运行，不替代 M9/T12 前台全流程验收。
+- M9 前置审计修复：2026-06-21 针对 P1 审计意见修复重复下载历史串档风险和通知取消生命周期。下载 pipeline 现在为每个任务建立唯一 `task-*` 输出目录，`app-private://outputs/...` 保存 App 私有根目录下的相对路径，历史打开/分享/导出可重新定位到原始输出文件；`DownloadService` 收到通知取消 action 后会调用 `stopSelf(startId)`。新增 `repeatedMergeRunsCreateDistinctHistoryUrisThatResolveToOriginalFiles` 和取消分支源码约束测试。
+- 复核命令：2026-06-21 顺序运行 `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:connectedDebugAndroidTest`，均 `BUILD SUCCESSFUL`；connected 在 API37 `ytdl_api37_play_x86_64(AVD) - 17` 上完成 12 项测试、0 失败。
 
 剩余验收：真实历史页打开、导出、删除和系统导出 UI 留到 M9/T12。
 
@@ -568,7 +570,9 @@ cd android
 - 前台可见操作全流程通过。
 - 证据写入 `docs/qa/android-mvp-smoke.md`。
 
-当前状态：未完成。
+当前状态：未完成。2026-06-21 命令层和 API37 connected 层已通过，但 Computer Use 前台可视操作入口仍因工具层错误阻断，不能记为 T12 通过。
+
+本轮阻断证据：尝试通过 Node REPL bootstrap Computer Use 时，工具调用失败：`Mcp error: -32602: js: codex/sandbox-state-meta: missing field sandboxPolicy`。因此本轮没有完成“前台可见模拟器窗口 + Computer Use 全流程”验收。
 
 ## 当前总状态
 
@@ -581,16 +585,16 @@ cd android
 | T4 前台 GUI 分析 | 需按新规则重测 | 旧 Computer Use 证据使用了模拟器软键盘输入，只能作为展示参考 |
 | T5 前台 GUI 单文件下载进度 | 暂缓 | 先完成 T8C/T8D 和独立字幕文件输出，再做 GUI 绑定和可视验收 |
 | T6 格式真实可选项 | 绑定层通过/待前台重测 | M7 已用单元测试和审计覆盖当前分析结果格式绑定、不可用项原因、模式卡选中态、实际帧率/编码/容器摘要、旧摘要/旧 format id 防复用；仍需前台可见 GUI 重测 |
-| T7 前台服务通知 | 部分实现/待前台可视验收 | M6 已完成 foreground service 声明、通知控制器、`DownloadService` 承载 pipeline 和核心状态模型；尚未做前台可见通知/拒权 GUI 验收 |
+| T7 前台服务通知 | 绑定层补强/待前台可视验收 | M6 已完成 foreground service 声明、通知控制器、`DownloadService` 承载 pipeline 和核心状态模型；M9 前置补上队列页真实取消入口和通知取消 action；尚未做前台可见通知/拒权 GUI 验收 |
 | T8A MediaProcessor 合同与路线 | 已完成合同层 | 已定义合同、校验边界和原生 muxer 职责；真实合并在 T8B |
 | T8B 原生音视频合并能力 | 已测 | API37 instrumentation 已证明输出 MP4 含 1 条视频轨和 1 条音频轨 |
 | T8C yt-dlp 指定格式分离下载 | 已测 | API37 已真实下载 video-only format 394 与 audio-only format 139 两个文件 |
 | T8D required URL 核心合并 smoke | 已测/能力层通过 | API37 已用 `tkxzMEfp49Q` 完成分析、format 160/139 分离下载、原生合并和 track 检查；非 GUI/MVP 验收 |
-| T8E 独立字幕文件输出 | 已测/能力层通过 | API37 已下载 `tkxzMEfp49Q` 自动英文 `vtt` 字幕到 app 私有 cache；队列/历史/导出绑定仍待 M6/M8 |
-| T9 历史保存导出 | M8 单元层已实现/待前台验证 | 安全历史生成、App 私有输出发现、CreateDocument/MediaStore 合同、真实媒体输出存在性校验已覆盖；真实历史页打开/导出/删除留到 M9/T12 |
+| T8E 独立字幕文件输出 | 能力层通过/GUI 绑定补强 | API37 已下载 `tkxzMEfp49Q` 自动英文 `vtt` 字幕到 app 私有 cache；M9 前置补上格式页字幕开关和下载请求 `selectedSubtitles` 传递；真实前台字幕下载仍待 T12 |
+| T9 历史保存导出 | 绑定层补强/待前台验证 | 安全历史生成、App 私有输出发现、CreateDocument/MediaStore 合同、真实媒体输出存在性校验已覆盖；M9 前置补上历史打开、分享、导出、删除 action 与 Room 删除接口；真实前台操作留到 T12 |
 | T10 cookies 隐私边界 | M8 单元层已实现/待前台验证 | cookies 只保存引用、临时文件终态删除、复制失败清理、拒绝原始 cookies 路径、设置/历史/日志/错误脱敏已覆盖；真实设置页选择和任务联动留到 M9/T12 |
 | T11 失败恢复 | M8 单元层已实现/待前台验证 | 失败文案和脱敏已覆盖；真实前台失败恢复路径留到 M9/T12 |
-| T12 全量 MVP 回归 | 未完成 | 唯一最终验收口径：Computer Use 前台可见全流程通过 |
+| T12 全量 MVP 回归 | 未完成 | `testDebugUnitTest`、`assembleDebug`、`connectedDebugAndroidTest` 已通过；Computer Use 入口仍被 `sandboxPolicy` 工具层错误阻断，不能算前台可视验收通过 |
 
 ## 下一步推进顺序
 
@@ -599,4 +603,5 @@ cd android
 3. M6：已完成核心下载编排、前台服务声明、通知控制器、`DownloadService` 承载 pipeline 和真实队列状态模型；GUI `开始下载` 已接入前台服务以移除旧 `18/worst` fallback。前台可见通知、队列交互、取消按钮、历史/导出仍需 M7/M9 验证。
 4. M7：绑定层通过/待前台重测；测试口径为 `DownloadGuiBindingTest` 覆盖当前 `VideoAnalysis` 格式选择、下载摘要防旧值、队列阶段文案、设置页 parser/media 标签、开始下载即时状态、模式卡真实选中态、格式详情真实摘要和无输出完成态防误报，并已通过审计。该状态不代表前台可见模拟器全流程通过。
 5. M8：已完成单元层实现并通过 2026-06-21 全量 `testDebugUnitTest` / `assembleDebug` 复核，APK 已在 API37 上安装并启动到 `MainActivity`；前台可见历史、导出、cookies 和失败恢复留到 M9/T12。
-6. M9/T12：Computer Use 前台可见全真全量验收；这是唯一最终通过口径。
+6. M9 前置：已补外观配色设置持久化与即时应用、队列/通知取消、历史打开/分享/导出/删除、字幕独立文件选择绑定、重复下载唯一输出和历史相对 URI；全量单测、构建、connected 已通过，仍需恢复 Computer Use 前台可见模拟器验证。
+7. M9/T12：Computer Use 前台可见全真全量验收；这是唯一最终通过口径。

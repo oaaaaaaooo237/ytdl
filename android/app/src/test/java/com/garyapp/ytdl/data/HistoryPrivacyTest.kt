@@ -191,10 +191,13 @@ class HistoryPrivacyTest {
         val output = File(appRoot, "video.mp4").apply { writeText("media") }
 
         val discovered = ExportController.discoverAppPrivateOutput(output, appRoot).getOrThrow()
+        val rediscovered = ExportController.discoverAppPrivateOutputUri(discovered.appPrivateUri, appRoot).getOrThrow()
         val createDocumentIntent = ExportController.createDocumentIntent(discovered)
         val mediaStoreValues = ExportController.mediaStoreValues(discovered)
 
         assertEquals("video.mp4", discovered.displayName)
+        assertEquals("video.mp4", rediscovered.displayName)
+        assertEquals(discovered.bytesWritten, rediscovered.bytesWritten)
         assertEquals("video/mp4", discovered.mimeType)
         assertTrue(discovered.appPrivateUri.startsWith("app-private://outputs/"))
         assertFalse(discovered.toString().contains(appRoot.absolutePath))
@@ -209,6 +212,9 @@ class HistoryPrivacyTest {
         assertEquals(output.length(), bytesCopied)
         assertEquals("media", exportedBytes.toString(Charsets.UTF_8.name()))
         assertFalse(ExportController.exportDeniedMessage("D:/private/cookies.txt").contains("D:/private"))
+
+        val denied = ExportController.discoverAppPrivateOutputUri("file:///storage/emulated/0/video.mp4", appRoot)
+        assertTrue(denied.isFailure)
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.garyapp.ytdl.media.MediaMergeRequest
 import com.garyapp.ytdl.media.MediaOutputContainer
 import com.garyapp.ytdl.media.MediaProcessor
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 interface DownloadEngine {
@@ -98,6 +99,8 @@ class DownloadPipeline(
         onStateChanged: (DownloadTaskState) -> Unit = {},
     ): DownloadPipelineResult {
         outputDirectory.mkdirs()
+        val appPrivateRoot = outputDirectory.canonicalFile
+        val taskOutputDirectory = createTaskOutputDirectory(appPrivateRoot)
         var state = DownloadTaskState.waiting(request)
         var currentStage = state.stage
         val finalOutputs = mutableListOf<DownloadOutputFile>()
@@ -141,46 +144,46 @@ class DownloadPipeline(
                     transition(DownloadStage.DownloadingVideo)
                     val download = downloadFormatChecked(
                         request = request,
-                        outputDirectory = outputDirectory,
+                        outputDirectory = taskOutputDirectory,
                         formatId = route.formatId,
                         role = DownloadFormatRole.Media,
                         listener = progressListener(),
                     )
-                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "媒体")
+                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "媒体", appPrivateRoot)
                     ensureActive()
                 }
                 is DownloadRoute.VideoOnly -> {
                     transition(DownloadStage.DownloadingVideo)
                     val download = downloadFormatChecked(
                         request = request,
-                        outputDirectory = outputDirectory,
+                        outputDirectory = taskOutputDirectory,
                         formatId = route.videoFormatId,
                         role = DownloadFormatRole.Video,
                         listener = progressListener(),
                     )
-                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "视频")
+                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "视频", appPrivateRoot)
                     ensureActive()
                 }
                 is DownloadRoute.AudioOnly -> {
                     transition(DownloadStage.DownloadingAudio)
                     val download = downloadFormatChecked(
                         request = request,
-                        outputDirectory = outputDirectory,
+                        outputDirectory = taskOutputDirectory,
                         formatId = route.audioFormatId,
                         role = DownloadFormatRole.Audio,
                         listener = progressListener(),
                     )
-                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "音频")
+                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "音频", appPrivateRoot)
                     ensureActive()
                 }
                 is DownloadRoute.MergeRequired -> {
-                    val video = downloadFormatPart(request, outputDirectory, route.videoFormatId, DownloadFormatRole.Video, ::transition, ::progressListener)
+                    val video = downloadFormatPart(request, taskOutputDirectory, route.videoFormatId, DownloadFormatRole.Video, ::transition, ::progressListener)
                     ensureActive()
-                    val audio = downloadFormatPart(request, outputDirectory, route.audioFormatId, DownloadFormatRole.Audio, ::transition, ::progressListener)
+                    val audio = downloadFormatPart(request, taskOutputDirectory, route.audioFormatId, DownloadFormatRole.Audio, ::transition, ::progressListener)
                     ensureActive()
                     transition(DownloadStage.Merging)
                     val mergedOutput = File(
-                        outputDirectory,
+                        taskOutputDirectory,
                         "merged-${route.videoFormatId.safeFileToken()}-${route.audioFormatId.safeFileToken()}.${MediaOutputContainer.Mp4.extension}",
                     )
                     val merged = mediaProcessor.mergeVideoAndAudio(
@@ -197,6 +200,7 @@ class DownloadPipeline(
                         kind = DownloadOutputKind.Media,
                         path = merged.outputFile.absolutePath,
                         bytesWritten = merged.bytesWritten,
+                        appPrivateRootPath = appPrivateRoot.absolutePath,
                     )
                     ensureActive()
                 }
@@ -207,14 +211,14 @@ class DownloadPipeline(
                 transition(DownloadStage.DownloadingSubtitles)
                 val download = engine.downloadSubtitle(
                     url = request.url,
-                    outputDirectory = outputDirectory,
+                    outputDirectory = taskOutputDirectory,
                     language = subtitle.language,
                     ext = subtitle.ext,
                     source = subtitle.source,
                     cookiesPath = request.cookiesPath,
                     listener = progressListener(),
                 ).getOrThrow()
-                finalOutputs += download.toOutputFile()
+                finalOutputs += download.toOutputFile(appPrivateRoot)
             }
 
             ensureActive()
@@ -314,16 +318,18 @@ class DownloadPipeline(
     private fun DownloadResult.toOutputFile(
         kind: DownloadOutputKind,
         label: String,
+        appPrivateRoot: File,
     ): DownloadOutputFile {
         val file = requireExistingFile(label)
         return DownloadOutputFile(
             kind = kind,
             path = file.absolutePath,
             bytesWritten = bytesWritten,
+            appPrivateRootPath = appPrivateRoot.absolutePath,
         )
     }
 
-    private fun SubtitleDownloadResult.toOutputFile(): DownloadOutputFile {
+    private fun SubtitleDownloadResult.toOutputFile(appPrivateRoot: File): DownloadOutputFile {
         val file = File(outputPath)
         if (!file.isFile || file.length() <= 0L || bytesWritten <= 0L) {
             throw DownloadStateException("字幕输出不存在或为空。")
@@ -332,6 +338,7 @@ class DownloadPipeline(
             kind = DownloadOutputKind.Subtitle,
             path = file.absolutePath,
             bytesWritten = bytesWritten,
+            appPrivateRootPath = appPrivateRoot.absolutePath,
         )
     }
 
@@ -346,6 +353,16 @@ class DownloadPipeline(
     private fun String.safeFileToken(): String {
         return replace(Regex("""[^A-Za-z0-9._-]"""), "_")
             .ifBlank { "format" }
+    }
+
+    private fun createTaskOutputDirectory(appPrivateRoot: File): File {
+        val dir = File(appPrivateRoot, "task-${System.currentTimeMillis()}-${TaskSequence.incrementAndGet().toString(36)}")
+        dir.mkdirs()
+        return dir
+    }
+
+    private companion object {
+        private val TaskSequence = AtomicLong()
     }
 }
 

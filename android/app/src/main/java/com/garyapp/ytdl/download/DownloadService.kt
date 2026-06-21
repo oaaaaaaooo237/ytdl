@@ -24,6 +24,7 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ActionCancel) {
             DownloadCoordinator.cancelActive()
+            stopSelf(startId)
             return START_NOT_STICKY
         }
 

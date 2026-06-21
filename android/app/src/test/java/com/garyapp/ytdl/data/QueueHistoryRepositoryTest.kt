@@ -135,6 +135,32 @@ class QueueHistoryRepositoryTest {
     }
 
     @Test
+    fun historyDeleteRemovesOnlySelectedRecord() {
+        val olderId = historyDao.insert(
+            sampleHistoryItem(
+                title = "保留记录",
+                status = HistoryItemEntity.STATUS_COMPLETED,
+                createdAt = 1_000,
+                completedAt = 1_000,
+            ),
+        )
+        val newerId = historyDao.insert(
+            sampleHistoryItem(
+                title = "删除记录",
+                status = HistoryItemEntity.STATUS_FAILED,
+                createdAt = 2_000,
+                completedAt = 2_000,
+            ),
+        )
+
+        assertEquals(1, historyDao.deleteById(newerId))
+
+        val rows = historyDao.listRecent(10)
+        assertEquals(listOf("保留记录"), rows.map { it.title })
+        assertEquals(olderId, rows.single().id)
+    }
+
+    @Test
     fun queueEntitySanitizesFreeTextBeforePersistence() {
         val id = queueDao.insert(
             QueueItemEntity(

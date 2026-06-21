@@ -17,6 +17,9 @@ public abstract class HistoryDao {
     @Query("SELECT * FROM history_items ORDER BY completedAt DESC, id DESC LIMIT :limit")
     public abstract List<HistoryItemEntity> listRecent(int limit);
 
+    @Query("DELETE FROM history_items WHERE id = :id")
+    public abstract int deleteById(long id);
+
     public long insert(HistoryItemEntity item) {
         return insertRaw(item.sanitizedCopy());
     }

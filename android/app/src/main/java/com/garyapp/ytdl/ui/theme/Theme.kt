@@ -4,9 +4,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
+import com.garyapp.ytdl.core.settings.AppSettings
+import com.garyapp.ytdl.core.settings.AppearanceSettings
 
 enum class YtdlThemeMode {
     System,
@@ -27,6 +31,25 @@ data class YtdlThemeConfig(
     val colorPreset: YtdlColorPreset,
 )
 
+@Immutable
+data class YtdlAppPalette(
+    val appBackground: Color,
+    val bottomBarBackground: Color,
+    val cardBackground: Color,
+    val mutedCardBackground: Color,
+    val borderColor: Color,
+    val downloadAccent: Color,
+    val formatAccent: Color,
+    val queueAccent: Color,
+    val historyAccent: Color,
+    val settingsAccent: Color,
+    val successGreen: Color,
+    val softText: Color,
+    val titleText: Color,
+    val segmentedBackground: Color,
+    val neutralText: Color,
+)
+
 fun ytdlColorPresets(): List<YtdlColorPreset> = listOf(
     YtdlColorPreset(
         id = "reference_v3",
@@ -44,6 +67,32 @@ fun defaultYtdlThemeConfig(): YtdlThemeConfig = YtdlThemeConfig(
     mode = YtdlThemeMode.System,
     colorPreset = ytdlColorPresets().first { it.id == "reference_v3" },
 )
+
+fun themeConfigForSettings(settings: AppSettings): YtdlThemeConfig {
+    val mode = when (AppearanceSettings.normalizeThemeModeId(settings.themeModeId)) {
+        AppearanceSettings.ThemeModeLight -> YtdlThemeMode.Light
+        AppearanceSettings.ThemeModeDark -> YtdlThemeMode.Dark
+        else -> YtdlThemeMode.System
+    }
+    val presetId = AppearanceSettings.normalizeColorPresetId(settings.colorPresetId)
+    val preset = ytdlColorPresets().firstOrNull { it.id == presetId }
+        ?: ytdlColorPresets().first { it.id == AppearanceSettings.ColorPresetReferenceV3 }
+    return YtdlThemeConfig(mode = mode, colorPreset = preset)
+}
+
+fun ytdlAppPaletteForPreset(
+    presetId: String,
+    darkTheme: Boolean = false,
+): YtdlAppPalette {
+    return when (AppearanceSettings.normalizeColorPresetId(presetId)) {
+        AppearanceSettings.ColorPresetCodex -> if (darkTheme) YtdlCodexDarkPalette else YtdlCodexLightPalette
+        else -> if (darkTheme) YtdlReferenceV3DarkPalette else YtdlReferenceV3LightPalette
+    }
+}
+
+val LocalYtdlAppPalette = staticCompositionLocalOf {
+    ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
+}
 
 private val YtdlReferenceV3LightColors = lightColorScheme(
     primary = Color(0xFF2F5D50),
@@ -121,6 +170,78 @@ private val YtdlCodexDarkColors = darkColorScheme(
     onSurfaceVariant = Color(0xFFCBC5BA),
 )
 
+private val YtdlReferenceV3LightPalette = YtdlAppPalette(
+    appBackground = Color(0xFFFFFCF7),
+    bottomBarBackground = Color(0xFFF8F0FB),
+    cardBackground = Color(0xFFFFFFFF),
+    mutedCardBackground = Color(0xFFF6F5F0),
+    borderColor = Color(0xFFE8E2DA),
+    downloadAccent = Color(0xFFFF5B55),
+    formatAccent = Color(0xFF138F88),
+    queueAccent = Color(0xFFFF7A1A),
+    historyAccent = Color(0xFF7357C8),
+    settingsAccent = Color(0xFF2E86DE),
+    successGreen = Color(0xFF18A15F),
+    softText = Color(0xFF5E625C),
+    titleText = Color(0xFF181B17),
+    segmentedBackground = Color(0xFFF1EEE8),
+    neutralText = Color(0xFF263447),
+)
+
+private val YtdlReferenceV3DarkPalette = YtdlAppPalette(
+    appBackground = Color(0xFF111411),
+    bottomBarBackground = Color(0xFF211B25),
+    cardBackground = Color(0xFF191D1A),
+    mutedCardBackground = Color(0xFF252B26),
+    borderColor = Color(0xFF333A34),
+    downloadAccent = Color(0xFFFFB4A4),
+    formatAccent = Color(0xFF9FD4BF),
+    queueAccent = Color(0xFFFFB77A),
+    historyAccent = Color(0xFFD5C0ED),
+    settingsAccent = Color(0xFFA9C7FF),
+    successGreen = Color(0xFF7DDCA5),
+    softText = Color(0xFFC3CBC0),
+    titleText = Color(0xFFE1E4DE),
+    segmentedBackground = Color(0xFF2C312C),
+    neutralText = Color(0xFFE1E4DE),
+)
+
+private val YtdlCodexLightPalette = YtdlAppPalette(
+    appBackground = Color(0xFFFAF8F2),
+    bottomBarBackground = Color(0xFFEFEDE7),
+    cardBackground = Color(0xFFFFFFFF),
+    mutedCardBackground = Color(0xFFF1EDE5),
+    borderColor = Color(0xFFE2DCD0),
+    downloadAccent = Color(0xFF315C6B),
+    formatAccent = Color(0xFF7C705E),
+    queueAccent = Color(0xFFA26E35),
+    historyAccent = Color(0xFF5D5D79),
+    settingsAccent = Color(0xFF2F6D80),
+    successGreen = Color(0xFF3C8158),
+    softText = Color(0xFF615B50),
+    titleText = Color(0xFF1D1B16),
+    segmentedBackground = Color(0xFFE8E2D7),
+    neutralText = Color(0xFF30352F),
+)
+
+private val YtdlCodexDarkPalette = YtdlAppPalette(
+    appBackground = Color(0xFF15130E),
+    bottomBarBackground = Color(0xFF221E18),
+    cardBackground = Color(0xFF201D16),
+    mutedCardBackground = Color(0xFF2D281F),
+    borderColor = Color(0xFF413A2D),
+    downloadAccent = Color(0xFFA7CDDA),
+    formatAccent = Color(0xFFE0C2A4),
+    queueAccent = Color(0xFFFFC27E),
+    historyAccent = Color(0xFFC7C4E8),
+    settingsAccent = Color(0xFF9AD4E6),
+    successGreen = Color(0xFF8FCAA2),
+    softText = Color(0xFFCBC5BA),
+    titleText = Color(0xFFE8E2D7),
+    segmentedBackground = Color(0xFF383229),
+    neutralText = Color(0xFFE8E2D7),
+)
+
 @Composable
 fun YtdlTheme(
     config: YtdlThemeConfig = defaultYtdlThemeConfig(),
@@ -137,8 +258,12 @@ fun YtdlTheme(
         else -> if (darkTheme) YtdlReferenceV3DarkColors else YtdlReferenceV3LightColors
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalYtdlAppPalette provides ytdlAppPaletteForPreset(config.colorPreset.id, darkTheme),
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            content = content,
+        )
+    }
 }

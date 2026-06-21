@@ -100,11 +100,11 @@ class DownloadUiBridgeTest {
 
     @Test
     fun formatPageDoesNotPretendSubtitleFileIsAlreadySelected() {
-        val label = subtitleSelectionLabelForUiTest()
+        val label = subtitleSelectionLabelForUiTest(null, emptyList())
 
         assertFalse(label.contains("已选择"))
         assertFalse(label.contains("下载文件"))
-        assertTrue(label.contains("字幕待选择"))
+        assertTrue(label.contains("不下载字幕"))
         assertTrue(label.contains("默认不下载"))
     }
 

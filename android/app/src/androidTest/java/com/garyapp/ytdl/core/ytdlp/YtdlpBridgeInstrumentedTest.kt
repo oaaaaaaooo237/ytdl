@@ -32,6 +32,25 @@ class YtdlpBridgeInstrumentedTest {
     }
 
     @Test
+    fun analyzesRequiredYoutubeShortsSmokeUrl() {
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(ApplicationProvider.getApplicationContext()))
+        }
+
+        val startedAt = System.currentTimeMillis()
+        val result = YtdlpBridge().analyze("https://www.youtube.com/shorts/QBwpO9f0oAw")
+        val elapsedMs = System.currentTimeMillis() - startedAt
+
+        assertTrue(result.exceptionOrNull()?.message.orEmpty(), result.isSuccess)
+        val analysis = result.getOrThrow()
+        val evidence = "YTDL_SHORTS_ANALYSIS_SMOKE elapsedMs=$elapsedMs title=${analysis.title.take(80)} formats=${analysis.formats.size} subtitles=${analysis.subtitles.size}"
+        println(evidence)
+        Log.i("YtdlpBridgeSmoke", evidence)
+        assertTrue(analysis.title.isNotBlank())
+        assertTrue(analysis.formats.isNotEmpty())
+    }
+
+    @Test
     fun downloadsRequiredYoutubeSmokeUrlWithRealProgress() {
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(ApplicationProvider.getApplicationContext()))

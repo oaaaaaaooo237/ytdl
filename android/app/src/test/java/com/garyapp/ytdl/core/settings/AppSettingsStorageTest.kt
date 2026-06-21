@@ -118,6 +118,8 @@ class AppSettingsStorageTest {
         val settings = AppSettings()
 
         assertEquals(StorageTarget.AppPrivate, settings.defaultStorageTarget)
+        assertEquals(AppearanceSettings.ThemeModeSystem, settings.themeModeId)
+        assertEquals(AppearanceSettings.ColorPresetReferenceV3, settings.colorPresetId)
     }
 
     @Test
@@ -156,5 +158,36 @@ class AppSettingsStorageTest {
         assertEquals("cookies.txt", settings.cookiesReference?.displayName)
         assertTrue(settings.defaultStorageTarget is StorageTarget.SafTree)
         assertFalse(settings.toString().contains("SID=secret"))
+    }
+
+    @Test
+    fun settingsRepositoryPersistsAppearanceChoiceAsSafeIds() {
+        val repository = SettingsRepository()
+
+        repository.setThemeMode(AppearanceSettings.ThemeModeDark)
+        repository.setColorPreset(AppearanceSettings.ColorPresetCodex)
+
+        val settings = repository.getSettings()
+        assertEquals(AppearanceSettings.ThemeModeDark, settings.themeModeId)
+        assertEquals(AppearanceSettings.ColorPresetCodex, settings.colorPresetId)
+    }
+
+    @Test
+    fun settingsRepositoryFallsBackForUnknownAppearanceIds() {
+        val repository = SettingsRepository(
+            initialSettings = AppSettings(
+                themeModeId = "unexpected",
+                colorPresetId = "unknown-preset",
+            ),
+        )
+
+        assertEquals(AppearanceSettings.ThemeModeSystem, repository.getSettings().themeModeId)
+        assertEquals(AppearanceSettings.ColorPresetReferenceV3, repository.getSettings().colorPresetId)
+
+        repository.setThemeMode("bad-mode")
+        repository.setColorPreset("bad-preset")
+
+        assertEquals(AppearanceSettings.ThemeModeSystem, repository.getSettings().themeModeId)
+        assertEquals(AppearanceSettings.ColorPresetReferenceV3, repository.getSettings().colorPresetId)
     }
 }

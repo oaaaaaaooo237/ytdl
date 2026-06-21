@@ -5,7 +5,39 @@ import com.garyapp.ytdl.core.storage.StorageTarget
 data class AppSettings(
     val defaultStorageTarget: StorageTarget = StorageTarget.AppPrivate,
     val cookiesReference: CookiesReference? = null,
+    val themeModeId: String = AppearanceSettings.ThemeModeSystem,
+    val colorPresetId: String = AppearanceSettings.ColorPresetReferenceV3,
 )
+
+object AppearanceSettings {
+    const val ThemeModeSystem = "system"
+    const val ThemeModeLight = "light"
+    const val ThemeModeDark = "dark"
+
+    const val ColorPresetReferenceV3 = "reference_v3"
+    const val ColorPresetCodex = "codex"
+
+    val themeModeIds: Set<String> = setOf(
+        ThemeModeSystem,
+        ThemeModeLight,
+        ThemeModeDark,
+    )
+
+    val colorPresetIds: Set<String> = setOf(
+        ColorPresetReferenceV3,
+        ColorPresetCodex,
+    )
+
+    fun normalizeThemeModeId(modeId: String?): String {
+        val normalized = modeId?.trim()?.lowercase()
+        return if (normalized in themeModeIds) normalized.orEmpty() else ThemeModeSystem
+    }
+
+    fun normalizeColorPresetId(presetId: String?): String {
+        val normalized = presetId?.trim()?.lowercase()
+        return if (normalized in colorPresetIds) normalized.orEmpty() else ColorPresetReferenceV3
+    }
+}
 
 class CookiesReference private constructor(
     val value: String,
