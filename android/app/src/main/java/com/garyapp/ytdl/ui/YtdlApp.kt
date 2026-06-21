@@ -1,10 +1,12 @@
 package com.garyapp.ytdl.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
@@ -64,6 +66,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.garyapp.ytdl.core.settings.AppSettings
 import com.garyapp.ytdl.core.settings.AppearanceSettings
 import com.garyapp.ytdl.core.settings.CookiesReference as SettingsCookiesReference
@@ -76,6 +81,7 @@ import com.garyapp.ytdl.download.DownloadCoordinator
 import com.garyapp.ytdl.download.DownloadOutputKind
 import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
+import com.garyapp.ytdl.download.NotificationController
 import com.garyapp.ytdl.storage.ExportController
 import com.garyapp.ytdl.ui.theme.LocalYtdlAppPalette
 import com.garyapp.ytdl.ui.theme.YtdlAppPalette
@@ -194,7 +200,7 @@ fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
     "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕", "本阶段默认不下载"),
     "queue" to listOf("下载进行中", "当前阶段", "等待真实任务", "暂无真实下载任务", "最近任务已完成", "最近任务失败", "最近任务已取消", "下载视频", "下载音频", "原生合并", "已取消"),
     "history" to listOf("搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
-    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "前台验收待完成", "隐私与授权说明", "外观与颜色", "Codex 风格", "MVP2"),
+    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "外观与颜色", "Codex 风格", "MVP2"),
 )
 
 @Composable
@@ -208,6 +214,10 @@ fun YtdlApp() {
     var pendingExportOutput by remember { mutableStateOf<ExportController.AppPrivateOutput?>(null) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val bridge = remember { YtdlpBridge() }
+    val notificationController = remember { NotificationController(context.applicationContext) }
+    val notificationRuntimePermissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    var notificationsAllowed by remember { mutableStateOf(notificationController.canPostNotifications()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     fun refreshHistory() {
         Thread {
@@ -270,6 +280,17 @@ fun YtdlApp() {
         }.start()
     }
 
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsAllowed = !notificationRuntimePermissionRequired || granted
+        runtimeState = runtimeState.copy(
+            userMessage = if (notificationsAllowed) {
+                "通知权限已允许。"
+            } else {
+                "通知权限未允许；下载仍会在应用内显示进度。"
+            },
+        )
+    }
+
     DisposableEffect(Unit) {
         val subscription = DownloadCoordinator.addListener { state ->
             mainHandler.post {
@@ -280,6 +301,20 @@ fun YtdlApp() {
             }
         }
         onDispose { subscription.close() }
+    }
+
+    DisposableEffect(lifecycleOwner, notificationRuntimePermissionRequired) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsAllowed = refreshedNotificationPermissionState(
+                    currentValue = notificationsAllowed,
+                    systemValue = notificationController.canPostNotifications(),
+                    runtimePermissionRequired = notificationRuntimePermissionRequired,
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     fun loadThumbnail(thumbnailUrl: String) {
@@ -564,8 +599,20 @@ fun YtdlApp() {
                         )
                         "settings" -> settingsPageItems(
                             settings = appSettings,
+                            notificationsAllowed = notificationsAllowed,
+                            notificationRuntimePermissionRequired = notificationRuntimePermissionRequired,
                             onSelectCookies = {
                                 cookiesPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+                            },
+                            onRequestNotifications = {
+                                notificationsAllowed = notificationController.canPostNotifications()
+                                if (!notificationRuntimePermissionRequired) {
+                                    runtimeState = runtimeState.copy(userMessage = "当前系统无需单独授权通知。")
+                                } else if (notificationsAllowed) {
+                                    runtimeState = runtimeState.copy(userMessage = "通知权限已允许。")
+                                } else {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
                             },
                             onThemeModeChange = { modeId ->
                                 appSettings = settingsRepository.setThemeMode(modeId)
@@ -1387,7 +1434,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     settings: AppSettings,
+    notificationsAllowed: Boolean,
+    notificationRuntimePermissionRequired: Boolean,
     onSelectCookies: () -> Unit,
+    onRequestNotifications: () -> Unit,
     onThemeModeChange: (String) -> Unit,
     onColorPresetChange: (String) -> Unit,
 ) {
@@ -1406,7 +1456,21 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     }
     item { SettingLineCard("解析器版本", settingsParserVersionLabel(), "◇", "›", Color(0xFFE7A600)) }
     item { SettingLineCard("媒体处理能力", settingsMediaProcessorLabel(), "⚙", "›", LocalYtdlAppPalette.current.settingsAccent, modifier = Modifier.testTag("ytdl-settings-media-processor")) }
-    item { SettingLineCard("通知权限", "待系统确认 · 前台验收待完成", "●", "›", LocalYtdlAppPalette.current.formatAccent) }
+    item {
+        SettingLineCard(
+            "通知权限",
+            notificationPermissionSubtitle(notificationsAllowed, notificationRuntimePermissionRequired),
+            "●",
+            notificationPermissionTrailing(notificationsAllowed, notificationRuntimePermissionRequired),
+            LocalYtdlAppPalette.current.formatAccent,
+            modifier = Modifier
+                .clickable(
+                    enabled = notificationRuntimePermissionRequired && !notificationsAllowed,
+                    onClick = onRequestNotifications,
+                )
+                .testTag("ytdl-settings-notification-permission"),
+        )
+    }
     item { SettingLineCard("隐私与授权说明", "查看说明", "◆", "›", LocalYtdlAppPalette.current.successGreen) }
     item { SettingLineCard("地址校验提示", "仅校验空地址、非法地址和非 http/https", "!", "›", LocalYtdlAppPalette.current.downloadAccent) }
     item {

@@ -163,6 +163,35 @@ fun settingsParserVersionLabel(): String = "yt-dlp ${YtdlpBridge.PINNED_YTDLP_VE
 
 fun settingsMediaProcessorLabel(): String = "原生合并 · 字幕独立文件 · 字幕嵌入/烧录属 MVP2"
 
+fun notificationPermissionSubtitle(
+    isGranted: Boolean,
+    runtimePermissionRequired: Boolean,
+): String {
+    if (!runtimePermissionRequired) return "系统无需单独授权"
+    return if (isGranted) {
+        "已允许"
+    } else {
+        "未授权 · 下载仍在应用内显示进度"
+    }
+}
+
+fun notificationPermissionTrailing(
+    isGranted: Boolean,
+    runtimePermissionRequired: Boolean,
+): String {
+    if (!runtimePermissionRequired) return "系统"
+    return if (isGranted) "已允许" else "请求"
+}
+
+fun refreshedNotificationPermissionState(
+    currentValue: Boolean,
+    systemValue: Boolean,
+    runtimePermissionRequired: Boolean,
+): Boolean {
+    if (!runtimePermissionRequired) return true
+    return if (currentValue == systemValue) currentValue else systemValue
+}
+
 fun subtitleSelectionLabel(
     analysis: VideoAnalysis?,
     selectedSubtitles: List<SubtitleInfo>,
@@ -181,6 +210,22 @@ fun subtitleSelectionLabel(
 internal fun settingsParserVersionLabelForUiTest(): String = settingsParserVersionLabel()
 
 internal fun settingsMediaProcessorLabelForUiTest(): String = settingsMediaProcessorLabel()
+
+internal fun notificationPermissionSubtitleForUiTest(
+    isGranted: Boolean,
+    runtimePermissionRequired: Boolean,
+): String = notificationPermissionSubtitle(isGranted, runtimePermissionRequired)
+
+internal fun notificationPermissionTrailingForUiTest(
+    isGranted: Boolean,
+    runtimePermissionRequired: Boolean,
+): String = notificationPermissionTrailing(isGranted, runtimePermissionRequired)
+
+internal fun refreshedNotificationPermissionStateForUiTest(
+    currentValue: Boolean,
+    systemValue: Boolean,
+    runtimePermissionRequired: Boolean,
+): Boolean = refreshedNotificationPermissionState(currentValue, systemValue, runtimePermissionRequired)
 
 internal fun subtitleSelectionLabelForUiTest(
     analysis: VideoAnalysis?,

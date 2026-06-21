@@ -40,12 +40,13 @@ class DownloadUiBridgeTest {
         assertFalse(source.contains("失败（1）"))
         assertFalse(source.contains("自然风光演示片段"))
         assertFalse(source.contains("海边散步片段"))
-        assertFalse(source.contains("SettingLineCard(\"通知权限\", \"已允许\""))
+        assertFalse(source.contains("SettingLineCard(\"通知权限\", \"待系统确认"))
         assertFalse(source.contains("M6 下载管线"))
         assertTrue(source.contains("真实任务队列"))
         assertTrue(source.contains("暂无真实下载任务"))
         assertTrue(source.contains("暂无真实历史记录，完成下载后会显示"))
-        assertTrue(source.contains("前台验收待完成"))
+        assertTrue(source.contains("notificationPermissionSubtitle("))
+        assertTrue(source.contains("ytdl-settings-notification-permission"))
     }
 
     @Test
@@ -136,6 +137,45 @@ class DownloadUiBridgeTest {
         assertEquals("下载完成", userVisibleDownloadStatus(DownloadStage.Completed))
         assertEquals("下载失败", userVisibleDownloadStatus(DownloadStage.Failed))
         assertEquals("已取消", userVisibleDownloadStatus(DownloadStage.Canceled))
+    }
+
+    @Test
+    fun notificationPermissionLabelsExposeRealRuntimeState() {
+        assertEquals("系统无需单独授权", notificationPermissionSubtitleForUiTest(isGranted = true, runtimePermissionRequired = false))
+        assertEquals("已允许", notificationPermissionSubtitleForUiTest(isGranted = true, runtimePermissionRequired = true))
+        assertEquals("未授权 · 下载仍在应用内显示进度", notificationPermissionSubtitleForUiTest(isGranted = false, runtimePermissionRequired = true))
+
+        assertEquals("请求", notificationPermissionTrailingForUiTest(isGranted = false, runtimePermissionRequired = true))
+        assertEquals("已允许", notificationPermissionTrailingForUiTest(isGranted = true, runtimePermissionRequired = true))
+        assertEquals("系统", notificationPermissionTrailingForUiTest(isGranted = true, runtimePermissionRequired = false))
+    }
+
+    @Test
+    fun notificationPermissionStateRefreshesFromSystemOnResume() {
+        assertEquals(
+            false,
+            refreshedNotificationPermissionStateForUiTest(
+                currentValue = true,
+                systemValue = false,
+                runtimePermissionRequired = true,
+            ),
+        )
+        assertEquals(
+            true,
+            refreshedNotificationPermissionStateForUiTest(
+                currentValue = false,
+                systemValue = true,
+                runtimePermissionRequired = true,
+            ),
+        )
+        assertEquals(
+            true,
+            refreshedNotificationPermissionStateForUiTest(
+                currentValue = false,
+                systemValue = false,
+                runtimePermissionRequired = false,
+            ),
+        )
     }
 
     @Test

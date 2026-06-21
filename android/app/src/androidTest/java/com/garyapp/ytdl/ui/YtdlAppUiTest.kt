@@ -71,6 +71,7 @@ class YtdlAppUiTest {
         tapTag("ytdl-tab-settings")
         assertTagVisible("ytdl-screen-settings")
         assertTagVisible("ytdl-settings-media-processor")
+        assertTagVisible("ytdl-settings-notification-permission")
     }
 
     @Test
