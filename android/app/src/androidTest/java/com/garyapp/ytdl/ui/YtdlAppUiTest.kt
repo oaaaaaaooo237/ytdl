@@ -8,6 +8,11 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import com.garyapp.ytdl.data.HistoryItemEntity
+import com.garyapp.ytdl.data.YtdlDatabaseProvider
+import com.garyapp.ytdl.download.DownloadCoordinator
+import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -24,6 +29,9 @@ class YtdlAppUiTest {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val context = ApplicationProvider.getApplicationContext<Context>()
         assertNotNull("找不到 $packageName 的启动入口", context.packageManager.getLaunchIntentForPackage(packageName))
+        cancelActiveDownload()
+        DownloadCoordinator.resetForTests()
+        clearHistoryRows(context)
         device.pressHome()
         device.executeShellCommand("am start -W -n $packageName/.MainActivity")
         if (findTag("ytdl-screen-download", timeoutMs = 5_000) == null) {
@@ -33,6 +41,12 @@ class YtdlAppUiTest {
             "应用未进入前台下载页：$packageName",
             findTag("ytdl-screen-download", timeoutMs = 5_000) != null,
         )
+    }
+
+    @After
+    fun cleanupAppState() {
+        cancelActiveDownload()
+        DownloadCoordinator.resetForTests()
     }
 
     @Test
@@ -73,6 +87,7 @@ class YtdlAppUiTest {
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
             screenshotPrefix = "",
             expectedTitleText = "Jalen Brunson",
+            completeDownloadAndHistory = true,
         )
     }
 
@@ -82,6 +97,7 @@ class YtdlAppUiTest {
             url = "https://www.youtube.com/shorts/QBwpO9f0oAw",
             screenshotPrefix = "shorts-",
             expectedTitleText = "Luka and Jalen",
+            completeDownloadAndHistory = false,
         )
     }
 
@@ -89,6 +105,7 @@ class YtdlAppUiTest {
         url: String,
         screenshotPrefix: String,
         expectedTitleText: String?,
+        completeDownloadAndHistory: Boolean,
     ) {
         setTextTag("ytdl-url-input", url)
         saveScreen("${screenshotPrefix}02-url.png")
@@ -109,6 +126,85 @@ class YtdlAppUiTest {
         assertTagVisible("ytdl-screen-download")
         assertTextContains("1080p", timeoutMs = 1_000)
         saveScreen("${screenshotPrefix}03-format-applied.png")
+
+        if (!completeDownloadAndHistory) {
+            return
+        }
+
+        val downloadStartedAt = System.currentTimeMillis()
+        tapTag("ytdl-download-start")
+        saveScreen("${screenshotPrefix}04-download-started.png")
+
+        tapTag("ytdl-tab-queue")
+        assertTagVisible("ytdl-real-queue-card", timeoutMs = 30_000)
+        assertAnyTextContains(
+            texts = listOf("下载视频", "下载音频", "原生合并", "正在下载", "下载进行中"),
+            timeoutMs = 60_000,
+        )
+        saveScreen("${screenshotPrefix}05-queue-active.png")
+
+        assertAnyTextContains(
+            texts = listOf("下载完成", "最近任务已完成"),
+            timeoutMs = 600_000,
+        )
+        assertTagVisible("ytdl-real-queue-card", timeoutMs = 5_000)
+        saveScreen("${screenshotPrefix}06-queue-complete.png")
+        assertLatestHistoryBelongsToCurrentDownload(downloadStartedAt, expectedTitleText)
+
+        tapTag("ytdl-tab-history")
+        assertTagVisible("ytdl-history-real-card", timeoutMs = 30_000)
+        expectedTitleText?.let { assertTextContains(it, timeoutMs = 5_000) }
+        assertTextContains("完成", timeoutMs = 5_000)
+        saveScreen("${screenshotPrefix}07-history-real-card.png")
+    }
+
+    private fun clearHistoryRows(context: Context) {
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        repeat(50) {
+            val rows = historyDao.listRecent(100)
+            if (rows.isEmpty()) {
+                return
+            }
+            rows.forEach { item ->
+                historyDao.deleteById(item.id)
+            }
+        }
+        assertTrue("历史清理后仍有残留记录", historyDao.listRecent(1).isEmpty())
+    }
+
+    private fun assertLatestHistoryBelongsToCurrentDownload(startedAt: Long, expectedTitleText: String?) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val latest = YtdlDatabaseProvider.get(context).historyDao().listRecent(1).firstOrNull()
+        assertNotNull("本轮下载完成后未写入最新历史记录", latest)
+        latest!!
+        assertEquals("最新历史记录不是完成态", HistoryItemEntity.STATUS_COMPLETED, latest.status)
+        assertTrue(
+            "最新历史记录不是本轮下载写入：completedAt=${latest.completedAt}, startedAt=$startedAt",
+            latest.completedAt >= startedAt,
+        )
+        expectedTitleText?.let { title ->
+            assertTrue("最新历史标题不属于本轮测试视频：${latest.title}", latest.title.contains(title))
+        }
+        assertTrue(
+            "最新历史缺少 app-private 输出 URI：${latest.outputUri}",
+            latest.outputUri.startsWith("app-private://outputs/task-"),
+        )
+        assertTrue(
+            "最新历史没有指向合并媒体文件：${latest.outputUri}",
+            latest.outputUri.contains("/merged-"),
+        )
+        assertTrue(
+            "最新历史格式摘要未证明视频+音频合并：${latest.formatSummary}",
+            latest.formatSummary.contains("视频") && latest.formatSummary.contains("音频"),
+        )
+    }
+
+    private fun cancelActiveDownload() {
+        DownloadCoordinator.cancelActive()
+        device.executeShellCommand(
+            "am startservice -a com.garyapp.ytdl.download.CANCEL -n $packageName/.download.DownloadService",
+        )
+        device.waitForIdle()
     }
 
     private fun tapTag(tag: String) {
@@ -154,6 +250,19 @@ class YtdlAppUiTest {
             "未看到文本：$text",
             device.wait(Until.hasObject(By.textContains(text)), timeoutMs),
         )
+    }
+
+    private fun assertAnyTextContains(texts: List<String>, timeoutMs: Long) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val matched = texts.any { text ->
+                device.hasObject(By.textContains(text))
+            }
+            if (matched) return
+            device.waitForIdle()
+            Thread.sleep(500)
+        }
+        assertTrue("未看到任一文本：${texts.joinToString(" / ")}", false)
     }
 
     private fun saveScreen(name: String) {
