@@ -1,12 +1,12 @@
 # Android 开发与测试环境
 
-日期：2026-06-19
+日期：2026-06-19；状态复核：2026-06-21
 
-本文件记录 Android Play 版进入实现前的本机环境状态。Android 产品需求与设计仍以 `docs/superpowers/specs/2026-06-19-ytdl-android-play-design.md` 为准，GUI 基准图以 `docs/android-gui-reference-v3.png` 为准。
+本文件记录 Android Play 版本机环境状态。Android 产品需求与设计仍以 `docs/superpowers/specs/2026-06-19-ytdl-android-play-design.md` 为准，GUI 基准图以 `docs/android-gui-reference-v3.png` 为准。应用实现进度以 `docs/superpowers/plans/2026-06-19-ytdl-android-play-mvp.md` 和 `docs/qa/android-mvp-smoke.md` 为准；本文件不再作为功能完成度账本。
 
 ## 明确结论
 
-本机 Android 开发和模拟器测试环境已准备到可以创建工程并开始实现的状态。
+本机 Android 开发和模拟器测试环境已准备好，可继续构建、安装和运行当前 Android 工程。
 
 已实测通过：
 
@@ -16,12 +16,12 @@
 - 临时 Android 探针工程已成功构建：Gradle 9.4.1、AGP 9.2.1、`compileSdk = 37`、`targetSdk = 37`、Chaquopy 17.0.0、Room 2.8.4、Compose BOM 2026.06.00、activity-compose 1.13.0、Compose Compiler plugin 2.3.0。
 - Chaquopy 构建已显式使用项目 venv Python：`D:\garyapp\ytdl\.venv\Scripts\python.exe`，版本为 Python 3.12.13。系统 PATH 中没有 `python`，后续 Android 工程不得依赖 PATH 自动发现 Python。
 
-仍未完成，但边界明确：
+环境之外仍未完成，但边界明确：
 
-- 仓库内尚未创建正式 Android 工程骨架。
 - 尚未准备真实 `arm64-v8a` 手机；小米 14 或同级设备仍是第一阶段真机验收目标。
-- 尚未实现 MVP1 的完整下载编排、前台服务、历史、导出和独立字幕文件输出；MVP1 媒体处理口径为原生 `MediaExtractor + MediaMuxer` 合并分离音视频流，字幕嵌入、字幕烧录和三合一输出进入 MVP2。
-- 尚未确认 Google Play 发布签名、隐私政策 URL、Data safety 填写口径和商店截图素材。
+- 最终 Computer Use 前台可见模拟器全流程验收尚未通过；当前阻断见 `docs/qa/android-mvp-smoke.md`。
+- 尚未确认 Google Play 发布签名、隐私政策 URL、Data safety 最终填写口径和商店截图素材。
+- MVP2 若加入字幕嵌入、字幕烧录或三合一输出，仍需重新审计媒体处理链、许可证、ABI、16KB page size 和包体积。
 
 ## 已确认工具链
 
@@ -137,7 +137,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1 -CreateMatrix
 
 ## 下一步开发前置条件
 
-正式 Android 工程创建时必须先提交 Gradle Wrapper 9.4.1 和上述 Gradle/AGP/Chaquopy/Room/Compose 版本，不再使用系统 Gradle 8.10.2。
+正式 Android 工程已经创建，后续仍必须使用 Gradle Wrapper/固定 Gradle 9.4.1 和上述 Gradle/AGP/Chaquopy/Room/Compose 版本，不再使用系统 Gradle 8.10.2。
 
 第一阶段实现开始后，构建验收命令至少包括：
 
