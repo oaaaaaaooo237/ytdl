@@ -174,7 +174,8 @@
 **Current Split:**
 - M1/M2: Android 原生 `MediaExtractor + MediaMuxer` 合同与真实兼容流合并，已完成。
 - M3/M4: yt-dlp 指定 format id 分离下载和 required URL 核心合并 smoke，已完成能力层验证。
-- M5: 字幕文件独立下载/输出模型，当前执行。
+- M5: 字幕文件独立下载/输出模型，已完成能力层验证。
+- M6-M8: 下载编排、前台服务、GUI 绑定、历史/导出/cookies/失败恢复和 Play 草案已推进到单元/绑定层；仍未完成最终前台 Computer Use 全量验收。
 - MVP2: 自编译最小 LGPL FFmpeg 动态库、自有 JNI/命令桥、字幕嵌入/烧录、三合一输出、许可证/ABI/16KB/体积证据。
 
 **Execution Rule:** 后续 worker 先完成 MVP1 的原生合并和独立字幕文件闭环，不得把 FFmpeg 构建、字幕嵌入或字幕烧录作为 MVP1 阻断项。
@@ -391,7 +392,7 @@ This section records the adjusted continuation order after user review. From 202
 
 ### Continuation Task M6: Download Orchestration and Foreground State
 
-**Status:** 当前执行任务；已接入核心 pipeline、前台服务和真实队列状态，待审计与验证收口。
+**Status:** 已完成核心编排与绑定层验证；最终前台可视验收仍在 M9/T12。
 
 **Purpose:** Build the real download pipeline that turns an analyzed format choice into direct download, split video/audio download, native merge, or separate subtitle-file download, while exposing honest queue progress and foreground-service state.
 
@@ -452,7 +453,7 @@ This section records the adjusted continuation order after user review. From 202
 
 ### Continuation Task M8: History, Export, Cookies Privacy, and Failure Recovery
 
-**Status:** 未开始；M7 通过后执行。
+**Status:** 单元/绑定层已完成；Play 文档草案已补齐 Data safety、隐私政策和第三方许可证工作稿。真实设置页 cookies 选择、历史打开/分享/导出/删除和失败恢复仍留到 M9/T12 前台可视验收。
 
 **Purpose:** Complete the non-happy-path and Play-facing behavior before final visible acceptance: output discovery/export, local history, cookies reference safety, and user-readable failures.
 
@@ -469,12 +470,12 @@ This section records the adjusted continuation order after user review. From 202
 - Modify: `docs/qa/android-full-visual-test-plan.md`
 
 **Steps:**
-- [ ] Persist completed and failed tasks to history without cookies contents, authorization headers, raw command lines, or sensitive query strings.
-- [ ] Implement app-private output discovery plus ACTION_CREATE_DOCUMENT/MediaStore export path.
-- [ ] Store only cookies URI/path references; materialize temporary cookies files per task and delete them after completion/failure/cancel.
-- [ ] Add failure messages for blank URL, invalid URL, non-http/https URL, network failure, missing subtitle, processing failure, save/export denial, and cancellation.
-- [ ] Add tests proving sensitive strings are redacted from settings, history, logs, and error text.
-- [ ] Verify:
+- [x] Persist completed and failed tasks to history without cookies contents, authorization headers, raw command lines, or sensitive query strings.
+- [x] Implement app-private output discovery plus ACTION_CREATE_DOCUMENT/MediaStore export path.
+- [x] Store only cookies URI/path references; materialize temporary cookies files per task and delete them after completion/failure/cancel.
+- [x] Add failure messages for blank URL, invalid URL, non-http/https URL, network failure, missing subtitle, processing failure, save/export denial, and cancellation.
+- [x] Add tests proving sensitive strings are redacted from settings, history, logs, and error text.
+- [x] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`
   - `cd android; .\gradlew.bat :app:assembleDebug`
 
@@ -482,7 +483,7 @@ This section records the adjusted continuation order after user review. From 202
 
 ### Continuation Task M9: Full Foreground Visible Acceptance Flow
 
-**Status:** 未开始；M8 通过后执行。
+**Status:** 阻断中；M8 前置能力已到位，但 Computer Use 前台可见模拟器全流程仍未通过，不能称为 MVP 验收完成。
 
 **Purpose:** Run the meaningful GUI test only after media capability, subtitle-file output, queue, history, export, and privacy behavior exist: user-visible analysis, format choice, split download, merge, separate subtitle file where applicable, foreground progress, history, export, settings, and failures.
 
@@ -504,7 +505,7 @@ This section records the adjusted continuation order after user review. From 202
 
 **Acceptance:** This is the first point where the Android MVP can be called accepted. Earlier unit, instrumentation, adb, UIAutomator, or screenshot checks are necessary evidence but not final acceptance.
 
-**M9 preflight fixes, 2026-06-21:** Before attempting T12, the main session closed several GUI-binding gaps found by review: appearance mode/color preset now persist and apply through `YtdlTheme`, queue and notification cancellation call the real cancellation path, history cards expose real open/share/export/delete actions through app-private output resolution and Room deletion, the format page can select an available subtitle as an independent subtitle-file output, repeated downloads now use unique task output directories with app-private relative history URIs, and notification cancel stops the service start id. `testDebugUnitTest`、`assembleDebug`、`connectedDebugAndroidTest` have fresh passing output, but foreground visible Computer Use acceptance is still blocked by the current Computer Use tool bootstrap error and must not be counted as passed.
+**M9 preflight fixes, 2026-06-21:** Before attempting T12, the main session closed several GUI-binding gaps found by review: appearance mode/color preset now persist and apply through `YtdlTheme`, queue and notification cancellation call the real cancellation path, history cards expose real open/share/export/delete actions through app-private output resolution and Room deletion, the format page can select an available subtitle as an independent subtitle-file output, repeated downloads now use unique task output directories with app-private relative history URIs, notification cancel stops the service start id, notification permission reflects the real runtime state, and the Settings page now shows concrete privacy/authorization boundaries instead of an empty “view details” entry. `testDebugUnitTest`、`assembleDebug` and relevant connected/UIAutomator auxiliary checks have fresh passing output, but foreground visible Computer Use acceptance is still blocked by the current Computer Use tool bootstrap error and must not be counted as passed.
 
 After each task commit:
 
