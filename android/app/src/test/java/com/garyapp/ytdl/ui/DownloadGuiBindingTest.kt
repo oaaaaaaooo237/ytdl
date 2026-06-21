@@ -1,5 +1,10 @@
 package com.garyapp.ytdl.ui
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import com.garyapp.ytdl.core.ytdlp.DownloadProgress
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.SubtitleSource
@@ -11,12 +16,22 @@ import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
+import com.garyapp.ytdl.ui.theme.YtdlTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class DownloadGuiBindingTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
     @Test
     fun formatRowsComeFromCurrentAnalysisAndDisabledRowsExplainWhy() {
         val analysis = analysisWith(
@@ -206,6 +221,46 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun realQueueCardUsesAnalysisThumbnailWhenAvailableAndFallsBackWhenMissing() {
+        val request = requestFor(progressiveFormat(id = "18", height = 360))
+        val thumbnail = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val runningWithThumbnail = RuntimeDownloadState(thumbnailBitmap = thumbnail)
+            .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
+        val runningWithoutThumbnail = RuntimeDownloadState()
+            .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
+
+        assertEquals("ytdl-queue-thumbnail-image", queueThumbnailTagForUiTest(runningWithThumbnail))
+        assertEquals("ytdl-queue-thumbnail-placeholder", queueThumbnailTagForUiTest(runningWithoutThumbnail))
+    }
+
+    @Test
+    fun realQueuePageRendersAnalysisThumbnailNodeWhenAvailable() {
+        val request = requestFor(progressiveFormat(id = "18", height = 360))
+        val thumbnail = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val runningWithThumbnail = RuntimeDownloadState(thumbnailBitmap = thumbnail)
+            .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
+
+        renderQueuePage(runningWithThumbnail)
+
+        composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-image").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-placeholder").assertCountEquals(0)
+    }
+
+    @Test
+    fun realQueuePageRendersPlaceholderNodeWhenThumbnailIsMissing() {
+        val request = requestFor(progressiveFormat(id = "18", height = 360))
+        val runningWithoutThumbnail = RuntimeDownloadState()
+            .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
+
+        renderQueuePage(runningWithoutThumbnail)
+
+        composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-image").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-placeholder").assertCountEquals(1)
+    }
+
+    @Test
     fun downloadModeCardsReflectAppliedSelection() {
         val audioState = RuntimeDownloadState(
             appliedFormatSelection = FormatSelection(mode = FormatMode.AudioOnly),
@@ -296,6 +351,19 @@ class DownloadGuiBindingTest {
             analysis = analysis,
             selection = defaultFormatSelection(analysis),
         ).getOrThrow()
+    }
+
+    private fun renderQueuePage(state: RuntimeDownloadState) {
+        composeRule.setContent {
+            YtdlTheme {
+                LazyColumn {
+                    queuePageItems(
+                        state = state,
+                        onCancelDownload = {},
+                    )
+                }
+            }
+        }
     }
 
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(

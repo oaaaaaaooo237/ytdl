@@ -101,6 +101,8 @@ private val HistoryAccent = DefaultPalette.historyAccent
 private val SettingsAccent = DefaultPalette.settingsAccent
 private val SuccessGreen = DefaultPalette.successGreen
 private val SoftText = DefaultPalette.softText
+private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
+private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
 
 @Immutable
 data class YtdlDestination(
@@ -1166,7 +1168,7 @@ private fun formatSettingSummaries(
     )
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
+internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
     state: RuntimeDownloadState,
     onCancelDownload: () -> Unit,
 ) {
@@ -1200,6 +1202,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                     meta = "$downloaded / $total${if (state.outputPath.isNotBlank()) " · ${File(state.outputPath).name}" else ""}",
                     accent = queueCardAccent(state, palette),
                     actions = queueCardActions(state),
+                    thumbnailBitmap = state.thumbnailBitmap,
                     onCancel = onCancelDownload,
                 )
             }
@@ -1287,6 +1290,16 @@ private fun queueCardActions(state: RuntimeDownloadState): List<String> {
 }
 
 internal fun queueCardActionsForUiTest(state: RuntimeDownloadState): List<String> = queueCardActions(state)
+
+private fun queueThumbnailTag(state: RuntimeDownloadState): String {
+    return if (state.hasRealTask && state.thumbnailBitmap != null) {
+        QueueThumbnailImageTag
+    } else {
+        QueueThumbnailPlaceholderTag
+    }
+}
+
+internal fun queueThumbnailTagForUiTest(state: RuntimeDownloadState): String = queueThumbnailTag(state)
 
 private fun formatBytes(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
@@ -1628,17 +1641,31 @@ private fun QueueCard(
     accent: Color,
     actions: List<String>,
     modifier: Modifier = Modifier,
+    thumbnailBitmap: Bitmap? = null,
     onCancel: (() -> Unit)? = null,
 ) {
     val palette = LocalYtdlAppPalette.current
     AppCard(modifier = modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(58.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF74B9E7), Color(0xFFE8C27D)))),
-            )
+            if (thumbnailBitmap != null) {
+                Image(
+                    bitmap = thumbnailBitmap.asImageBitmap(),
+                    contentDescription = "队列任务缩略图",
+                    modifier = Modifier
+                        .size(58.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .testTag(QueueThumbnailImageTag),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(58.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .testTag(QueueThumbnailPlaceholderTag)
+                        .background(Brush.linearGradient(listOf(Color(0xFF74B9E7), Color(0xFFE8C27D)))),
+                )
+            }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
