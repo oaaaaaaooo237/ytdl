@@ -252,17 +252,16 @@
 
 This section records the adjusted continuation order after user review. From 2026-06-20 onward, the M4-M9 queue below is the executable continuation queue. Earlier Task 5-9 sections remain as scope inventory, but if their order conflicts with this queue, use this queue.
 
+Checkboxes before this section are historical scope inventory and must not be used to determine current Android progress. Current progress is tracked by the M1-M9 continuation tasks below and the QA ledgers.
+
 **Last recorded proven state:**
 
-- Environment preflight passed with `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`; API37 `emulator-5554` was connected in the recorded run.
-- The app can analyze the required URL through Chaquopy/yt-dlp and can perform the older direct single-file download path in the recorded run.
-- The Format page now has an initial real selection model, but GUI format selection is not the next acceptance target.
-- Native MediaProcessor contract, native `MediaMuxer` merge, real YouTube split-stream download, and required URL merge smoke evidence exist in the current working tree/test ledger.
-- yt-dlp explicit split-stream download evidence exists in the current working tree/test ledger for `tkxzMEfp49Q`: video-only format `394` and audio-only format `139` downloaded as separate files on API37.
-- Android FFmpeg is not packaged; subtitle embed and subtitle burn are MVP2 scope and do not block MVP1.
-- MVP1 still needs subtitle-file download/output modeling and GUI/history/export binding.
-- High-resolution YouTube video+audio merge through the full app path is not complete.
-- Previous visible GUI evidence that used the Android soft keyboard is not valid as final acceptance evidence.
+- Environment preflight passed on 2026-06-21 with `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`; API37 `emulator-5554` was connected.
+- M1-M8 are complete at capability, binding, or auxiliary-instrumentation level: native MediaProcessor contract, native `MediaMuxer` merge, explicit split-stream downloads, required URL core merge, separate subtitle-file output, foreground download orchestration, GUI binding, history/export/cookies privacy, failure messages, Play data-safety/privacy/license drafts, and M9 preflight fixes exist in the current tree and QA ledger.
+- API37 auxiliary checks have proven real analysis, real split downloads, real native merge, independent subtitle download, UIAutomator real download/queue/history binding, and five-page adb screenshot visual sanity.
+- Android FFmpeg is not packaged; subtitle embed, subtitle burn, and video+audio+subtitle three-in-one output are MVP2 scope and do not block MVP1.
+- Computer Use foreground visible full acceptance is still blocked by the current tool-layer `sandboxPolicy` error and must not be counted as passed.
+- Previous visible GUI evidence that used the Android soft keyboard remains invalid as final acceptance evidence.
 
 **Adjusted priority:** stop repeating GUI tests around the old FFmpeg merge label. MVP1 uses native MediaMuxer for compatible split video/audio merge and outputs subtitles as separate files. Build subtitle-file download/output, foreground service, queue, history, export/privacy flows, and then perform one complete foreground visible test path.
 
@@ -284,13 +283,13 @@ This section records the adjusted continuation order after user review. From 202
 - Modify: `docs/qa/android-full-visual-test-plan.md`
 
 **Steps:**
-- [ ] Document the current facts: MVP1 does not package Android FFmpeg, Windows `ffmpeg.exe` is unusable on Android, and native `MediaMuxer` is the MVP1 merge path.
-- [ ] Define `MediaMergeRequest(videoInput, audioInput, outputFile, outputContainer, expectedVideoFormatId, expectedAudioFormatId)`.
-- [ ] Define `MediaProcessingResult(outputFile, bytesWritten, videoTrackCount, audioTrackCount, processorName)`.
-- [ ] Define `MediaProcessor` with `mergeVideoAndAudio(request): Result<MediaProcessingResult>`.
-- [ ] Unit-test that merge requests require distinct readable video/audio inputs and an app-private output file.
-- [ ] Unit-test that subtitle embed/burn is explicitly unsupported by the native muxer processor and must route to MVP2.
-- [ ] Verify:
+- [x] Document the current facts: MVP1 does not package Android FFmpeg, Windows `ffmpeg.exe` is unusable on Android, and native `MediaMuxer` is the MVP1 merge path.
+- [x] Define `MediaMergeRequest(videoInput, audioInput, outputFile, outputContainer, expectedVideoFormatId, expectedAudioFormatId)`.
+- [x] Define `MediaProcessingResult(outputFile, bytesWritten, videoTrackCount, audioTrackCount, processorName)`.
+- [x] Define `MediaProcessor` with `mergeVideoAndAudio(request): Result<MediaProcessingResult>`.
+- [x] Unit-test that merge requests require distinct readable video/audio inputs and an app-private output file.
+- [x] Unit-test that subtitle embed/burn is explicitly unsupported by the native muxer processor and must route to MVP2.
+- [x] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`
   - `cd android; .\gradlew.bat :app:assembleDebug`
 
@@ -309,11 +308,11 @@ This section records the adjusted continuation order after user review. From 202
 - Create or update: `docs/android-media-processor.md`
 
 **Steps:**
-- [ ] Add a small test asset generator in the instrumented test using Android `MediaMuxer`/`MediaCodec` or copy a minimal generated fixture into app-private test storage.
-- [ ] Write a failing instrumented test that calls `mergeVideoAndAudio()` and asserts the output file exists and has both video and audio tracks.
-- [ ] Implement `NativeMuxerMediaProcessor` by copying encoded samples from the source video track and audio track into a new MP4 muxer output without shell commands.
-- [ ] Add defensive checks for missing tracks, unreadable inputs, zero-byte outputs, and unsupported container choices.
-- [ ] Verify:
+- [x] Add a small test asset generator in the instrumented test using Android `MediaMuxer`/`MediaCodec` or copy a minimal generated fixture into app-private test storage.
+- [x] Write a failing instrumented test that calls `mergeVideoAndAudio()` and asserts the output file exists and has both video and audio tracks.
+- [x] Implement `NativeMuxerMediaProcessor` by copying encoded samples from the source video track and audio track into a new MP4 muxer output without shell commands.
+- [x] Add defensive checks for missing tracks, unreadable inputs, zero-byte outputs, and unsupported container choices.
+- [x] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`
   - `cd android; .\gradlew.bat :app:assembleDebug`
   - `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.media.NativeMuxerMediaProcessorInstrumentedTest"`
@@ -334,11 +333,11 @@ This section records the adjusted continuation order after user review. From 202
 - Modify: `android/app/src/androidTest/java/com/garyapp/ytdl/core/ytdlp/YtdlpBridgeInstrumentedTest.kt`
 
 **Steps:**
-- [ ] Add `download_format(url, output_dir, format_id, role, cookies_path, progress_listener)` in Python and return output path, bytes, title, and actual format id.
-- [ ] Add Kotlin `downloadFormat()` wrapper that accepts an explicit format id and never substitutes `18/worst` unless the request says direct fallback is allowed.
-- [ ] Unit-test JSON parsing and request validation for explicit video/audio format ids.
-- [ ] Add an API37 instrumentation test against `https://www.youtube.com/watch?v=tkxzMEfp49Q` that downloads one selected video-only format and one selected audio-only format to app-private storage.
-- [ ] Verify output files are non-empty and have separate roles recorded.
+- [x] Add `download_format(url, output_dir, format_id, role, cookies_path, progress_listener)` in Python and return output path, bytes, title, and actual format id.
+- [x] Add Kotlin `downloadFormat()` wrapper that accepts an explicit format id and never substitutes `18/worst` unless the request says direct fallback is allowed.
+- [x] Unit-test JSON parsing and request validation for explicit video/audio format ids.
+- [x] Add an API37 instrumentation test against `https://www.youtube.com/watch?v=tkxzMEfp49Q` that downloads one selected video-only format and one selected audio-only format to app-private storage.
+- [x] Verify output files are non-empty and have separate roles recorded.
 
 **Acceptance:** This task is accepted only when the required URL can produce two real files on API37: one video-only and one audio-only. This is still not GUI acceptance.
 
@@ -353,12 +352,12 @@ This section records the adjusted continuation order after user review. From 202
 - Create or update: `docs/android-media-processor.md`
 
 **Steps:**
-- [ ] Analyze `https://www.youtube.com/watch?v=tkxzMEfp49Q` on API37.
-- [ ] Select a video-only format and a standalone audio format from actual `VideoAnalysis.formats`.
-- [ ] Download both selected formats with `downloadFormat()`.
-- [ ] Merge them with `NativeMuxerMediaProcessor.mergeVideoAndAudio()`.
-- [ ] Inspect the merged output with `MediaExtractor` and assert video track count is 1 and audio track count is 1.
-- [ ] Record output file path, bytes, format ids, SDK, device, and test timestamp in `docs/android-media-processor.md`.
+- [x] Analyze `https://www.youtube.com/watch?v=tkxzMEfp49Q` on API37.
+- [x] Select a video-only format and a standalone audio format from actual `VideoAnalysis.formats`.
+- [x] Download both selected formats with `downloadFormat()`.
+- [x] Merge them with `NativeMuxerMediaProcessor.mergeVideoAndAudio()`.
+- [x] Inspect the merged output with `MediaExtractor` and assert video track count is 1 and audio track count is 1.
+- [x] Record output file path, bytes, format ids, SDK, device, and test timestamp in `docs/android-media-processor.md`.
 
 **Acceptance:** This task is accepted only when the merged file exists and is proven to contain both tracks. No GUI flow is considered complete before this passes.
 
@@ -378,13 +377,13 @@ This section records the adjusted continuation order after user review. From 202
 - Modify: `docs/qa/android-full-visual-test-plan.md`
 
 **Steps:**
-- [ ] Parse available subtitles and automatic subtitles from yt-dlp analysis without logging sensitive request data.
-- [ ] Add an explicit subtitle download request that selects language and extension; reject selector/fallback expressions.
-- [ ] Download subtitle files to app-private storage and return path, bytes, language, extension, and source type.
-- [ ] Associate subtitle outputs with the same queue/history item as the merged video+audio file.
-- [ ] Unit-test request validation, JSON parsing, and sensitive text redaction.
-- [ ] API37 instrumentation: analyze `tkxzMEfp49Q`, download one available subtitle or record a clear `no subtitles available` status with a second fixture URL if needed.
-- [ ] Verify:
+- [x] Parse available subtitles and automatic subtitles from yt-dlp analysis without logging sensitive request data.
+- [x] Add an explicit subtitle download request that selects language and extension; reject selector/fallback expressions.
+- [x] Download subtitle files to app-private storage and return path, bytes, language, extension, and source type.
+- [x] Associate subtitle outputs with the same queue/history item as the merged video+audio file.
+- [x] Unit-test request validation, JSON parsing, and sensitive text redaction.
+- [x] API37 instrumentation: analyze `tkxzMEfp49Q`, download one available subtitle or record a clear `no subtitles available` status with a second fixture URL if needed.
+- [x] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`
   - `cd android; .\gradlew.bat :app:assembleDebug`
 
@@ -408,14 +407,14 @@ This section records the adjusted continuation order after user review. From 202
 - Modify: `docs/qa/android-full-visual-test-plan.md`
 
 **Steps:**
-- [ ] Build `DownloadRequest` from `VideoAnalysis` and applied `FormatSelection`.
-- [ ] Route direct single-file choices to the existing single-file path only when the chosen format truly contains both audio and video.
-- [ ] Route merge-required choices to explicit video/audio format downloads and `MediaProcessor`; they must not call `downloadSingleFile()`.
-- [ ] Route subtitle choices to separate subtitle-file download in MVP1.
-- [ ] Model queue states separately: analyzing, waiting, downloading video, downloading audio, downloading subtitles, merging, exporting, completed, failed, canceled.
-- [ ] Add foreground service declaration and notification controller; notification permission denial must not hide in-app progress.
-- [ ] Unit-test direct, video-only, audio-only, merge-required, subtitle-file, cancellation, and failure routing.
-- [ ] Verify:
+- [x] Build `DownloadRequest` from `VideoAnalysis` and applied `FormatSelection`.
+- [x] Route direct single-file choices to the existing single-file path only when the chosen format truly contains both audio and video.
+- [x] Route merge-required choices to explicit video/audio format downloads and `MediaProcessor`; they must not call `downloadSingleFile()`.
+- [x] Route subtitle choices to separate subtitle-file download in MVP1.
+- [x] Model queue states separately: analyzing, waiting, downloading video, downloading audio, downloading subtitles, merging, exporting, completed, failed, canceled.
+- [x] Add foreground service declaration and notification controller; notification permission denial must not hide in-app progress.
+- [x] Unit-test direct, video-only, audio-only, merge-required, subtitle-file, cancellation, and failure routing.
+- [x] Verify:
   - `cd android; .\gradlew.bat :app:testDebugUnitTest`
   - `cd android; .\gradlew.bat :app:assembleDebug`
 
