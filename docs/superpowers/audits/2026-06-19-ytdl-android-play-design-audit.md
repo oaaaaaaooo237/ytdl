@@ -6,6 +6,8 @@
 
 2026-06-20 用户再次确认修正：Android Play MVP1 以原生 `MediaMuxer` 合并分离视频/音频流为主；带字幕任务输出合并后的视频音频文件和独立字幕文件。字幕嵌入、字幕烧录、视频+音频+字幕三合一输出进入 MVP2。本文早期关于 MVP1 强制集成 FFmpeg 的结论已被新的设计文档和实现计划覆盖。
 
+2026-06-21 用户再次确认修正：URL 策略只保留空 URL、非法 URL、非 http/https 这类基础校验；不内置成人域名、站点类型或其他域名屏蔽清单。Play 合规通过商店文案、截图素材、授权提示、知识产权说明和不绕过 DRM/付费墙等边界处理，不在 `UrlPolicy` 中按域名提前拒绝分析。
+
 ## 审计依据
 
 - Google Play 不当内容政策：https://support.google.com/googleplay/android-developer/answer/9878810
@@ -28,13 +30,13 @@
 3. 媒体处理设计前后不一致：技术路线曾要求打包 Android ABI FFmpeg，MVP 又说只做检测和能力说明。后续最新口径已调整为 MVP1 原生 `MediaMuxer` 合并和独立字幕文件，MVP2 再处理字幕嵌入、烧录和三合一输出。
 4. 存储策略不够 Android 化。Android 11+ 对 SAF 目录选择有根目录、Download、Android/data、Android/obb 等限制；“选择保存位置”需要拆成 app 私有目录、MediaStore Downloads、ACTION_CREATE_DOCUMENT/OPEN_DOCUMENT_TREE 的不同路径。
 5. 前台服务要求不够具体。需要明确 foreground service type、通知权限、取消/失败行为、真实进度来源，以及 Android 13+ 通知权限被拒绝时的降级说明。
-6. Play 合规交付物不足。需要在设计中列出 Data safety 数据表、隐私政策、权限清单、商店文案/截图审查、成人域名拦截、知识产权声明等可验收项。
+6. Play 合规交付物不足。需要在设计中列出 Data safety 数据表、隐私政策、权限清单、商店文案/截图审查、授权/知识产权声明等可验收项；不得通过内置域名屏蔽清单替代用户授权与 Play 合规说明。
 7. MVP 范围含混：核心流程支持多个 URL，但第一阶段 MVP 又写单任务下载。需要用阶段表明确第一阶段只实现单 URL/单活动任务，批量队列作为后续。
 8. Chaquopy 平台约束未写入验收。需要明确 minSdk 至少 24，首版 ABI 只支持 `arm64-v8a` 和 `x86_64`，并把包体积作为验收风险。
 
 ### 非阻塞改进
 
-1. URL 风险拦截应写成静态本地域名策略，避免运行时远程规则更新带来额外合规面。
+1. URL 策略只做基础本地校验：空 URL、非法 URL、非 http/https；不要做静态或远程域名屏蔽清单。
 2. 历史记录应明确不保存完整敏感 URL 查询串、请求头、cookies、Authorization。
 3. 缩略图安全请求头规则应与 Windows 版一致，继续只允许 User-Agent、Accept、Accept-Language、Referer。
 
