@@ -587,6 +587,8 @@ cd android
 
 本轮阻断证据：尝试通过 Computer Use 技能入口连接 Windows 自动化 helper 时，工具调用失败：`Mcp error: -32602: js: codex/sandbox-state-meta: missing field sandboxPolicy`。2026-06-21 再次按技能流程确认入口文件存在，连接轻量 `list_apps()` 失败；重置会话后重试仍为同一错误。因此本轮没有完成“前台可见模拟器窗口 + Computer Use 全流程”验收。
 
+2026-06-21 继续复核：再次重置连接上下文后执行轻量 `list_apps()`，仍返回同一 `sandboxPolicy` 工具层错误。作为辅助视觉巡检，已用 adb 安装当前 APK、前台启动 API37 模拟器并截图查看下载、格式、队列、历史、设置五页空态；五页布局和关键文案可见，队列页有可滚动区域，设置页明确“仅校验空地址、非法地址和非 http/https”。该辅助巡检只用于发现明显 GUI 偏差，不计入 T12 通过证据。
+
 ## 当前总状态
 
 | 测试项 | 状态 | 说明 |

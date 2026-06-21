@@ -67,6 +67,14 @@ Mcp error: -32602: js: codex/sandbox-state-meta: missing field `sandboxPolicy`
 - 触发一个真实失败恢复路径
 - 用 Shorts 链接做兼容抽样
 
+2026-06-21 继续复核：重置 Windows 自动化连接上下文后，再次按 Computer Use 技能入口执行轻量 `list_apps()`，仍在工具调用层返回同一错误：
+
+```text
+Mcp error: -32602: js: codex/sandbox-state-meta: missing field `sandboxPolicy`
+```
+
+同日辅助检查：已重新安装当前 `app-debug.apk` 并启动到 API37 模拟器前台，用 adb 截图巡检下载、格式、队列、历史、设置五个页面空态。该检查确认 GUI 不再是壳层占位页，五个底部页面、顶部挖孔安全区、队列滚动条、cookies/媒体处理/隐私说明、基础 URL 校验文案均可见；但它不是 Computer Use 前台可视全流程验收，不能替代 T12。
+
 ## 下一步
 
 1. 等 Computer Use 工具层恢复后，安装当前 APK 到 `ytdl_api37_play_x86_64`。
