@@ -62,7 +62,7 @@ class YtdlAppUiTest {
         tapTag("ytdl-tab-queue")
         assertTagVisible("ytdl-screen-queue")
         assertTagVisible("ytdl-queue-active-card")
-        assertTagVisible("ytdl-queue-scroll-indicator")
+        assertTagNotVisible("ytdl-queue-scroll-indicator")
 
         tapTag("ytdl-tab-history")
         assertTagVisible("ytdl-screen-history")
@@ -78,7 +78,7 @@ class YtdlAppUiTest {
     fun queueScreenShowsEmptyStateWithoutDemoFailureCard() {
         tapTag("ytdl-tab-queue")
         assertTagVisible("ytdl-queue-active-card")
-        assertTagVisible("ytdl-queue-scroll-indicator")
+        assertTagNotVisible("ytdl-queue-scroll-indicator")
         assertTextContains("暂无真实下载任务", timeoutMs = 1_000)
     }
 
@@ -126,6 +126,7 @@ class YtdlAppUiTest {
         tapTag("ytdl-format-apply")
         assertTagVisible("ytdl-screen-download")
         assertTextContains("1080p", timeoutMs = 1_000)
+        tapTag("ytdl-download-authorized-checkbox")
         saveScreen("${screenshotPrefix}03-format-applied.png")
 
         if (!completeDownloadAndHistory) {
@@ -218,6 +219,11 @@ class YtdlAppUiTest {
     private fun assertTagVisible(tag: String, timeoutMs: Long = 5_000) {
         val node = findTag(tag, timeoutMs = timeoutMs)
         assertNotNull("未看到页面 UI 节点：$tag", node)
+    }
+
+    private fun assertTagNotVisible(tag: String, timeoutMs: Long = 800) {
+        val node = findTag(tag, timeoutMs = timeoutMs)
+        assertTrue("不应看到页面 UI 节点：$tag", node == null)
     }
 
     private fun scrollUntilTag(tag: String) {

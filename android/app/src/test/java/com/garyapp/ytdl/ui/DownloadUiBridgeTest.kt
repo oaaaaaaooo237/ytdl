@@ -293,6 +293,75 @@ class DownloadUiBridgeTest {
         assertEquals(0L, next.outputBytes)
     }
 
+    @Test
+    fun ytdlAppSourceDoesNotHardBindComponentsToReferencePaletteConstants() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        listOf(
+            "private val FormatAccent =",
+            "private val HistoryAccent =",
+            "private val SuccessGreen =",
+            "private val SoftText =",
+            "color = FormatAccent",
+            "accent = HistoryAccent",
+            "color = SuccessGreen",
+            "color = SoftText",
+        ).forEach { forbidden ->
+            assertFalse("source still hard-binds UI to reference palette: $forbidden", source.contains(forbidden))
+        }
+        assertTrue(source.contains("LocalYtdlAppPalette.current"))
+        assertTrue(source.contains("ytdl-settings-color-preset"))
+    }
+    @Test
+    fun startDownloadGateRequiresAnalysisAndUserAuthorization() {
+        val analyzed = RuntimeDownloadState(
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+        )
+
+        assertFalse(canStartDownloadForUiTest(RuntimeDownloadState(), hasUserConfirmed = true))
+        assertFalse(canStartDownloadForUiTest(analyzed, hasUserConfirmed = false))
+        assertFalse(canStartDownloadForUiTest(analyzed.copy(isAnalyzing = true), hasUserConfirmed = true))
+        assertFalse(canStartDownloadForUiTest(analyzed.copy(isDownloading = true), hasUserConfirmed = true))
+        assertTrue(canStartDownloadForUiTest(analyzed, hasUserConfirmed = true))
+    }
+
+    @Test
+    fun queueScrollIndicatorOnlyAppearsForRealQueueState() {
+        assertFalse(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState()))
+        assertTrue(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState(isDownloading = true)))
+        assertTrue(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState(downloadStatus = "下载视频")))
+    }
+
+    @Test
+    fun historySearchAndTypeFilterUseLoadedLocalItems() {
+        val video = HistoryUiItem(
+            id = 1,
+            title = "航拍测试视频",
+            meta = "视频+音频 · 720p MP4",
+            badge = "完成",
+            outputUri = "app-private://outputs/video.mp4",
+            status = "completed",
+            completedAt = 1_000L,
+        )
+        val audio = HistoryUiItem(
+            id = 2,
+            title = "访谈音频",
+            meta = "仅音频 · m4a",
+            badge = "完成",
+            outputUri = "app-private://outputs/audio.m4a",
+            status = "completed",
+            completedAt = 2_000L,
+        )
+        val items = listOf(video, audio)
+
+        assertEquals(listOf(video), filterHistoryItemsForUiTest(items, query = "航拍", selectedFilterIndex = 0))
+        assertEquals(listOf(video), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 1))
+        assertEquals(listOf(audio), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 2))
+        assertEquals(emptyList<HistoryUiItem>(), filterHistoryItemsForUiTest(items, query = "不存在", selectedFilterIndex = 0))
+    }
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(
         title = "测试视频",
         durationSeconds = 60,

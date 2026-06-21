@@ -95,18 +95,7 @@ import java.net.URL
 import java.util.Locale
 
 private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
-private val AppBackground = DefaultPalette.appBackground
-private val BottomBarBackground = DefaultPalette.bottomBarBackground
-private val CardBackground = DefaultPalette.cardBackground
-private val MutedCardBackground = DefaultPalette.mutedCardBackground
-private val BorderColor = DefaultPalette.borderColor
-private val DownloadAccent = DefaultPalette.downloadAccent
-private val FormatAccent = DefaultPalette.formatAccent
-private val QueueAccent = DefaultPalette.queueAccent
-private val HistoryAccent = DefaultPalette.historyAccent
-private val SettingsAccent = DefaultPalette.settingsAccent
-private val SuccessGreen = DefaultPalette.successGreen
-private val SoftText = DefaultPalette.softText
+
 private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
 private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
 
@@ -208,6 +197,9 @@ fun YtdlApp() {
     val context = LocalContext.current
     var selectedRoute by rememberSaveable { mutableStateOf("download") }
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
+    var hasUserConfirmed by rememberSaveable { mutableStateOf(false) }
+    var historyQuery by rememberSaveable { mutableStateOf("") }
+    var historyFilterIndex by rememberSaveable { mutableStateOf(0) }
     val settingsRepository = remember { SettingsRepository.fromContext(context.applicationContext) }
     var appSettings by remember { mutableStateOf(settingsRepository.getSettings()) }
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
@@ -389,6 +381,16 @@ fun YtdlApp() {
     }
 
     fun startRealDownload() {
+        if (!canStartDownload(runtimeState, hasUserConfirmed)) {
+            runtimeState = runtimeState.copy(
+                userMessage = if (runtimeState.analysis == null) {
+                    "请先分析公开视频页面地址。"
+                } else {
+                    "请先确认有权保存该内容。"
+                },
+            )
+            return
+        }
         val url = runtimeState.url.trim()
         val temporaryCookies = prepareTemporaryCookiesForDownload(
             settingsReference = appSettings.cookiesReference,
@@ -515,6 +517,23 @@ fun YtdlApp() {
         }.start()
     }
 
+    fun selectDownloadMode(mode: FormatMode) {
+        val selection = selectBestAvailableFormatSelection(
+            analysis = runtimeState.analysis,
+            mode = mode,
+            preferredHeight = runtimeState.formatSelection.selectedHeight,
+        )
+        runtimeState = runtimeState.copy(
+            formatSelection = selection,
+            appliedFormatSelection = selection,
+            userMessage = if (runtimeState.analysis == null) {
+                "已切换下载模式：${mode.label}，请先分析后生成真实格式。"
+            } else {
+                "已切换下载模式：${formatSelectionSummary(runtimeState.analysis, selection)}。"
+            },
+        )
+    }
+
     YtdlTheme(config = themeConfigForSettings(appSettings)) {
         val palette = LocalYtdlAppPalette.current
         val destinations = ytdlNavigationDestinations(palette)
@@ -548,7 +567,9 @@ fun YtdlApp() {
                     when (selected.route) {
                         "download" -> downloadPageItems(
                             state = runtimeState,
+                            hasUserConfirmed = hasUserConfirmed,
                             onUrlChange = {
+                                hasUserConfirmed = false
                                 runtimeState = runtimeState.copy(
                                     url = it,
                                     analysis = null,
@@ -561,6 +582,8 @@ fun YtdlApp() {
                             },
                             onAnalyze = ::analyzeCurrentUrl,
                             onStartDownload = ::startRealDownload,
+                            onUserConfirmedChange = { hasUserConfirmed = it },
+                            onModeSelected = ::selectDownloadMode,
                         )
                         "formats" -> formatPageItems(
                             analysis = runtimeState.analysis,
@@ -592,6 +615,10 @@ fun YtdlApp() {
                         )
                         "history" -> historyPageItems(
                             historyItems = historyItems,
+                            historyQuery = historyQuery,
+                            selectedFilterIndex = historyFilterIndex,
+                            onHistoryQueryChange = { historyQuery = it },
+                            onHistoryFilterChange = { historyFilterIndex = it },
                             onOpen = ::openHistoryItem,
                             onShare = ::shareHistoryItem,
                             onExport = ::exportHistoryItem,
@@ -625,7 +652,7 @@ fun YtdlApp() {
                         )
                     }
                 }
-                if (selected.route == "queue") {
+                if (selected.route == "queue" && shouldShowQueueScrollIndicator(runtimeState)) {
                     QueueScrollIndicator(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
@@ -879,9 +906,12 @@ private fun QueueScrollIndicator(modifier: Modifier = Modifier) {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     state: RuntimeDownloadState,
+    hasUserConfirmed: Boolean,
     onUrlChange: (String) -> Unit,
     onAnalyze: () -> Unit,
     onStartDownload: () -> Unit,
+    onUserConfirmedChange: (Boolean) -> Unit,
+    onModeSelected: (FormatMode) -> Unit,
 ) {
     val modeSelections = downloadModeSelections(state)
     item {
@@ -945,14 +975,45 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     item {
         SectionTitle("下载模式")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ModeCard("♫", "仅音频", selected = modeSelections[FormatMode.AudioOnly] == true, modifier = Modifier.weight(1f))
-            ModeCard("▣", "视频+音频", selected = modeSelections[FormatMode.VideoAndAudio] == true, modifier = Modifier.weight(1f))
-            ModeCard("▤", "仅视频", selected = modeSelections[FormatMode.VideoOnly] == true, modifier = Modifier.weight(1f))
+            ModeCard(
+                "♫",
+                "仅音频",
+                selected = modeSelections[FormatMode.AudioOnly] == true,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onModeSelected(FormatMode.AudioOnly) }
+                    .testTag("ytdl-download-mode-audio"),
+            )
+            ModeCard(
+                "▣",
+                "视频+音频",
+                selected = modeSelections[FormatMode.VideoAndAudio] == true,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onModeSelected(FormatMode.VideoAndAudio) }
+                    .testTag("ytdl-download-mode-av"),
+            )
+            ModeCard(
+                "▤",
+                "仅视频",
+                selected = modeSelections[FormatMode.VideoOnly] == true,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onModeSelected(FormatMode.VideoOnly) }
+                    .testTag("ytdl-download-mode-video"),
+            )
         }
     }
     item {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Checkbox(checked = true, onCheckedChange = {})
+            Checkbox(
+                checked = hasUserConfirmed,
+                onCheckedChange = onUserConfirmedChange,
+                modifier = Modifier.testTag("ytdl-download-authorized-checkbox"),
+            )
             Text("我确认有权保存该内容", style = MaterialTheme.typography.bodyMedium)
         }
     }
@@ -960,7 +1021,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
         val palette = LocalYtdlAppPalette.current
         Button(
             onClick = onStartDownload,
-            enabled = !state.isDownloading,
+            enabled = canStartDownload(state, hasUserConfirmed),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("ytdl-download-start"),
@@ -971,6 +1032,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
             Text(if (state.isDownloading) "↓  下载中" else "↓  开始下载", fontWeight = FontWeight.Bold)
         }
     }
+}
+
+internal fun canStartDownloadForUiTest(state: RuntimeDownloadState, hasUserConfirmed: Boolean): Boolean = canStartDownload(state, hasUserConfirmed)
+
+private fun canStartDownload(state: RuntimeDownloadState, hasUserConfirmed: Boolean): Boolean {
+    return !state.isAnalyzing && !state.isDownloading && state.analysis != null && hasUserConfirmed
 }
 
 internal fun downloadModeSelectionsForUiTest(state: RuntimeDownloadState): Map<FormatMode, Boolean> = downloadModeSelections(state)
@@ -1036,7 +1103,11 @@ private fun DownloadPreviewCard(state: RuntimeDownloadState) {
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(if (analysis == null) "请输入地址并分析" else "分析完成 · 公开授权内容由用户确认", color = SuccessGreen, style = MaterialTheme.typography.bodySmall)
+        Text(
+            if (analysis == null) "请输入地址并分析" else "分析完成 · 公开授权内容由用户确认",
+            color = LocalYtdlAppPalette.current.successGreen,
+            style = MaterialTheme.typography.bodySmall,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
             InfoPill("时长", duration)
             InfoPill("格式", formatSummary)
@@ -1296,6 +1367,10 @@ private fun queueHeaderSummary(state: RuntimeDownloadState): String {
 
 internal fun queueHeaderSummaryForUiTest(state: RuntimeDownloadState): String = queueHeaderSummary(state)
 
+internal fun shouldShowQueueScrollIndicatorForUiTest(state: RuntimeDownloadState): Boolean = shouldShowQueueScrollIndicator(state)
+
+private fun shouldShowQueueScrollIndicator(state: RuntimeDownloadState): Boolean = state.hasRealTask
+
 private fun queueCardSubtitle(state: RuntimeDownloadState): String {
     val status = state.downloadStatus.ifBlank { "等待进度" }
     return when (state.downloadStatus) {
@@ -1390,36 +1465,82 @@ internal fun appearanceSummaryForUiTest(settings: AppSettings): String {
     return "$preset · $mode"
 }
 
+private val HistoryFilterOptions = listOf("全部", "视频", "音频")
+
+internal fun filterHistoryItemsForUiTest(
+    historyItems: List<HistoryUiItem>,
+    query: String,
+    selectedFilterIndex: Int,
+): List<HistoryUiItem> = filterHistoryItems(historyItems, query, selectedFilterIndex)
+
+private fun filterHistoryItems(
+    historyItems: List<HistoryUiItem>,
+    query: String,
+    selectedFilterIndex: Int,
+): List<HistoryUiItem> {
+    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+    return historyItems.filter { item ->
+        val searchable = listOf(item.title, item.meta, item.badge).joinToString(" ").lowercase(Locale.ROOT)
+        val matchesQuery = normalizedQuery.isBlank() || searchable.contains(normalizedQuery)
+        val matchesType = when (selectedFilterIndex) {
+            1 -> !isAudioOnlyHistory(item)
+            2 -> isAudioOnlyHistory(item)
+            else -> true
+        }
+        matchesQuery && matchesType
+    }
+}
+
+private fun isAudioOnlyHistory(item: HistoryUiItem): Boolean {
+    val searchable = "${item.title} ${item.meta}".lowercase(Locale.ROOT)
+    return searchable.contains("仅音频") || (searchable.contains("音频") && !searchable.contains("视频"))
+}
+
 private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
     historyItems: List<HistoryUiItem>,
+    historyQuery: String,
+    selectedFilterIndex: Int,
+    onHistoryQueryChange: (String) -> Unit,
+    onHistoryFilterChange: (Int) -> Unit,
     onOpen: (HistoryUiItem) -> Unit,
     onShare: (HistoryUiItem) -> Unit,
     onExport: (HistoryUiItem) -> Unit,
     onDelete: (HistoryUiItem) -> Unit,
 ) {
+    val visibleItems = filterHistoryItems(historyItems, historyQuery, selectedFilterIndex)
     item {
         OutlinedTextField(
-            value = "",
-            onValueChange = {},
-            modifier = Modifier.fillMaxWidth(),
+            value = historyQuery,
+            onValueChange = onHistoryQueryChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ytdl-history-search"),
             placeholder = { Text("搜索历史") },
             leadingIcon = { Text("⌕") },
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
         )
     }
-    item { SegmentedRow(listOf("全部", "视频", "音频"), selectedIndex = 0, accent = HistoryAccent) }
-    if (historyItems.isEmpty()) {
+    item {
+        SegmentedRow(
+            HistoryFilterOptions,
+            selectedIndex = selectedFilterIndex.coerceIn(HistoryFilterOptions.indices),
+            accent = LocalYtdlAppPalette.current.historyAccent,
+            testTagPrefix = "ytdl-history-filter",
+            onSelected = onHistoryFilterChange,
+        )
+    }
+    if (visibleItems.isEmpty()) {
         item {
             AppCard(modifier = Modifier.testTag("ytdl-history-empty-card")) {
                 val palette = LocalYtdlAppPalette.current
-                Text("暂无真实历史记录，完成下载后会显示", color = palette.titleText, fontWeight = FontWeight.Bold)
+                Text(if (historyItems.isEmpty()) "暂无真实历史记录，完成下载后会显示" else "没有匹配的历史记录", color = palette.titleText, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
-                Text("历史页已接入本地 Room 记录；当前数据库为空。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
+                Text(if (historyItems.isEmpty()) "历史页已接入本地 Room 记录；当前数据库为空。" else "请调整搜索关键词或分类筛选。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
             }
         }
     } else {
-        items(historyItems) { item ->
+        items(visibleItems) { item ->
             HistoryCard(
                 item = item,
                 onOpen = { onOpen(item) },
@@ -1626,6 +1747,7 @@ private fun SegmentedRow(
 
 @Composable
 private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
+    val palette = LocalYtdlAppPalette.current
     val tagSuffix = row.height?.toString() ?: "auto"
     val badge = when {
         row.mergeRequired -> "需原生合并"
@@ -1637,7 +1759,7 @@ private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (row.selected) Color(0xFFEAF8F5) else Color.Transparent)
+            .background(if (row.selected) palette.formatAccent.copy(alpha = 0.11f) else Color.Transparent)
             .clickable(enabled = row.selectable, onClick = onSelect)
             .testTag("ytdl-format-row-$tagSuffix")
             .padding(horizontal = 8.dp, vertical = 10.dp),
@@ -1646,18 +1768,23 @@ private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
     ) {
         Text(
             text = if (row.selected) "✓" else "○",
-            color = if (row.selected) FormatAccent else Color(0xFF979C96),
+            color = if (row.selected) palette.formatAccent else palette.softText.copy(alpha = 0.65f),
             fontWeight = FontWeight.Bold,
         )
         Text(
             text = row.label,
             modifier = Modifier.weight(1f),
-            color = if (row.selectable) Color(0xFF191D1A) else Color(0xFFB7B1AA),
+            color = if (row.selectable) palette.titleText else palette.softText.copy(alpha = 0.55f),
             fontWeight = if (row.selected) FontWeight.Bold else FontWeight.Normal,
         )
         if (badge != null) {
-            Surface(color = Color(0xFFEDE9E3), shape = RoundedCornerShape(10.dp)) {
-                Text(badge, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), color = SoftText, style = MaterialTheme.typography.labelSmall)
+            Surface(color = palette.mutedCardBackground, shape = RoundedCornerShape(10.dp)) {
+                Text(
+                    badge,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    color = palette.softText,
+                    style = MaterialTheme.typography.labelSmall,
+                )
             }
         }
     }
@@ -1669,10 +1796,12 @@ private fun SettingLineCard(
     subtitle: String,
     leading: String,
     trailing: String,
-    accent: Color = FormatAccent,
+    accent: Color? = null,
     inCard: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalYtdlAppPalette.current
+    val resolvedAccent = accent ?: palette.formatAccent
     val content: @Composable ColumnScope.() -> Unit = {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1683,16 +1812,16 @@ private fun SettingLineCard(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(accent.copy(alpha = 0.15f)),
+                    .background(resolvedAccent.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(leading, color = accent, fontWeight = FontWeight.Bold)
+                Text(leading, color = resolvedAccent, fontWeight = FontWeight.Bold)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, color = SoftText, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Text(trailing, color = SoftText, style = MaterialTheme.typography.titleMedium)
+            Text(trailing, color = palette.softText, style = MaterialTheme.typography.titleMedium)
         }
     }
 
