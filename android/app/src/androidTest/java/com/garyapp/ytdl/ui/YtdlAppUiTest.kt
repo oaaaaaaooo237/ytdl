@@ -75,6 +75,24 @@ class YtdlAppUiTest {
     }
 
     @Test
+    fun settingsAppearanceColorPresetsAreVisibleAndSummaryUpdates() {
+        tapTag("ytdl-tab-settings")
+        scrollUntilTag("ytdl-settings-color-preset-1")
+        assertTextContains("基准图配色", timeoutMs = 1_000)
+        assertTextContains("Codex 风格", timeoutMs = 1_000)
+
+        try {
+            tapTag("ytdl-settings-color-preset-0")
+            assertTextContains("基准图配色 · 跟随系统", timeoutMs = 2_000)
+            tapTag("ytdl-settings-color-preset-1")
+            assertTextContains("Codex 风格 · 跟随系统", timeoutMs = 2_000)
+        } finally {
+            findTag("ytdl-settings-color-preset-0", timeoutMs = 1_000)?.click()
+            device.waitForIdle()
+        }
+    }
+
+    @Test
     fun queueScreenShowsEmptyStateWithoutDemoFailureCard() {
         tapTag("ytdl-tab-queue")
         assertTagVisible("ytdl-queue-active-card")
