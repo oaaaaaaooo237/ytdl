@@ -585,7 +585,7 @@ cd android
 
 当前状态：未完成。2026-06-21 命令层和 API37 connected 层已通过，但 Computer Use 前台可视操作入口仍因工具层错误阻断，不能记为 T12 通过。
 
-本轮阻断证据：尝试通过 Node REPL bootstrap Computer Use 时，工具调用失败：`Mcp error: -32602: js: codex/sandbox-state-meta: missing field sandboxPolicy`。因此本轮没有完成“前台可见模拟器窗口 + Computer Use 全流程”验收。
+本轮阻断证据：尝试通过 Computer Use 技能入口连接 Windows 自动化 helper 时，工具调用失败：`Mcp error: -32602: js: codex/sandbox-state-meta: missing field sandboxPolicy`。2026-06-21 再次按技能流程确认入口文件存在，连接轻量 `list_apps()` 失败；重置会话后重试仍为同一错误。因此本轮没有完成“前台可见模拟器窗口 + Computer Use 全流程”验收。
 
 ## 当前总状态
 
