@@ -198,3 +198,28 @@ cd android
 ```
 
 结果：API37 `ytdl_api37_play_x86_64(AVD) - 17` 上 5/5 tests passed，0 failed，0 skipped；`BUILD SUCCESSFUL`。
+
+## 2026-06-21 22:14 外观 palette 语义验证补强
+
+本轮按 TDD 增加了不可见 Compose 语义钩子，避免只凭“颜色方案”摘要判断配色是否应用：
+
+- RED：新增 `DownloadGuiBindingTest.appRootSemanticsExposeReferencePaletteAccent` 和 `appRootSemanticsExposeCodexPaletteAccent` 后，生产代码缺少 `YtdlColorPresetIdKey` / `YtdlSettingsAccentArgbKey`，`compileDebugUnitTestKotlin` 失败。
+- GREEN：根屏幕语义暴露当前颜色 preset id 和 settings accent ARGB；`reference_v3` 断言 `#FF2E86DE`，`codex` 断言 `#FF2F6D80`。
+- 该语义只用于测试，不增加用户可见调试文字。
+
+验证命令：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest"
+```
+
+结果：
+
+- `:app:testDebugUnitTest`：BUILD SUCCESSFUL。
+- `:app:assembleDebug`：BUILD SUCCESSFUL。
+- `YtdlAppUiTest`：API37 `ytdl_api37_play_x86_64(AVD) - 17` 上 5/5 tests passed，0 failed，0 skipped；`BUILD SUCCESSFUL`。
+
+边界：这补强了“Codex 风格/基准图配色是否真实进入 Compose palette”的测试证据；仍不是最终 Computer Use 前台可见全功能验收。

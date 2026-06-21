@@ -1,10 +1,17 @@
 package com.garyapp.ytdl.ui
 
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.test.core.app.ApplicationProvider
+import com.garyapp.ytdl.core.settings.AppearanceSettings
+import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.ytdlp.DownloadProgress
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.SubtitleSource
@@ -31,6 +38,35 @@ import org.robolectric.RobolectricTestRunner
 class DownloadGuiBindingTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun appRootSemanticsExposeReferencePaletteAccent() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        SettingsRepository.fromContext(context).setColorPreset(AppearanceSettings.ColorPresetReferenceV3)
+
+        composeRule.setContent { YtdlApp() }
+
+        composeRule.onNodeWithTag("ytdl-screen-download")
+            .assert(SemanticsMatcher.expectValue(YtdlColorPresetIdKey, AppearanceSettings.ColorPresetReferenceV3))
+            .assert(SemanticsMatcher.expectValue(YtdlSettingsAccentArgbKey, "#FF2E86DE"))
+    }
+
+    @Test
+    fun appRootSemanticsExposeCodexPaletteAccent() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = SettingsRepository.fromContext(context)
+        repository.setColorPreset(AppearanceSettings.ColorPresetCodex)
+
+        try {
+            composeRule.setContent { YtdlApp() }
+
+            composeRule.onNodeWithTag("ytdl-screen-download")
+                .assert(SemanticsMatcher.expectValue(YtdlColorPresetIdKey, AppearanceSettings.ColorPresetCodex))
+                .assert(SemanticsMatcher.expectValue(YtdlSettingsAccentArgbKey, "#FF2F6D80"))
+        } finally {
+            repository.setColorPreset(AppearanceSettings.ColorPresetReferenceV3)
+        }
+    }
 
     @Test
     fun formatRowsComeFromCurrentAnalysisAndDisabledRowsExplainWhy() {

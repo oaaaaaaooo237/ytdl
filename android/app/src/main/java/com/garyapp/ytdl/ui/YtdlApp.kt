@@ -55,10 +55,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
@@ -98,6 +101,13 @@ private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPre
 
 private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
 private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
+
+internal val YtdlColorPresetIdKey = SemanticsPropertyKey<String>("YtdlColorPresetId")
+internal var SemanticsPropertyReceiver.ytdlColorPresetId by YtdlColorPresetIdKey
+internal val YtdlSettingsAccentArgbKey = SemanticsPropertyKey<String>("YtdlSettingsAccentArgb")
+internal var SemanticsPropertyReceiver.ytdlSettingsAccentArgb by YtdlSettingsAccentArgbKey
+
+internal fun colorArgbHexForUiTest(color: Color): String = String.format(Locale.US, "#%08X", color.toArgb())
 
 @Immutable
 data class YtdlDestination(
@@ -534,7 +544,8 @@ fun YtdlApp() {
         )
     }
 
-    YtdlTheme(config = themeConfigForSettings(appSettings)) {
+    val themeConfig = themeConfigForSettings(appSettings)
+    YtdlTheme(config = themeConfig) {
         val palette = LocalYtdlAppPalette.current
         val destinations = ytdlNavigationDestinations(palette)
         val selected = destinations.firstOrNull { it.route == selectedRoute } ?: destinations.first()
@@ -558,7 +569,11 @@ fun YtdlApp() {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .semantics { testTagsAsResourceId = true }
+                        .semantics {
+                            testTagsAsResourceId = true
+                            ytdlColorPresetId = themeConfig.colorPreset.id
+                            ytdlSettingsAccentArgb = colorArgbHexForUiTest(palette.settingsAccent)
+                        }
                         .testTag("ytdl-screen-${selected.route}"),
                     contentPadding = PaddingValues(start = 18.dp, top = 26.dp, end = 18.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
