@@ -163,6 +163,13 @@ fun settingsParserVersionLabel(): String = "yt-dlp ${YtdlpBridge.PINNED_YTDLP_VE
 
 fun settingsMediaProcessorLabel(): String = "原生合并 · 字幕独立文件 · 字幕嵌入/烧录属 MVP2"
 
+fun settingsPrivacyLegalLines(): List<String> = listOf(
+    "仅处理用户粘贴的公开 http/https 页面地址。",
+    "Cookies 只保存文件引用，不保存内容；任务运行时临时读取并清理。",
+    "下载结果默认保存在 App 私有目录；导出、打开和分享由系统授权。",
+    "不绕过 DRM、付费墙或未授权访问限制。",
+)
+
 fun notificationPermissionSubtitle(
     isGranted: Boolean,
     runtimePermissionRequired: Boolean,
@@ -210,6 +217,8 @@ fun subtitleSelectionLabel(
 internal fun settingsParserVersionLabelForUiTest(): String = settingsParserVersionLabel()
 
 internal fun settingsMediaProcessorLabelForUiTest(): String = settingsMediaProcessorLabel()
+
+internal fun settingsPrivacyLegalLinesForUiTest(): List<String> = settingsPrivacyLegalLines()
 
 internal fun notificationPermissionSubtitleForUiTest(
     isGranted: Boolean,

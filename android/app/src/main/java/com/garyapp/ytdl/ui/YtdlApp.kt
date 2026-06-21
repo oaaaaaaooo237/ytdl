@@ -200,7 +200,7 @@ fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
     "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕", "本阶段默认不下载"),
     "queue" to listOf("下载进行中", "当前阶段", "等待真实任务", "暂无真实下载任务", "最近任务已完成", "最近任务失败", "最近任务已取消", "下载视频", "下载音频", "原生合并", "已取消"),
     "history" to listOf("搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
-    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "外观与颜色", "Codex 风格", "MVP2"),
+    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格", "MVP2"),
 )
 
 @Composable
@@ -1471,7 +1471,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
                 .testTag("ytdl-settings-notification-permission"),
         )
     }
-    item { SettingLineCard("隐私与授权说明", "查看说明", "◆", "›", LocalYtdlAppPalette.current.successGreen) }
+    item {
+        val palette = LocalYtdlAppPalette.current
+        AppCard(modifier = Modifier.testTag("ytdl-settings-privacy-legal")) {
+            SectionTitle("隐私与授权说明")
+            settingsPrivacyLegalLines().forEach { line ->
+                Text("• $line", color = palette.softText, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
     item { SettingLineCard("地址校验提示", "仅校验空地址、非法地址和非 http/https", "!", "›", LocalYtdlAppPalette.current.downloadAccent) }
     item {
         val palette = LocalYtdlAppPalette.current

@@ -47,6 +47,9 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("暂无真实历史记录，完成下载后会显示"))
         assertTrue(source.contains("notificationPermissionSubtitle("))
         assertTrue(source.contains("ytdl-settings-notification-permission"))
+        assertFalse(source.contains("SettingLineCard(\"隐私与授权说明\", \"查看说明\""))
+        assertTrue(source.contains("settingsPrivacyLegalLines()"))
+        assertTrue(source.contains("ytdl-settings-privacy-legal"))
     }
 
     @Test
@@ -176,6 +179,24 @@ class DownloadUiBridgeTest {
                 runtimePermissionRequired = false,
             ),
         )
+    }
+
+    @Test
+    fun settingsPrivacyLegalTextStatesConcreteBoundariesWithoutSecrets() {
+        val lines = settingsPrivacyLegalLinesForUiTest()
+        val joined = lines.joinToString("\n")
+
+        assertTrue(lines.size >= 4)
+        assertTrue(joined.contains("http/https"))
+        assertTrue(joined.contains("Cookies"))
+        assertTrue(joined.contains("文件引用"))
+        assertTrue(joined.contains("不保存内容"))
+        assertTrue(joined.contains("App 私有目录"))
+        assertTrue(joined.contains("导出"))
+        assertTrue(joined.contains("DRM") || joined.contains("未授权"))
+        listOf("SID=secret", "Authorization", "Bearer raw-token", "--cookies D:/private/cookies.txt").forEach {
+            assertFalse("privacy text leaked $it", joined.contains(it))
+        }
     }
 
     @Test
