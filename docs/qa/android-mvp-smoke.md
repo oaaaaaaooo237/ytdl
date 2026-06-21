@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-已具备的证据属于命令层、能力层、绑定层和 API37 辅助联动测试；最终要求的 Computer Use 前台可见模拟器全功能流程仍被工具层错误阻断，因此不能写成“全量可视验收通过”。
+已具备的证据属于命令层、能力层、绑定层和 API37 辅助联动测试；最终要求的 Computer Use 前台可见模拟器全功能流程仍未通过，因此不能写成“全量可视验收通过”。
 
 ## 本轮已确认
 
@@ -33,7 +33,17 @@ cd android
 .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest"
 ```
 
-其中 `YtdlAppUiTest` 属于 UIAutomator/instrumentation 辅助联动证据，不是最终 Computer Use 前台可视验收。
+2026-06-21 20:15 复跑结果：
+
+- `.\gradlew.bat :app:testDebugUnitTest`：`BUILD SUCCESSFUL`。
+- `.\gradlew.bat :app:assembleDebug`：`BUILD SUCCESSFUL`。
+- `.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest"`：`BUILD SUCCESSFUL`，API37 上 4/4 tests passed，0 failed，0 skipped，报告生成时间 2026-06-21 20:15:05。
+
+其中 `YtdlAppUiTest` 属于 UIAutomator/instrumentation 辅助联动证据，不是最终 Computer Use 前台可视验收。本轮该测试覆盖：
+
+- 五个底部页面导航和关键页面节点。
+- `https://www.youtube.com/watch?v=tkxzMEfp49Q` 的真实分析、1080p 格式选择、开始下载、队列完成、历史记录写入和 app-private 合并媒体 URI 检查。
+- `https://www.youtube.com/shorts/QBwpO9f0oAw` 的真实分析预览和格式应用抽样。
 
 ## 已完成的能力/绑定层重点
 
@@ -48,15 +58,19 @@ cd android
 
 ## 当前阻断
 
-Computer Use 前台可见模拟器流程未能启动。
+Computer Use 前台可见模拟器流程仍未通过，但阻断状态已从旧的启动失败变为输入/激活失败。
 
-尝试按 Computer Use 技能入口连接 Windows 自动化 helper，并执行轻量 `list_apps()`，两次均在工具调用层失败：
+2026-06-21 复核结果：
 
-```text
-Mcp error: -32602: js: codex/sandbox-state-meta: missing field `sandboxPolicy`
-```
+- `nodeRepl.write("ok")` 可执行。
+- Computer Use 可初始化并执行 `sky.list_apps()`。
+- Computer Use 可枚举 `Android Emulator - ytdl_api37_play_x86_64:5554` 并被动截图。
+- ADB 已确认 `com.garyapp.ytdl/.MainActivity` 是 `topResumedActivity` 和 `mCurrentFocus`。
+- ADB `screencap` 显示 App 下载页真实可见。
+- Computer Use 对模拟器窗口的被动截图仍显示旧壁纸/锁屏帧，和 ADB 真实画面不一致。
+- Computer Use 的 `activate_window`、`click`、`perform_secondary_action("Raise")` 在模拟器窗口和普通窗口（便笺）上均返回 `failed to activate captured window`。
 
-已尝试重置 JavaScript 会话后重试，仍为同一错误。该错误发生在 Windows 自动化代码执行前，因此当前不能用 Computer Use 完成：
+因此当前不能用 Computer Use 完成：
 
 - 前台可见输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`
 - 分析并确认标题、时长、缩略图和真实格式行
@@ -67,17 +81,11 @@ Mcp error: -32602: js: codex/sandbox-state-meta: missing field `sandboxPolicy`
 - 触发一个真实失败恢复路径
 - 用 Shorts 链接做兼容抽样
 
-2026-06-21 继续复核：重置 Windows 自动化连接上下文后，再次按 Computer Use 技能入口执行轻量 `list_apps()`，仍在工具调用层返回同一错误：
-
-```text
-Mcp error: -32602: js: codex/sandbox-state-meta: missing field `sandboxPolicy`
-```
-
-同日辅助检查：已重新安装当前 `app-debug.apk` 并启动到 API37 模拟器前台，用 adb 截图巡检下载、格式、队列、历史、设置五个页面空态。该检查确认 GUI 不再是壳层占位页，五个底部页面、顶部挖孔安全区、队列滚动条、cookies/媒体处理/隐私说明、基础 URL 校验文案均可见；但它不是 Computer Use 前台可视全流程验收，不能替代 T12。
+同日辅助检查：已重新安装当前 `app-debug.apk` 并启动到 API37 模拟器前台，用 ADB 截图巡检下载页；该检查确认 GUI 不再是壳层占位页，但它不是 Computer Use 前台可视全流程验收，不能替代 T12。
 
 ## 下一步
 
-1. 等 Computer Use 工具层恢复后，安装当前 APK 到 `ytdl_api37_play_x86_64`。
+1. 等 Computer Use 输入/激活能力恢复后，继续使用当前 `ytdl_api37_play_x86_64` 和当前 APK。
 2. 用 Computer Use 在前台可见模拟器窗口执行完整 T12，不使用模拟器软键盘。
 3. 将截图、输出文件位置、测试时间、通过/失败结果追加到本文件。
 4. 只有 T12 通过后，才能把 Android MVP 标记为可验收。
