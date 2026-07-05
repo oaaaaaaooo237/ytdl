@@ -152,6 +152,36 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun urlInputProgrammaticTextSyncDoesNotEmitUserUrlChange() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("UrlInputTextChangeGuard"))
+        assertTrue(source.contains("textChangeGuard.runProgrammaticTextUpdate"))
+        assertTrue(source.contains("textChangeGuard.dispatchUserTextChange"))
+
+        val guard = Class.forName("com.garyapp.ytdl.ui.UrlInputTextChangeGuard")
+            .getDeclaredConstructor()
+            .newInstance()
+        val runProgrammaticTextUpdate = guard.javaClass.declaredMethods
+            .single { it.name.contains("runProgrammaticTextUpdate") }
+        val dispatchUserTextChange = guard.javaClass.declaredMethods
+            .single { it.name.contains("dispatchUserTextChange") }
+        val emitted = mutableListOf<String>()
+        val onValueChange: (String) -> Unit = { emitted += it }
+
+        runProgrammaticTextUpdate.invoke(guard, {
+            dispatchUserTextChange.invoke(guard, "https://example.com/programmatic", onValueChange)
+            Unit
+        })
+        dispatchUserTextChange.invoke(guard, "https://example.com/user", onValueChange)
+
+        assertEquals(listOf("https://example.com/user"), emitted)
+    }
+
+    @Test
     fun queueRuntimeMessagesOnlyShowUserActionFeedback() {
         assertFalse(shouldShowQueueRuntimeMessageForUiTest("等待输入公开视频页面地址。"))
         assertFalse(shouldShowQueueRuntimeMessageForUiTest("正在下载视频..."))

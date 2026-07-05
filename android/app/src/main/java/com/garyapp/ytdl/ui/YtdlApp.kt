@@ -142,6 +142,25 @@ private fun shouldShowUrlInputKeyboardOnFocus(keyboard: Int): Boolean {
 
 private fun shouldDisableUrlInputAutoHandwriting(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 
+internal class UrlInputTextChangeGuard {
+    private var programmaticTextUpdateDepth = 0
+
+    fun <T> runProgrammaticTextUpdate(block: () -> T): T {
+        programmaticTextUpdateDepth += 1
+        return try {
+            block()
+        } finally {
+            programmaticTextUpdateDepth -= 1
+        }
+    }
+
+    fun dispatchUserTextChange(value: String, onValueChange: (String) -> Unit) {
+        if (programmaticTextUpdateDepth == 0) {
+            onValueChange(value)
+        }
+    }
+}
+
 @Immutable
 data class YtdlDestination(
     val route: String,
@@ -1184,6 +1203,7 @@ private fun UrlInputField(
 ) {
     val palette = LocalYtdlAppPalette.current
     val currentOnValueChange = rememberUpdatedState(onValueChange)
+    val textChangeGuard = remember { UrlInputTextChangeGuard() }
     val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = modifier
@@ -1219,7 +1239,10 @@ private fun UrlInputField(
                             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
                             override fun afterTextChanged(s: Editable?) {
-                                currentOnValueChange.value(s?.toString().orEmpty())
+                                textChangeGuard.dispatchUserTextChange(
+                                    s?.toString().orEmpty(),
+                                    currentOnValueChange.value,
+                                )
                             }
                         },
                     )
@@ -1234,8 +1257,10 @@ private fun UrlInputField(
                     editText.setAutoHandwritingEnabled(false)
                 }
                 if (editText.text.toString() != value) {
-                    editText.setText(value)
-                    editText.setSelection(editText.text.length)
+                    textChangeGuard.runProgrammaticTextUpdate {
+                        editText.setText(value)
+                        editText.setSelection(editText.text.length)
+                    }
                 }
             },
             modifier = Modifier
