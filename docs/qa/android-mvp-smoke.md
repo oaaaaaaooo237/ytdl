@@ -125,6 +125,36 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
 
 结果：三项均 `BUILD SUCCESSFUL`；connected 探针 4/4 通过。该项仍是 adb/UIAutomator 辅助证据，不替代最终 Computer Use 前台可见全流程验收。
 
+## 2026-07-06 历史删除确认收敛
+
+本轮修复历史页删除行为：点击历史记录的 `删除` 不再直接删除 Room 记录，而是先显示确认对话框；取消后记录必须保留，确认后才执行删除。
+
+测试策略边界：
+
+- 单元层新增保护：`YtdlApp` 必须存在 `pendingDeleteHistoryItem`、`AlertDialog`、`ytdl-history-delete-dialog`、`ytdl-history-delete-confirm` 和 `ytdl-history-delete-cancel`。
+- connected 辅助测试新增 `YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord`：只插入一条 `UITEST_DELETE_CONFIRM_*` 测试历史，并按该记录 id 的按钮 tag 定位删除入口，验证点击删除后不会直接删除、取消后保留、确认后只删除该测试记录。
+- connected 测试启动前不再调用 `clearHistoryRows()`，避免清空真实历史记录；新增单元测试保护不再出现遍历删除所有历史行的危险清理模式。
+- Computer Use 前台可见验证已完成到“历史页测试记录可见 -> 点击删除弹出确认框 -> 点击取消后记录保留”。因为 UI 中点击确认删除属于破坏性本地操作，未获用户明确许可前不执行最终确认删除；本项不写成最终 T12 通过。
+- 本轮临时插入的 `UITEST_VISIBLE_DELETE_*` 前台测试记录已通过精确前缀清理，未触碰真实下载历史。
+
+本轮新鲜验证：
+
+```powershell
+cd android
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests "com.garyapp.ytdl.ui.DownloadUiBridgeTest.connectedUiTestDoesNotClearAllHistoryRowsBeforeLaunch" --tests "com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyDeleteRequiresUserConfirmationDialog"
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord"
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
+```
+
+结果：
+
+- 目标单测通过。
+- API37 connected 辅助测试 1/1 通过。
+- 全量 `:app:testDebugUnitTest`：`BUILD SUCCESSFUL`。
+- `:app:assembleDebug`：`BUILD SUCCESSFUL`。
+- 前台可见 Computer Use 已确认弹窗和取消保留；确认删除仍待用户授权后补测。
+
 ## 2026-06-21 继续修复：UI 审计问题收敛
 
 记录时间：2026-06-21 20:55:20

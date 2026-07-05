@@ -487,7 +487,7 @@ TDD 记录：新增 `RequiredUrlMergeInstrumentedTest` 后第一次运行即通�
 - 不保存 cookies 内容、Authorization、完整敏感 URL 查询串或原始命令行。
 - 导出使用系统文件选择器或 MediaStore，不申请全文件访问权限。
 
-当前状态：M8 单元层已实现/待前台联动验证。
+当前状态：历史打开/分享/导出入口已有前台证据；删除确认弹窗和取消保留已前台验证；确认删除和外部导出写出仍待用户授权/后续前台验收。
 
 M8 本轮证据：
 
@@ -502,8 +502,10 @@ M8 本轮证据：
 - M9 前置审计修复：2026-06-21 针对 P1 审计意见修复重复下载历史串档风险和通知取消生命周期。下载 pipeline 现在为每个任务建立唯一 `task-*` 输出目录，`app-private://outputs/...` 保存 App 私有根目录下的相对路径，历史打开/分享/导出可重新定位到原始输出文件；`DownloadService` 收到通知取消 action 后会调用 `stopSelf(startId)`。新增 `repeatedMergeRunsCreateDistinctHistoryUrisThatResolveToOriginalFiles` 和取消分支源码约束测试。
 - 复核命令：2026-06-21 顺序运行 `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:connectedDebugAndroidTest`，均 `BUILD SUCCESSFUL`；connected 在 API37 `ytdl_api37_play_x86_64(AVD) - 17` 上完成 12 项测试、0 失败。
 - 2026-06-21 `YtdlAppUiTest` 辅助联动回归已确认普通视频完整下载后历史页出现真实历史卡片：自动断言覆盖标题、`完成` 状态、最新 Room 历史记录、`app-private://outputs/task-.../merged-...` 输出 URI 和视频+音频格式摘要；截图观察显示卡片含 `打开`、`分享`、`导出`、`删除` 操作。该证据仍不替代前台 Computer Use 打开/分享/导出/删除验收。
+- 2026-07-06 本轮已修复历史删除确认：生产 UI 点击 `删除` 后先打开 `AlertDialog`，取消后保留记录，确认后才删除。目标单测、全量单测、构建和 API37 connected 辅助测试均通过；connected 测试只插入 `UITEST_DELETE_CONFIRM_*` 测试记录，并按该记录 id 的按钮 tag 操作，不再清空全部历史。
+- 2026-07-06 本轮 Computer Use 前台可见验证已确认：历史页测试记录可见，点击 `删除` 后弹出 `确认删除历史记录`，点击 `取消` 后记录仍保留。因为 UI 确认删除属于破坏性本地操作，未获用户明确许可前不执行最终确认删除；该项仍不写成 T12 通过。
 
-剩余验收：真实历史页打开、导出、删除和系统导出 UI 留到 M9/T12。
+剩余验收：确认删除需用户明确授权后补前台验证；外部导出写出和系统导出 UI 仍留到 M9/T12。
 
 ### T10 cookies 与隐私边界测试
 

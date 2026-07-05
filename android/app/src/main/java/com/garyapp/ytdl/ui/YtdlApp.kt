@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -43,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -246,6 +248,7 @@ fun YtdlApp() {
     var appSettings by remember { mutableStateOf(settingsRepository.getSettings()) }
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
     var pendingExportOutput by remember { mutableStateOf<ExportController.AppPrivateOutput?>(null) }
+    var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val bridge = remember { YtdlpBridge() }
     val notificationController = remember { NotificationController(context.applicationContext) }
@@ -565,6 +568,10 @@ fun YtdlApp() {
         }.start()
     }
 
+    fun requestDeleteHistoryItem(item: HistoryUiItem) {
+        pendingDeleteHistoryItem = item
+    }
+
     fun selectDownloadMode(mode: FormatMode) {
         val selection = selectBestAvailableFormatSelection(
             analysis = runtimeState.analysis,
@@ -675,7 +682,7 @@ fun YtdlApp() {
                             onOpen = ::openHistoryItem,
                             onShare = ::shareHistoryItem,
                             onExport = ::exportHistoryItem,
-                            onDelete = ::deleteHistoryItem,
+                            onDelete = ::requestDeleteHistoryItem,
                         )
                         "settings" -> settingsPageItems(
                             settings = appSettings,
@@ -715,6 +722,36 @@ fun YtdlApp() {
                     )
                 }
             }
+        }
+        val deleteTarget = pendingDeleteHistoryItem
+        if (deleteTarget != null) {
+            AlertDialog(
+                modifier = Modifier
+                    .semantics { testTagsAsResourceId = true }
+                    .testTag("ytdl-history-delete-dialog"),
+                onDismissRequest = { pendingDeleteHistoryItem = null },
+                title = { Text("确认删除历史记录") },
+                text = { Text("将删除“${deleteTarget.title}”的历史记录，不会删除已保存的媒体文件。") },
+                confirmButton = {
+                    TextButton(
+                        modifier = Modifier.testTag("ytdl-history-delete-confirm"),
+                        onClick = {
+                            pendingDeleteHistoryItem = null
+                            deleteHistoryItem(deleteTarget)
+                        },
+                    ) {
+                        Text("删除")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        modifier = Modifier.testTag("ytdl-history-delete-cancel"),
+                        onClick = { pendingDeleteHistoryItem = null },
+                    ) {
+                        Text("取消")
+                    }
+                },
+            )
         }
     }
 }
@@ -2162,7 +2199,7 @@ private fun HistoryCard(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable(onClick = callback)
-                                .testTag("ytdl-history-action-$action")
+                                .testTag("ytdl-history-action-${item.id}-$action")
                                 .padding(horizontal = 3.dp, vertical = 2.dp),
                             color = if (action == "删除") palette.downloadAccent else palette.neutralText,
                             style = MaterialTheme.typography.labelMedium,

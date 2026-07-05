@@ -57,6 +57,34 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun historyDeleteRequiresUserConfirmationDialog() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("pendingDeleteHistoryItem"))
+        assertTrue(source.contains("AlertDialog"))
+        assertTrue(source.contains("确认删除历史记录"))
+        assertTrue(source.contains("ytdl-history-delete-dialog"))
+        assertTrue(source.contains("ytdl-history-delete-confirm"))
+        assertTrue(source.contains("ytdl-history-delete-cancel"))
+        assertTrue(source.contains("ytdl-history-action-${'$'}{item.id}-${'$'}action"))
+    }
+
+    @Test
+    fun connectedUiTestDoesNotClearAllHistoryRowsBeforeLaunch() {
+        val source = sourceFile(
+            "app/src/androidTest/java/com/garyapp/ytdl/ui/YtdlAppUiTest.kt",
+            "src/androidTest/java/com/garyapp/ytdl/ui/YtdlAppUiTest.kt",
+        ).readText()
+
+        assertFalse(source.contains("clearHistoryRows("))
+        assertFalse(source.contains("rows.forEach { item ->"))
+        assertFalse(source.contains("deleteById(item.id)"))
+    }
+
+    @Test
     fun ytdlAppSourceDoesNotExposeDemoQueueFakeHistoryOrUncheckedPermissionState() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",

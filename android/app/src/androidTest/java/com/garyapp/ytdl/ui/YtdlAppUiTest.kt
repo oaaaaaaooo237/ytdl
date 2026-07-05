@@ -32,7 +32,6 @@ class YtdlAppUiTest {
         assertNotNull("找不到 $packageName 的启动入口", context.packageManager.getLaunchIntentForPackage(packageName))
         cancelActiveDownload()
         DownloadCoordinator.resetForTests()
-        clearHistoryRows(context)
         openAppToDownloadPage()
     }
 
@@ -71,7 +70,11 @@ class YtdlAppUiTest {
 
         tapTag("ytdl-tab-history")
         assertTagVisible("ytdl-screen-history")
-        assertTagVisible("ytdl-history-empty-card")
+        assertTrue(
+            "历史页应显示空状态或真实历史卡片",
+            findTag("ytdl-history-empty-card", timeoutMs = 1_000) != null ||
+                findTag("ytdl-history-real-card", timeoutMs = 1_000) != null,
+        )
 
         tapTag("ytdl-tab-settings")
         assertTagVisible("ytdl-screen-settings")
@@ -194,6 +197,58 @@ class YtdlAppUiTest {
         )
     }
 
+    @Test
+    fun historyDeleteRequiresConfirmationForInsertedTestRecord() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val title = "UITEST_DELETE_CONFIRM_${System.currentTimeMillis()}"
+        val now = System.currentTimeMillis()
+        val id = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                title,
+                8,
+                "https",
+                "test-host",
+                "video",
+                "app-private://outputs/task-uitest-delete/merged-test.mp4",
+                "视频+音频 · 测试记录",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+
+        try {
+            tapTag("ytdl-tab-history")
+            assertTextContains(title, timeoutMs = 5_000)
+
+            tapTag("ytdl-history-action-$id-删除")
+            assertTagVisible("ytdl-history-delete-confirm")
+            assertTextContains(title, timeoutMs = 1_000)
+            assertTrue("点击删除后不应直接删除测试记录", historyContains(id))
+
+            tapTag("ytdl-history-delete-cancel")
+            assertTrue("取消删除后测试记录必须保留", historyContains(id))
+
+            tapTag("ytdl-history-action-$id-删除")
+            assertTagVisible("ytdl-history-delete-confirm")
+            assertTextContains(title, timeoutMs = 1_000)
+            tapTag("ytdl-history-delete-confirm")
+            val deadline = System.currentTimeMillis() + 5_000
+            while (System.currentTimeMillis() < deadline && historyContains(id)) {
+                Thread.sleep(200)
+            }
+            assertTrue("确认删除后必须删除测试记录", !historyContains(id))
+        } finally {
+            historyDao.deleteById(id)
+        }
+    }
+
     private fun startRealDownloadFromDownloadPage(
         url: String,
         expectedTitleText: String?,
@@ -270,20 +325,6 @@ class YtdlAppUiTest {
         saveScreen("${screenshotPrefix}07-history-real-card.png")
     }
 
-    private fun clearHistoryRows(context: Context) {
-        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
-        repeat(50) {
-            val rows = historyDao.listRecent(100)
-            if (rows.isEmpty()) {
-                return
-            }
-            rows.forEach { item ->
-                historyDao.deleteById(item.id)
-            }
-        }
-        assertTrue("历史清理后仍有残留记录", historyDao.listRecent(1).isEmpty())
-    }
-
     private fun assertLatestHistoryBelongsToCurrentDownload(startedAt: Long, expectedTitleText: String?) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val latest = YtdlDatabaseProvider.get(context).historyDao().listRecent(1).firstOrNull()
@@ -315,19 +356,25 @@ class YtdlAppUiTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val historyDao = YtdlDatabaseProvider.get(context).historyDao()
         val deadline = System.currentTimeMillis() + 120_000
-        var latest: HistoryItemEntity? = null
+        var latestRecent: HistoryItemEntity? = null
         while (System.currentTimeMillis() < deadline) {
-            latest = historyDao.listRecent(1).firstOrNull()
-            if (latest?.status == HistoryItemEntity.STATUS_CANCELED && latest.completedAt >= cancelRequestedAt) {
+            val recentRows = historyDao.listRecent(20).filter { it.completedAt >= cancelRequestedAt }
+            latestRecent = recentRows.firstOrNull()
+            if (recentRows.any { it.status == HistoryItemEntity.STATUS_CANCELED }) {
                 return
             }
             assertTrue(
-                "取消流程不应写成完成历史：status=${latest?.status}, outputUri=${latest?.outputUri}",
-                latest?.status != HistoryItemEntity.STATUS_COMPLETED,
+                "取消流程不应写成完成历史：status=${latestRecent?.status}, outputUri=${latestRecent?.outputUri}",
+                recentRows.none { it.status == HistoryItemEntity.STATUS_COMPLETED },
             )
             Thread.sleep(1_000)
         }
-        assertEquals("取消流程必须写入 canceled 历史", HistoryItemEntity.STATUS_CANCELED, latest?.status)
+        assertEquals("取消流程必须写入 canceled 历史", HistoryItemEntity.STATUS_CANCELED, latestRecent?.status)
+    }
+
+    private fun historyContains(id: Long): Boolean {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        return YtdlDatabaseProvider.get(context).historyDao().listRecent(100).any { it.id == id }
     }
 
     private fun cancelActiveDownload() {
