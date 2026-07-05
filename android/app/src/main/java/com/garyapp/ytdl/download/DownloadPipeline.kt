@@ -202,6 +202,8 @@ class DownloadPipeline(
                         bytesWritten = merged.bytesWritten,
                         appPrivateRootPath = appPrivateRoot.absolutePath,
                     )
+                    deleteIntermediateStream(video)
+                    deleteIntermediateStream(audio)
                     ensureActive()
                 }
             }
@@ -348,6 +350,12 @@ class DownloadPipeline(
             throw DownloadStateException("$label 不存在或为空。")
         }
         return file
+    }
+
+    private fun deleteIntermediateStream(file: File) {
+        if (file.isFile) {
+            file.delete()
+        }
     }
 
     private fun String.safeFileToken(): String {

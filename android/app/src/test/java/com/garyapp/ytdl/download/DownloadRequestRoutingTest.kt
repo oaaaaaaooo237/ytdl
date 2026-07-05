@@ -141,6 +141,33 @@ class DownloadRequestRoutingTest {
     }
 
     @Test
+    fun mergeRequiredRouteCleansIntermediateStreamsAfterSuccessfulMerge() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+
+        val mediaProcessor = RecordingMediaProcessor()
+        val result = DownloadPipeline(RecordingDownloadEngine(temp.root), mediaProcessor).run(request, temp.root)
+        val mergeRequest = mediaProcessor.mergeRequests.single()
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertTrue(File(result.outputs.single { it.kind == DownloadOutputKind.Media }.path).isFile)
+        assertFalse("合并成功后应清理独立视频流", mergeRequest.videoInput.exists())
+        assertFalse("合并成功后应清理独立音频流", mergeRequest.audioInput.exists())
+    }
+
+    @Test
     fun repeatedMergeRunsCreateDistinctHistoryUrisThatResolveToOriginalFiles() {
         val request = DownloadRequest.fromAnalysis(
             url = TestUrl,
