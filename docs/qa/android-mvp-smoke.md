@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已观察到一个非破坏性失败恢复前台路径：非 http/https URL 显示中文错误且不会入队；但该次 URL 输入使用硬件键事件，按 2026-07-06 最新拟真软键盘口径只能作为功能观察证据，不能作为最终输入验收。确认删除、真实 cookies 文件选择、更多失败恢复前台路径和系统软键盘拟真输入下的完整主路径仍未完成；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认。确认删除、真实 cookies 文件选择、更多失败恢复前台路径，以及系统软键盘拟真输入下的完整下载主路径仍未完成；后续真机验收阶段也尚未开始。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
@@ -97,7 +97,7 @@ cd android
 ## 当前下一步
 
 1. 继续补齐不触发破坏性操作的前台失败恢复路径；非 http/https URL 已有前台证据，仍需导出取消/写出等恢复路径。
-2. 按最新口径重测 API37 前台 URL 输入：必须点击输入框、弹出系统软键盘并通过软键盘输入，确认 URL 未被候选词、自动补全、手写浮层或菜单改写。
+2. 用系统软键盘拟真输入的完整主路径仍需继续到下载、队列、历史和设置，不再把后台写入、硬件键或剪贴板输入算作验收。
 3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
 4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 5. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
@@ -847,3 +847,37 @@ cd android
 结果：均 `BUILD SUCCESSFUL`。Gradle 10 兼容性提示来自既有 Chaquopy 依赖声明，不是本轮改动引入。
 
 边界：M9.1 补齐了一个可恢复失败场景；最终 T12 仍需确认删除、真实 cookies 文件选择、更多失败恢复路径，以及完整主路径的一次全量前台复测。
+
+## 2026-07-06 M9.2 系统软键盘主路径分析和格式页确认
+
+本轮按最新真机拟真口径继续补 T12 输入链路，但不重复执行长下载，不执行破坏性历史删除，也不要求真实 cookies 文件。
+
+前台可见验证：
+
+- 设备：`Android Emulator - ytdl_api37_play_x86_64:5554`。
+- 环境：API37 AVD 当前 `hw.keyboard=yes`；`android_env.ps1` 已确认 `showImeWithHardKeyboard=1` 且输入法为 Gboard。
+- 安装：当前 `app-debug.apk` 已重新安装并启动到 `com.garyapp.ytdl/.MainActivity`。
+- 输入：用 Computer Use 点击 URL 输入框，Android 系统软键盘真实弹出；随后只点击软键盘键位输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。系统文本树确认输入框完整文本为该 URL。
+- 输入边界：输入过程中没有选择候选词、自动补全、手写浮层或 Gboard 菜单。重新聚焦时候选栏显示建议词，但未被点击，系统文本树仍显示完整 URL 未被改写。
+- 分析：点击 `分析` 后真实分析成功，下载页显示真实预览图、标题 `Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season`、时长 `08:02`，格式摘要为 `自动（推荐） · 1080p MP4 需原生合并`。
+- 格式页：前台切换到 `格式` 页后，2160p/1440p 按当前分析结果灰显并显示不可用原因，1080p/720p/480p/360p/240p 等按真实格式可见，1080p 标记为 `需原生合并`。
+
+截图和文本树证据：
+
+- `docs/qa/android-computer-use-20260706-m9-required-url/01-soft-keyboard-url-visible.png`
+- `docs/qa/android-computer-use-20260706-m9-required-url/01-soft-keyboard-url-visible.xml`
+- `docs/qa/android-computer-use-20260706-m9-required-url/02-analysis-result.png`
+- `docs/qa/android-computer-use-20260706-m9-required-url/02-analysis-result.xml`
+- `docs/qa/android-computer-use-20260706-m9-required-url/03-format-options.png`
+- `docs/qa/android-computer-use-20260706-m9-required-url/03-format-options.xml`
+
+新鲜验证：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1
+cd android
+.\gradlew.bat :app:assembleDebug
+adb -s emulator-5554 install -r app\build\outputs\apk\debug\app-debug.apk
+```
+
+结果：环境复查通过，`assembleDebug` 为 `BUILD SUCCESSFUL`，APK 安装返回 `Success`。本节只证明系统软键盘拟真输入后的真实分析和格式页联动，不计为完整 T12 下载验收；下载、队列、历史、设置、确认删除、真实 cookies 文件选择和更多失败恢复仍需继续。
