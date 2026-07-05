@@ -1,25 +1,25 @@
 # Android MVP Smoke 证据账本
 
-日期：2026-06-21
+日期：2026-07-06
 
 ## 当前结论
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路，但本轮 Computer Use 对模拟器窗口再次出现激活失败，历史删除、真实 cookies 文件选择和外部导出写出仍未完成，所以不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。确认删除和真实 cookies 文件选择仍未完成；本轮 URL 输入时出现 Android 输入法浮层，所以仍不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
 
-2026-07-06 复查：Computer Use 可以枚举 `Android Emulator - ytdl_api37_play_x86_64:5554`，但 `activate_window` 仍返回 `failed to activate captured window`，被动截图显示旧壁纸而不是 App。ADB 同时确认 `com.garyapp.ytdl/.MainActivity` 为 `mCurrentFocus`，并抓到下载页真实画面。结论：应用已在模拟器前台，ADB 截图只能作为辅助证据；本轮仍不能把 Computer Use 前台全量验收写为通过。
+2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。该证据证明当前前台可见控制链路可用，并覆盖一次真实下载后的五页状态；但 URL 输入过程出现 Android 输入法浮层，所以仍不替代最终干净输入全量验收。
 
 ## 本轮已确认
 
 - 当前分支：`feature/android-play-mvp-1`
 - 当前远程同步提交：
-  - `2e067b6 android: document MVP status and licenses`
-  - `3687292 android: show privacy and authorization boundaries`
-  - `b4a6a85 android: bind notification permission status`
-  - `4d68196 android: clarify export progress state`
-  - `f5f12db android: show real queue thumbnails`
-  - `ca042d8 android: fix gui audit gaps`
+  - `3d8a455 android: confirm history deletes`
+  - `b3ccea3 android: harden export file probe`
+  - `41f4a1f android: clarify queue progress state`
+  - `67cf325 android: harden queue progress and output storage`
+  - `24c1287 android: add export listing probe`
+  - `5ff7449 android: clarify staged progress and export names`
 - API37 模拟器进程存在：`Android Emulator - ytdl_api37_play_x86_64:5554`
 - ADB 设备在线：`emulator-5554 device product:sdk_gphone16k_x86_64`
 
@@ -88,10 +88,11 @@ cd android
 
 ## 当前下一步
 
-1. 在不触发外部发送/破坏性操作的前提下继续验证系统通知栏取消、导出取消/写出和失败恢复等前台路径；队列页取消已有 connected 真实链路辅助证据，但仍需 Computer Use 能激活窗口后补前台点击证据。
-2. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
-3. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
-4. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
+1. 补一个不触发 Android 输入法浮层的 URL 输入方式，再跑一次关键路径；最终 T12 不能使用出现候选栏/输入法浮层的输入证据。
+2. 在不触发外部发送/破坏性操作的前提下继续验证系统通知栏取消和失败恢复等前台路径；队列页取消已有 connected 真实链路辅助证据，Computer Use 当前已恢复，需要补前台点击证据。
+3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
+4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
+5. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
 
 ## 2026-07-06 队列进度修正
 
@@ -108,7 +109,57 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests com.garya
 D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
 ```
 
-结果：三项均 `BUILD SUCCESSFUL`。本轮未完成 Computer Use 前台点击验收，原因见当前结论。
+结果：三项均 `BUILD SUCCESSFUL`。该代码修正小节当时未完成 Computer Use 前台点击验收；随后 2026-07-06 前台复测见下文。
+
+## 2026-07-06 Computer Use 五页前台导航复核
+
+本轮重新用 Computer Use 激活 `Android Emulator - ytdl_api37_play_x86_64:5554`，前台点击底部五个页面按钮并逐页截图：
+
+- `下载`：下载页显示已分析链接、真实预览图、标题/时长/格式摘要、保存位置、下载模式、授权确认和导出完成提示。
+- `格式`：当前分析结果下显示 `视频+音频 / 仅音频 / 仅视频`，并按真实支持情况显示可选分辨率、灰显分辨率和 `需原生合并` 标签。
+- `队列`：显示完成后的真实任务卡片、阶段条、绿色对勾和整体 `100%`。
+- `历史`：显示真实完成记录，以及 `打开 / 分享 / 导出 / 删除` 入口。
+- `设置`：显示默认保存位置、Cookies 文件、解析器版本、媒体处理能力、通知权限、隐私与授权说明、地址校验提示、外观与颜色。
+
+截图证据已落盘：
+
+- `docs/qa/android-computer-use-20260706/download.png`
+- `docs/qa/android-computer-use-20260706/format.png`
+- `docs/qa/android-computer-use-20260706/queue.png`
+- `docs/qa/android-computer-use-20260706/history.png`
+- `docs/qa/android-computer-use-20260706/settings.png`
+
+边界：这次是前台可见 Computer Use 操作，截图文件是点击后同步拉取当前模拟器画面形成的辅助留痕；该项仅证明五页导航和页面状态可见，不替代最终 T12 干净 URL 输入和全功能验收。
+
+## 2026-07-06 Computer Use 真实下载、导出和打开复测
+
+本轮继续用 Computer Use 在前台可见 API37 模拟器中跑真实链接 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。
+
+已观察到：
+
+- URL 进入输入框后点击 `分析`，页面显示真实缩略图、标题 `Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season`、时长 `08:02`，格式摘要为 `自动（推荐） · 1080p MP4 需原生合并`。
+- 点击授权确认和 `开始下载` 后，下载页立即显示 `正在下载视频...` 和 `下载中`，不是无反馈。
+- 队列页显示真实任务、真实缩略图、阶段条 `下载视频 / 下载音频 / 原生合并`。
+- 队列进度不是从 0 直接跳到 100：前台观察到整体进度约 `2%`、`8%`、`31%`，视频阶段字节数从约 `20.9 MB / 331.5 MB` 推进到约 `313.8 MB / 331.5 MB`。
+- 视频阶段结束后，`下载视频` 显示绿色对勾，当前阶段切到 `下载音频`，整体进度显示约 `66%`。
+- 任务完成后，阶段条显示 `下载视频✓ / 下载音频✓ / 原生合并✓`，右侧 `100%`，输出文件为 `merged-299-140.mp4`，合并媒体大小约 `339.2 MB`。
+- 历史页出现完成记录，显示 `打开 / 分享 / 导出 / 删除`。
+- 点击 `导出` 打开系统保存器，默认文件名为视频标题加完成时间，不再只是 `merged-299-140.mp4`；点击 `SAVE` 后返回历史页。
+- 辅助核对 `/sdcard/Download` 已产生导出文件：`Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season-20260705-175152.mp4`，大小约 `339M`。
+- 点击历史 `打开` 调起系统播放器，等待后看到篮球视频画面，证明合并文件可播放。
+
+本轮产生的测试文件：
+
+- App 私有目录：`files/gui-downloads/task-1783273701697-1/download-tkxzMEfp49Q-299-video.mp4`，约 `332M`。
+- App 私有目录：`files/gui-downloads/task-1783273701697-1/download-tkxzMEfp49Q-140-audio.m4a`，约 `7.4M`。
+- App 私有目录：`files/gui-downloads/task-1783273701697-1/merged-299-140.mp4`，约 `339M`。
+- 外部下载目录：`/sdcard/Download/Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season-20260705-175152.mp4`，约 `339M`。
+
+边界：
+
+- 本轮 URL 输入先尝试 `Ctrl+V`，未落入输入框；随后用 Computer Use 直接文本输入成功，但 Android 输入法浮层短暂出现。它证明真实功能链路可运行，但不满足最终 T12 对“不得出现软键盘/候选词栏/输入法浮层”的干净输入要求。
+- 本轮未点击 `删除` 的确认删除按钮；该动作仍需用户明确授权。
+- 本轮未选择真实 `cookies.txt`。
 
 ## 2026-07-06 外部导出识别辅助测试收敛
 
@@ -192,10 +243,10 @@ cd android
 - docs/qa/android-current-visual-20260621-auditfix/ 保存本轮安装当前 APK 后的五页 adb 截图和 UIAutomator XML。
 - 该目录证明：下载页有真实授权 checkbox 和三种模式卡 testTag；历史页有真实搜索/筛选 testTag；空队列不再出现 ytdl-queue-scroll-indicator；设置页滚动后可见 基准图配色 与 Codex 风格。
 
-Computer Use 最新复核：
+Computer Use 当时复核：
 
 - 本轮再次尝试 Computer Use 时，mcp__node_repl.js 连最小 `nodeRepl.write(...)` 都失败，错误为 windows sandbox failed: helper_unknown_error: apply deny-read ACLs。
-- 因此当前阻断比上一条记录中的“窗口激活失败”更早：Computer Use 入口本身没有稳定启动。
+- 因此当时阻断比上一条记录中的“窗口激活失败”更早：Computer Use 入口本身没有稳定启动。
 - 本轮所有 adb 截图、UIAutomator XML、connected test 都只能算辅助证据，不能替代 M9/T12 要求的 Computer Use 前台可见全功能验收。
 
 ## 2026-06-21 外观颜色设置测试补强
@@ -445,7 +496,7 @@ cache/gui-downloads/task-1783239204052-1/merged-299-140.mp4 355645249 bytes
 - 未执行历史删除，因为需要用户明确确认删除动作。
 - 未选择真实 cookies 文件，因为当前没有用户提供的测试 `cookies.txt`。
 - 未做小米 14 真机验收；当前 ADB 只检测到模拟器，且用户确认电脑暂不连接小米 14。
-- 仍需继续做外部导出写出、真实 cookies 文件选择、删除确认和最终 Computer Use 全量前台复测等剩余 M9/T12 项；视觉密度审计见后续小节。
+- 外部导出写出和历史打开播放已在 2026-07-06 补充前台证据；仍需继续做真实 cookies 文件选择、确认删除、干净 URL 输入和最终 Computer Use 全量前台复测等剩余 M9/T12 项；视觉密度审计见后续小节。
 
 ## 2026-07-05 视觉密度修复与截图审计
 
@@ -553,7 +604,7 @@ cd android
 
 同名输出处理也已收敛：App 私有下载目录继续使用每任务唯一目录避免内部串档；历史页导出时，系统保存对话框默认文件名改为“视频标题 + 完成时间 + 扩展名”，避免多个导出任务都显示 `merged-299-140.mp4`。外部覆盖仍不作为默认行为；覆盖应由用户在系统保存器或后续明确选项中确认。
 
-Computer Use 边界：本轮重新连接后可以枚举窗口并被动截图模拟器，但对窗口点击/按键仍报 `failed to activate captured window`，所以本节不是最终前台可视验收通过记录。进一步跨窗口 smoke 显示，不只是 Android Emulator，多个普通 Windows 窗口的 `activate_window` 也返回同一错误；当前阻断位于 Computer Use/Windows 窗口激活链路，而不是 App 代码或模拟器内页面。后续可视 URL 输入必须先由 Computer Use 正常聚焦输入框；优先设置桌面剪贴板并用 `Ctrl+V` 一次性粘贴 URL。若剪贴板粘贴不可用，再使用 `type_text` 或可访问性写入；不能再把逐字慢速输入作为常规测试方式。若 Computer Use 仍不能激活窗口，必须先修测试环境。
+Computer Use 边界：本轮重新连接后可以枚举窗口并被动截图模拟器，但对窗口点击/按键仍报 `failed to activate captured window`，所以本节不是最终前台可视验收通过记录。进一步跨窗口 smoke 显示，不只是 Android Emulator，多个普通 Windows 窗口的 `activate_window` 也返回同一错误；当时阻断位于 Computer Use/Windows 窗口激活链路，而不是 App 代码或模拟器内页面。后续可视 URL 输入必须先由 Computer Use 正常聚焦输入框；优先设置桌面剪贴板并用 `Ctrl+V` 一次性粘贴 URL。若剪贴板粘贴不可用，再使用 `type_text` 或可访问性写入；不能再把逐字慢速输入作为常规测试方式。若 Computer Use 仍不能激活窗口，必须先修测试环境。
 
 ## 2026-07-05 通知拒权时 app 内进度补强
 
