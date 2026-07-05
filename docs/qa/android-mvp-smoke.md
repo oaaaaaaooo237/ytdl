@@ -223,3 +223,34 @@ cd android
 - `YtdlAppUiTest`：API37 `ytdl_api37_play_x86_64(AVD) - 17` 上 5/5 tests passed，0 failed，0 skipped；`BUILD SUCCESSFUL`。
 
 边界：这补强了“Codex 风格/基准图配色是否真实进入 Compose palette”的测试证据；仍不是最终 Computer Use 前台可见全功能验收。
+
+## 2026-07-05 五页导航 accent 配色约束补强
+
+本轮继续补强“基准图配色 / Codex 风格”不只在设置摘要中存在，而是进入五个底部页面导航 accent token：
+
+- RED：新增 `DownloadGuiBindingTest.navigationAccentsMatchReferenceAndCodexPalettes` 后，生产代码缺少 `ytdlNavigationAccentHexesForUiTest`，`compileDebugUnitTestKotlin` 失败，错误为 unresolved reference。
+- GREEN：新增测试辅助函数从现有 `ytdlNavigationDestinations(ytdlAppPaletteForPreset(...))` 读取五个页面导航 accent，并断言：
+  - `reference_v3`：下载 `#FFFF5B55`、格式 `#FF138F88`、队列 `#FFFF7A1A`、历史 `#FF7357C8`、设置 `#FF2E86DE`。
+  - `codex`：下载 `#FF315C6B`、格式 `#FF7C705E`、队列 `#FFA26E35`、历史 `#FF5D5D79`、设置 `#FF2F6D80`。
+- 该 helper 为 `internal` 测试约束，不增加用户可见调试文案，也不改变下载、媒体、Room 或 yt-dlp 行为。
+
+验证命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.navigationAccentsMatchReferenceAndCodexPalettes
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest"
+```
+
+结果：
+
+- 环境脚本：JDK 17、Android SDK、Gradle 9.4.1、ADB、emulator 可用；首次检查时无在线设备，随后启动 `ytdl_api37_play_x86_64` 并等待到 `BOOTED emulator-5554`。
+- 目标单测：通过。
+- `:app:testDebugUnitTest`：BUILD SUCCESSFUL。
+- `:app:assembleDebug`：BUILD SUCCESSFUL。
+- `YtdlAppUiTest`：API37 `ytdl_api37_play_x86_64(AVD) - 17` 上 5/5 tests passed，0 failed，0 skipped；`BUILD SUCCESSFUL in 10m 11s`。
+
+边界：本轮补强的是五页导航 accent token 的自动化约束，仍不是像素级截图 diff，也不是最终 Computer Use 前台可见全功能验收。最终 M9/T12 仍必须用 Computer Use 在前台可见模拟器窗口完成 `https://www.youtube.com/watch?v=tkxzMEfp49Q` 的全流程。

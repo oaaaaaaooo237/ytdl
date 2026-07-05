@@ -194,6 +194,13 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
     ),
 )
 
+internal fun ytdlNavigationAccentHexesForUiTest(
+    presetId: String,
+    darkTheme: Boolean = false,
+): Map<String, String> {
+    return ytdlNavigationDestinations(ytdlAppPaletteForPreset(presetId, darkTheme))
+        .associate { destination -> destination.label to colorArgbHexForUiTest(destination.accent) }
+}
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
     "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "保存位置", "下载模式", "开始下载"),
     "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕", "本阶段默认不下载"),

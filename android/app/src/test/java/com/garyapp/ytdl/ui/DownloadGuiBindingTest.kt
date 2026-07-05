@@ -69,6 +69,30 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun navigationAccentsMatchReferenceAndCodexPalettes() {
+        assertEquals(
+            mapOf(
+                "下载" to "#FFFF5B55",
+                "格式" to "#FF138F88",
+                "队列" to "#FFFF7A1A",
+                "历史" to "#FF7357C8",
+                "设置" to "#FF2E86DE",
+            ),
+            ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetReferenceV3),
+        )
+
+        assertEquals(
+            mapOf(
+                "下载" to "#FF315C6B",
+                "格式" to "#FF7C705E",
+                "队列" to "#FFA26E35",
+                "历史" to "#FF5D5D79",
+                "设置" to "#FF2F6D80",
+            ),
+            ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetCodex),
+        )
+    }
+    @Test
     fun formatRowsComeFromCurrentAnalysisAndDisabledRowsExplainWhy() {
         val analysis = analysisWith(
             progressiveFormat(id = "18", height = 360),
