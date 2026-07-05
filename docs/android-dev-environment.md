@@ -19,9 +19,9 @@
 
 环境之外仍未完成，但边界明确：
 
-- 尚未准备真实 `arm64-v8a` 手机；小米 14 或同级设备仍是第一阶段真机验收目标。
+- 尚未准备真实 `arm64-v8a` 手机；按 2026-07-05 用户澄清，小米 14 或同级设备只在后续真机验收阶段使用，不是当前 M9 模拟器验收的前置条件。
 - 最终 Computer Use 前台可见模拟器全流程验收尚未通过；当前阻断见 `docs/qa/android-mvp-smoke.md`。
-- 尚未确认 Google Play 发布签名、隐私政策 URL、Data safety 最终填写口径和商店截图素材。
+- 尚未确认 Google Play 发布签名、隐私政策 URL、Data safety 最终填写口径和商店截图素材；这些商店交付项不作为当前阶段任务。
 - MVP2 若加入字幕嵌入、字幕烧录或三合一输出，仍需重新审计媒体处理链、许可证、ABI、16KB page size 和包体积。
 
 ## 已确认工具链
@@ -149,4 +149,4 @@ powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1 -CreateMatrix
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-真实设备验收仍需要小米 14 或同级 `arm64-v8a` 手机。模拟器矩阵已经准备好，不能替代真机通知、后台下载、文件导出和原生媒体合并性能验证；MVP2 若加入 FFmpeg 或等价字幕处理链，还需要另做真机性能、许可证、ABI 和包体积验证。
+真实设备验收仍需要小米 14 或同级 `arm64-v8a` 手机，但该阶段等当前 M9/T12 模拟器前台验收推进后再做。模拟器矩阵已经准备好，不能替代真机通知、后台下载、文件导出和原生媒体合并性能验证；MVP2 若加入 FFmpeg 或等价字幕处理链，还需要另做真机性能、许可证、ABI 和包体积验证。

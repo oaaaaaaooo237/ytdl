@@ -19,7 +19,7 @@
 - Do not mark a task complete until its tests and required real runtime check have fresh output.
 - UI fidelity is a hard requirement, not a loose theme hint: final Android screens must visually match `docs/android-gui-reference-v3.png` as closely as the native Android runtime allows, including the five-page composition, bottom navigation, card density, accent colors, top safe area, queue scrolling, and progress presentation.
 - The Settings page must include an appearance/color section modeled after Codex-style appearance settings: mode selection plus color preset selection. The default preset remains `reference_v3`; a `codex` preset must be available.
-- Current corrective priority after user review: stop treating GUI shell/label checks as progress until the core media path exists. Immediate order is required URL core merge -> subtitle-file download/output model -> download orchestration/foreground state -> GUI binding -> history/export/privacy/failure coverage -> foreground Computer Use full acceptance. Backend, instrumentation, adb, and build checks remain supporting evidence only; Android acceptance requires a foreground visible emulator window GUI run for the relevant flow.
+- Current corrective priority after user review: stop treating GUI shell/label checks as progress until the core media path exists. Immediate order is required URL core merge -> subtitle-file download/output model -> download orchestration/foreground state -> GUI binding -> history/export/privacy/failure coverage -> foreground Computer Use full acceptance. Backend, instrumentation, adb, and build checks remain supporting evidence only; Android acceptance requires a foreground visible emulator window GUI run for the relevant flow. Per the 2026-07-05 user clarification, Xiaomi 14 or equivalent `arm64-v8a` real-device validation replaces the later Google Play store-delivery step when that step is reached; it is not the current immediate task while no phone is connected.
 - Agent hygiene: use one fresh subagent only for the active plan task or its audit, close it as soon as the result is integrated, and do not keep explorer/audit/worker agents idle. Do not reuse an old worker to continue a different task. If an old agent ID is unavailable after compaction, do not assume it is still active; continue with the current manager state and create a fresh task-scoped agent only when needed.
 - Testing hygiene: no mock download, mock progress, static queue demo, background-only automation, or Android soft-keyboard driven path can be counted as acceptance. Such checks may be recorded only as auxiliary evidence, never as final pass.
 
@@ -257,10 +257,10 @@ Checkboxes before this section are historical scope inventory and must not be us
 **Last recorded proven state:**
 
 - Environment preflight passed on 2026-06-21 with `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`; API37 `emulator-5554` was connected.
-- M1-M8 are complete at capability, binding, or auxiliary-instrumentation level: native MediaProcessor contract, native `MediaMuxer` merge, explicit split-stream downloads, required URL core merge, separate subtitle-file output, foreground download orchestration, GUI binding, history/export/cookies privacy, failure messages, Play data-safety/privacy/license drafts, and M9 preflight fixes exist in the current tree and QA ledger.
+- M1-M8 are complete at capability, binding, or auxiliary-instrumentation level: native MediaProcessor contract, native `MediaMuxer` merge, explicit split-stream downloads, required URL core merge, separate subtitle-file output, foreground download orchestration, GUI binding, history/export/cookies privacy, failure messages, Play-safe data-safety/privacy/license drafts, and M9 preflight fixes exist in the current tree and QA ledger.
 - API37 auxiliary checks have proven real analysis, real split downloads, real native merge, independent subtitle download, UIAutomator real download/queue/history binding, and five-page adb screenshot visual sanity.
 - Android FFmpeg is not packaged; subtitle embed, subtitle burn, and video+audio+subtitle three-in-one output are MVP2 scope and do not block MVP1.
-- Computer Use foreground visible full acceptance is still blocked. The old `sandboxPolicy` bootstrap error is gone, but the current Computer Use input path cannot activate emulator or ordinary app windows (`failed to activate captured window`), so it still must not be counted as passed.
+- Computer Use foreground visible acceptance is no longer globally blocked as of 2026-07-05: the required URL and a Shorts sample have been operated in the foreground visible API37 emulator window with real analysis, split download, native merge, queue progress, and history landing. A later 2026-07-05 cold-start flow also covered blank URL failure, clean hardware-key URL input, 1080p selection, real download, native merge, history landing, system video open, share sheet invocation without sending, export save UI invocation without saving, settings privacy/cookies boundary visibility, and cookies picker invocation without selecting a file. M9 is still not complete because history delete is not executed without user confirmation, real cookies selection needs a user-provided `cookies.txt`, external export write-out was intentionally not completed, notification/cancel coverage still needs a foreground pass, and final visual-fidelity audit remains incomplete.
 - Previous visible GUI evidence that used the Android soft keyboard remains invalid as final acceptance evidence.
 
 **Adjusted priority:** stop repeating GUI tests around the old FFmpeg merge label. MVP1 uses native MediaMuxer for compatible split video/audio merge and outputs subtitles as separate files. Build subtitle-file download/output, foreground service, queue, history, export/privacy flows, and then perform one complete foreground visible test path.
@@ -452,7 +452,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M8: History, Export, Cookies Privacy, and Failure Recovery
 
-**Status:** 单元/绑定层已完成；Play 文档草案已补齐 Data safety、隐私政策和第三方许可证工作稿。真实设置页 cookies 选择、历史打开/分享/导出/删除和失败恢复仍留到 M9/T12 前台可视验收。
+**Status:** 单元/绑定层已完成；Play-safe 文档草案已补齐 Data safety、隐私政策和第三方许可证工作稿，但正式 Google Play 上架交付不是当前任务。真实设置页 cookies 选择、历史打开/分享/导出/删除和失败恢复仍留到 M9/T12 前台可视验收。等推进到后续第 7 项时，只做小米 14 真机验收，不做 Google Play 商店交付。
 
 **Purpose:** Complete the non-happy-path and Play-facing behavior before final visible acceptance: output discovery/export, local history, cookies reference safety, and user-readable failures.
 
@@ -482,7 +482,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M9: Full Foreground Visible Acceptance Flow
 
-**Status:** 阻断中；M8 前置能力已到位，但 Computer Use 前台可见模拟器全流程仍未通过，不能称为 MVP 验收完成。
+**Status:** 进行中；M8 前置能力已到位，Computer Use 已恢复并完成普通 YouTube 链接与 Shorts 链接的部分前台真实流程。M9 仍未完全通过，不能称为 MVP 验收完成。
 
 **Purpose:** Run the meaningful GUI test only after media capability, subtitle-file output, queue, history, export, and privacy behavior exist: user-visible analysis, format choice, split download, merge, separate subtitle file where applicable, foreground progress, history, export, settings, and failures.
 
@@ -507,6 +507,34 @@ Checkboxes before this section are historical scope inventory and must not be us
 **M9 preflight fixes, 2026-06-21:** Before attempting T12, the main session closed several GUI-binding gaps found by review: appearance mode/color preset now persist and apply through `YtdlTheme`, queue and notification cancellation call the real cancellation path, history cards expose real open/share/export/delete actions through app-private output resolution and Room deletion, the format page can select an available subtitle as an independent subtitle-file output, repeated downloads now use unique task output directories with app-private relative history URIs, notification cancel stops the service start id, notification permission reflects the real runtime state, and the Settings page now shows concrete privacy/authorization boundaries instead of an empty “view details” entry. `testDebugUnitTest`, `assembleDebug` and relevant connected/UIAutomator auxiliary checks have fresh passing output. On 2026-06-21 20:15, `YtdlAppUiTest` passed 4/4 tests on API37 and covered the required `tkxzMEfp49Q` real analysis/download/history path plus one Shorts analysis sample. Foreground visible Computer Use acceptance is still blocked: Computer Use can run, list apps, and passively capture windows, but input actions cannot activate emulator or ordinary app windows (`failed to activate captured window`), so M9/T12 must not be counted as passed.
 
 **M9 visual-fidelity follow-up, 2026-06-21:** The 21:48 follow-up added connected coverage that the Settings page shows `基准图配色` and `Codex 风格`, updates the user-facing summary, and resets the preset after the test. This follow-up then made palette application itself test-observable without adding user-visible debug text: the root screen exposes the active color preset id and settings accent color through Compose semantics, and Robolectric Compose tests assert the `reference_v3` and `codex` values. The Computer Use foreground acceptance gate remains unchanged.
+
+**M9 foreground update, 2026-07-05:** Computer Use can now connect to `Android Emulator - ytdl_api37_play_x86_64:5554` and operate the foreground window. The QA ledger records real foreground evidence for `https://www.youtube.com/watch?v=tkxzMEfp49Q`: preview/title/duration/format analysis, 1080p video+audio native-merge selection, real queue progress through video download and merge, completed history entry, and output files. The same ledger records a Shorts sample `https://www.youtube.com/shorts/QBwpO9f0oAw` from blank input through analysis, preview, real download, merge, queue completion, and history. A later cold-start run covered the normal required URL flow plus history open/share/export entry points. Remaining M9 work: history delete is not executed without user confirmation, real cookies selection needs a user-provided `cookies.txt`, external export write-out was intentionally not completed, notification/cancel coverage still needs a foreground pass, final screenshot-level visual-fidelity audit against `docs/android-gui-reference-v3.png` remains incomplete, and a fresh audit subagent must approve the current evidence boundaries.
+
+**M9 cold-start update, 2026-07-05 16:20:** A freshly built and reinstalled debug APK was launched on API37, then Computer Use completed a cold-start foreground flow: blank URL failure, clean hardware-key URL input with `mInputShown=false`, required URL analysis, 1080p merge-required format selection, authorization confirmation, real queue progress, audio download, native merge, 100% completion, history landing, system video open, share sheet invocation without sending, export save UI invocation without saving, settings privacy/cookies boundary visibility, and cookies picker invocation without selecting a file. Remaining M9 work: history delete is not executed without user confirmation, real cookies selection needs a user-provided `cookies.txt`, visual-fidelity screenshot audit still needs to be run, and a fresh audit subagent must review this evidence and plan state.
+
+### Continuation Task M10: Xiaomi 14 Real-Device Validation
+
+**Status:** 未开始；当前 ADB 只显示 API37 模拟器，用户确认暂时不会连接小米 14。该任务等 M9/T12 模拟器前台验收之后、推进到后续第 7 项时再执行。
+
+**Purpose:** When the workflow reaches the later device/release-validation stage, validate on Xiaomi 14 or an equivalent `arm64-v8a` Android phone instead of doing formal Google Play store delivery work.
+
+**Files:**
+- Update: `docs/qa/android-mvp-smoke.md`
+- Update: `docs/qa/android-full-visual-test-plan.md`
+- Update only if real-device findings require code fixes: Android source/test files touched by the failing behavior.
+
+**Steps:**
+- [ ] Connect Xiaomi 14 or equivalent `arm64-v8a` phone with USB debugging enabled and verify `adb devices -l` shows a physical device model, not only `emulator-*`.
+- [ ] Install the current `android/app/build/outputs/apk/debug/app-debug.apk` on the physical device.
+- [ ] Launch the app and verify the five pages render without cutouts, clipping, bottom-nav overlap, or unreadable status/navigation bars.
+- [ ] Run the required URL `https://www.youtube.com/watch?v=tkxzMEfp49Q` through real GUI analysis, 1080p-or-best-supported video+audio format selection, real download, native merge, queue completion, and history landing.
+- [ ] Verify device-specific behavior that the emulator cannot prove: notification visibility/permission behavior, background download survival, app-private output open/export, share sheet appearance without sending data, and storage permission denial recovery.
+- [ ] If a supported subtitle is selected and exists, verify MVP1 output remains "merged video+audio file plus separate subtitle file"; do not claim subtitle embed/burn.
+- [ ] Record device model, Android version, ABI, build fingerprint if available, screenshots, output file sizes, and observed gaps in `docs/qa/android-mvp-smoke.md`.
+- [ ] Run `cd android; .\gradlew.bat :app:testDebugUnitTest` and `cd android; .\gradlew.bat :app:assembleDebug` after any code fix.
+- [ ] Commit and push only after the real-device evidence or any fix is recorded.
+
+**Acceptance:** M10 is accepted only when a real Xiaomi 14 or equivalent `arm64-v8a` phone runs the GUI flow and records device-specific evidence. Do not attempt this task until a phone is connected; continue the current M9/T12 emulator and GUI-verification work first.
 
 After each task commit:
 

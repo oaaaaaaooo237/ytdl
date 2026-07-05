@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-已具备的证据属于命令层、能力层、绑定层和 API37 辅助联动测试；最终要求的 Computer Use 前台可见模拟器全功能流程仍未通过，因此不能写成“全量可视验收通过”。
+截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证。仍不能写成“全量可视验收通过”，因为历史删除未执行、真实 cookies 文件未选择、截图级视觉还原审计未完成，且后续真机验收阶段尚未开始。
 
 ## 本轮已确认
 
@@ -57,9 +57,9 @@ cd android
 - cookies 只保存引用；任务临时文件终态清理；设置、历史、日志和错误信息不写入 cookies 内容。
 - 设置页展示真实通知权限状态、媒体处理边界、隐私与授权说明、Data safety/隐私政策/第三方许可证草案。
 
-## 当前阻断
+## 2026-06-21 历史阻断记录
 
-Computer Use 前台可见模拟器流程仍未通过，但阻断状态已从旧的启动失败变为输入/激活失败。
+以下是 2026-06-21 的历史阻断记录，已被 2026-07-05 的 Computer Use 前台复测取代；保留本段仅用于解释早期为什么没有把 T12 计为通过。
 
 2026-06-21 复核结果：
 
@@ -71,7 +71,7 @@ Computer Use 前台可见模拟器流程仍未通过，但阻断状态已从旧�
 - Computer Use 对模拟器窗口的被动截图仍显示旧壁纸/锁屏帧，和 ADB 真实画面不一致。
 - Computer Use 的 `activate_window`、`click`、`perform_secondary_action("Raise")` 在模拟器窗口和普通窗口（便笺）上均返回 `failed to activate captured window`。
 
-因此当前不能用 Computer Use 完成：
+因此当时不能用 Computer Use 完成：
 
 - 前台可见输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`
 - 分析并确认标题、时长、缩略图和真实格式行
@@ -84,12 +84,12 @@ Computer Use 前台可见模拟器流程仍未通过，但阻断状态已从旧�
 
 同日辅助检查：已重新安装当前 `app-debug.apk` 并启动到 API37 模拟器前台，用 ADB 截图巡检下载页；该检查确认 GUI 不再是壳层占位页，但它不是 Computer Use 前台可视全流程验收，不能替代 T12。
 
-## 下一步
+## 当前下一步
 
-1. 等 Computer Use 输入/激活能力恢复后，继续使用当前 `ytdl_api37_play_x86_64` 和当前 APK。
-2. 用 Computer Use 在前台可见模拟器窗口执行完整 T12，不使用模拟器软键盘。
-3. 将截图、输出文件位置、测试时间、通过/失败结果追加到本文件。
-4. 只有 T12 通过后，才能把 Android MVP 标记为可验收。
+1. 继续做截图级视觉还原审计，对照 `docs/android-gui-reference-v3.png` 检查下载、格式、队列、历史、设置五页。
+2. 在不触发外部发送/破坏性操作的前提下继续验证通知、取消、失败恢复等前台路径。
+3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
+4. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
 
 ## 2026-06-21 继续修复：UI 审计问题收敛
 
@@ -337,3 +337,48 @@ cache/gui-downloads/task-1783238122848-3/merged-136-140.mp4 4344747 bytes
 ```
 
 剩余边界：本轮已经覆盖下载、格式、队列、历史、设置五页，并覆盖普通 YouTube 链接与 Shorts 链接；后续最终验收仍建议补一次应用冷启动后的完整串联录像式流程，避免当前历史状态和已分析状态对体验判断产生影响。
+
+## 2026-07-05 16:20 冷启动前台串联复测
+
+用户澄清：后续第 7 项到达时只做小米 14 真机验收，不做 Google Play 商店交付；当前不连接小米 14，继续按顺序推进 M9/T12 模拟器前台验收。
+
+本轮环境和安装：
+
+- `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`：JDK 17、Android SDK、Gradle 9.4.1、ADB、emulator 可用；矩阵 AVD `hardwareKeyboard=yes`。
+- 启动 API37 `ytdl_api37_play_x86_64`，等待到 `sys.boot_completed=1`。
+- `cd android; .\gradlew.bat :app:assembleDebug`：`BUILD SUCCESSFUL`。
+- `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`：`Success`。
+- `adb shell monkey -p com.garyapp.ytdl 1` 启动到 `com.garyapp.ytdl/.MainActivity`。
+
+Computer Use 冷启动前台流程：
+
+- 冷启动下载页可见：空输入框、预览占位、保存位置、下载模式、授权确认和禁用的开始按钮。
+- 空 URL 点击分析后可见失败提示：`请先输入公开视频页面地址。`
+- 初次输入时发现系统 `mInputShown=true`，不计入验收；随后禁用 Gboard 和语音输入法，确认 `mInputShown=false` 且 `ime list -s` 为空。
+- 在干净输入状态下仅用 Computer Use 硬件按键重新输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，未出现软键盘、候选栏或 Gboard 工具浮层。
+- 分析成功：标题 `Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season`，预览图可见，时长 `08:02`，摘要 `自动（推荐） · 1080p MP4 需原生合并`。
+- 格式页可见：2160p/1440p 灰显并显示 `当前视频未提供`；1080p 可选并显示 `需原生合并`；应用后下载页摘要同步为 `1080p MP4 需原生合并`。
+- 授权确认勾选后启动下载；队列页进入真实任务，进度连续变化：`23% / 77.6 MB`、`30% / 101.0 MB`、`35% / 116.9 MB`、`45% / 150.4 MB`、`52% / 175.7 MB`、`63% / 208.9 MB`、`83% / 277.6 MB`、`94% / 313.3 MB`。
+- 视频流完成后进入音频下载 `100% / 7.4 MB`，随后进入 `正在合并...`，最终显示 `下载完成`、`100%`、`merged-299-140.mp4`。
+- 历史页顶部出现本轮记录，状态 `完成`，时间 `07/05 08:16`，打开/分享/导出/删除入口可见。
+- 历史 `打开`：能调起系统视频查看器并播放本地合并文件。
+- 历史 `分享`：能打开系统分享面板，显示 `Sharing 1 file` 和 `merged-299-140.mp4`；未选择任何分享目标，未发送文件。
+- 历史 `导出`：能打开系统保存界面，预填文件名 `merged-299-140.mp4`；未点击 SAVE，未写出外部文件。
+- 历史 `删除`：按钮可见；因删除本地记录属于破坏性 UI 操作，本轮未执行删除。
+- 设置页可见 Cookies 文件、解析器版本、媒体处理能力、通知权限、隐私与授权说明、地址校验提示和外观与颜色。
+- Cookies 选择入口能打开系统文件管理器；本轮未选择 cookies 文件，因为用户未提供测试用 `cookies.txt`。
+
+本轮输出文件证据：
+
+```text
+cache/gui-downloads/task-1783239204052-1/download-tkxzMEfp49Q-140-audio.m4a 7806830 bytes
+cache/gui-downloads/task-1783239204052-1/download-tkxzMEfp49Q-299-video.mp4 347653714 bytes
+cache/gui-downloads/task-1783239204052-1/merged-299-140.mp4 355645249 bytes
+```
+
+剩余边界：
+
+- 未执行历史删除，因为需要用户明确确认删除动作。
+- 未选择真实 cookies 文件，因为当前没有用户提供的测试 `cookies.txt`。
+- 未做小米 14 真机验收；当前 ADB 只检测到模拟器，且用户确认电脑暂不连接小米 14。
+- 仍需继续做截图级视觉还原审计和 fresh audit subagent 复核。
