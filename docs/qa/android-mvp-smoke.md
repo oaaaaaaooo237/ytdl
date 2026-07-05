@@ -296,3 +296,44 @@ cache/gui-downloads/task-1783236126094-1/download-tkxzMEfp49Q-140-audio.m4a 7806
 - 复测期间没有弹出完整 Android 软键盘、候选词栏或 Gboard 菜单；但输入框左侧仍出现一个系统折叠小浮动按钮，后续最终 T12 前仍需决定是否接受该测试环境表现，或继续压制该浮动按钮。
 
 当前边界：本轮已证明真实分析、真实分离流下载、原生合并、队列进度和历史落地在前台可见模拟器中跑通；但最终 T12 仍需从空白页面开始完整跑一次，包括格式选择、下载、队列、历史、设置，并确认输入过程不触发不可接受的软键盘/Gboard UI。
+
+## 2026-07-05 15:50 Computer Use 恢复后前台复测
+
+用户确认 Computer Use 可用后，本轮重新按前台可见窗口复测 API37 模拟器，不使用后台脚本替代 GUI 操作。
+
+复测状态：
+
+- `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`：JDK 17、Android SDK、Gradle 9.4.1、ADB、emulator 均可用；`emulator-5554` 在线；四个矩阵 AVD 均为 `hardwareKeyboard=yes`。
+- Computer Use 成功连接 `Android Emulator - ytdl_api37_play_x86_64:5554` 前台窗口。
+- 以前台可见 GUI 勾选“我确认有权保存该内容”，点击“开始下载”。
+- 队列页真实进度连续变化：`7% / 22.3 MB`、`31% / 105.1 MB`、`43% / 144.0 MB`、`53% / 177.1 MB`、`64% / 213.6 MB`、`88% / 292.0 MB`、`99% / 329.3 MB`。
+- 视频流完成后进入 `正在合并...`，随后显示 `下载完成`、`100%`，文件名 `merged-299-140.mp4`。
+- 历史页顶部出现同一任务，状态 `完成`，时间 `07/05 07:48`。
+
+本轮输出文件证据：
+
+```text
+cache/gui-downloads/task-1783237568987-2/download-tkxzMEfp49Q-140-audio.m4a 7806830 bytes
+cache/gui-downloads/task-1783237568987-2/download-tkxzMEfp49Q-299-video.mp4 347653714 bytes
+cache/gui-downloads/task-1783237568987-2/merged-299-140.mp4 355645249 bytes
+```
+
+结论：Computer Use 当前可用；真实分析后的视频+音频分离下载、原生合并、队列进度、历史落地链路已在前台可见模拟器窗口复测通过。最终 M9/T12 仍需补齐从空白输入开始的五页全功能可视验收。
+
+追加页面覆盖：
+
+- 格式页前台可见：`视频+音频` 模式下，2160p/1440p 灰显并标注 `当前视频未提供`；1080p 选中后摘要显示 `实际下载：1080p MP4 需原生合并`；应用选择后下载页摘要同步为 `1080p MP4 需原生合并`。
+- 设置页前台可见：包含默认保存位置、Cookies 文件、解析器版本、媒体处理能力、通知权限、隐私与授权说明、地址校验提示、外观与颜色；地址校验提示仅说明空地址、非法地址和非 http/https，不包含域名屏蔽。
+- Shorts 链接 `https://www.youtube.com/shorts/QBwpO9f0oAw` 从空白输入框开始，仅用 Computer Use 硬件按键输入；禁用 Gboard 后未出现完整软键盘、候选栏或 Gboard 工具浮条。
+- Shorts 分析成功：标题 `Luka and Jalen 🤝`，时长 `00:14`，预览图显示，格式摘要 `自动（推荐） · 1280p MP4 需原生合并`。
+- Shorts 真实下载完成：队列页显示 `4.1 MB / 4.1 MB`、`100%`、`merged-136-140.mp4`；历史页顶部显示同一任务 `完成`，时间 `07/05 07:55`。
+
+Shorts 输出文件证据：
+
+```text
+cache/gui-downloads/task-1783238122848-3/download-QBwpO9f0oAw-136-video.mp4 4107901 bytes
+cache/gui-downloads/task-1783238122848-3/download-QBwpO9f0oAw-140-audio.m4a 231677 bytes
+cache/gui-downloads/task-1783238122848-3/merged-136-140.mp4 4344747 bytes
+```
+
+剩余边界：本轮已经覆盖下载、格式、队列、历史、设置五页，并覆盖普通 YouTube 链接与 Shorts 链接；后续最终验收仍建议补一次应用冷启动后的完整串联录像式流程，避免当前历史状态和已分析状态对体验判断产生影响。
