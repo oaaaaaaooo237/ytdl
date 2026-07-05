@@ -40,6 +40,22 @@ class ExternalDownloadProbeInstrumentedTest {
     }
 
     @Test
+    fun exactDisplayNameMatchIgnoresSiblingVariants() {
+        val listing = """
+            -rw-rw---- 1 root everybody     4096 2026-07-05 20:02 ytdl-export-1783250902008.mp4
+            -rw-rw---- 1 root everybody     5120 2026-07-05 20:03 ytdl-export-1783250902008 (1).mp4
+        """.trimIndent()
+
+        val match = ExternalDownloadProbe.findExactExportFile(
+            listing = listing,
+            expectedDisplayName = "ytdl-export-1783250902008.mp4",
+        )
+
+        assertEquals("ytdl-export-1783250902008.mp4", match?.displayName)
+        assertEquals(4096L, match?.bytes)
+    }
+
+    @Test
     fun findsSmallExportFileFromRealDownloadDirectoryListing() {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val prefix = "ytdl-export-probe-${System.currentTimeMillis()}"
@@ -49,9 +65,9 @@ class ExternalDownloadProbeInstrumentedTest {
             device.executeShellCommand("dd if=/dev/zero of=$remotePath bs=1 count=5")
             val listing = device.executeShellCommand("ls -l /sdcard/Download")
 
-            val match = ExternalDownloadProbe.findUniqueExportVariant(
+            val match = ExternalDownloadProbe.findExactExportFile(
                 listing = listing,
-                exportPrefix = prefix,
+                expectedDisplayName = fileName,
             )
 
             assertNotNull("未识别刚写入的小导出文件：$listing", match)

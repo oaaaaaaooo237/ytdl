@@ -110,6 +110,21 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
 
 结果：三项均 `BUILD SUCCESSFUL`。本轮未完成 Computer Use 前台点击验收，原因见当前结论。
 
+## 2026-07-06 外部导出识别辅助测试收敛
+
+本轮没有重复下载或导出 355MB 主视频；只修正外部导出写出后的自动识别辅助逻辑。旧识别方式按 `ytdl-export-*` 前缀找变体，目录里已有同前缀副本时可能把“已写出”误判为未识别。现在测试侧支持按精确文件名识别当前导出文件，目录里存在同前缀 `(1)` 副本时仍能找到期望文件。
+
+本轮验证使用 5 字节小文件写入 `/sdcard/Download`，只证明“系统下载目录 listing 识别函数可靠”，不把它写成真实下载或最终导出 GUI 验收。
+
+```powershell
+cd android
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.storage.ExternalDownloadProbeInstrumentedTest"
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
+```
+
+结果：三项均 `BUILD SUCCESSFUL`；connected 探针 4/4 通过。该项仍是 adb/UIAutomator 辅助证据，不替代最终 Computer Use 前台可见全流程验收。
+
 ## 2026-06-21 继续修复：UI 审计问题收敛
 
 记录时间：2026-06-21 20:55:20

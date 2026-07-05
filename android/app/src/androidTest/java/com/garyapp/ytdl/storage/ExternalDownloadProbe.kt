@@ -21,6 +21,16 @@ internal object ExternalDownloadProbe {
         return matches.singleOrNull()
     }
 
+    fun findExactExportFile(
+        listing: String,
+        expectedDisplayName: String,
+    ): ExportVariant? {
+        return listing
+            .lineSequence()
+            .mapNotNull { line -> parseLsLine(line) }
+            .firstOrNull { variant -> variant.displayName == expectedDisplayName }
+    }
+
     private fun parseLsLine(line: String): ExportVariant? {
         val parts = line.trim().split(Regex("\\s+"), limit = 8)
         if (parts.size < 8) return null
