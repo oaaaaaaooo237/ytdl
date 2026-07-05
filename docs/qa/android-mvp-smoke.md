@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消下载已补强到 connected 真实链路，但本轮 Computer Use 对模拟器窗口再次出现激活失败，系统通知栏取消、历史删除、真实 cookies 文件选择和外部导出写出仍未完成，所以不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
+截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消和系统通知栏取消均已补强到 API37 connected 真实链路，但本轮 Computer Use 对模拟器窗口再次出现激活失败，历史删除、真实 cookies 文件选择和外部导出写出仍未完成，所以不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
 
 ## 本轮已确认
 
@@ -381,7 +381,7 @@ cache/gui-downloads/task-1783239204052-1/merged-299-140.mp4 355645249 bytes
 - 未执行历史删除，因为需要用户明确确认删除动作。
 - 未选择真实 cookies 文件，因为当前没有用户提供的测试 `cookies.txt`。
 - 未做小米 14 真机验收；当前 ADB 只检测到模拟器，且用户确认电脑暂不连接小米 14。
-- 仍需继续做通知/取消、外部导出写出、真实 cookies 文件选择和删除确认等剩余 M9/T12 项；视觉密度审计见后续小节。
+- 仍需继续做外部导出写出、真实 cookies 文件选择、删除确认和最终 Computer Use 全量前台复测等剩余 M9/T12 项；视觉密度审计见后续小节。
 
 ## 2026-07-05 视觉密度修复与截图审计
 
@@ -454,4 +454,24 @@ Computer Use 边界：
 
 - 本轮 Computer Use 可以枚举 `Android Emulator - ytdl_api37_play_x86_64:5554`，但窗口捕获显示黑屏，实际点击失败：`failed to activate captured window`。
 - ADB 截图确认 App 前台画面正常，但 ADB 截图和 connected/UIAutomator 仍只能作为辅助证据，不能替代最终 Computer Use 前台可视验收。
-- 系统通知栏里的通知 action 取消仍未完成前台可视验收。
+- 系统通知栏里的通知 action 取消仍未完成 Computer Use 前台可视验收。
+
+## 2026-07-05 系统通知栏取消路径补强
+
+本轮新增 `YtdlAppUiTest.notificationActionCanCancelRunningForegroundTask`，用真实链接 `https://www.youtube.com/watch?v=tkxzMEfp49Q` 启动 1080p 视频+音频前台下载，打开系统通知栏，展开 `YTDL 下载任务` 通知后点击 `取消` action，并断言 Room 最新历史进入 `canceled`。
+
+验证过程：
+
+```powershell
+cd android
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#notificationActionCanCancelRunningForegroundTask"
+```
+
+结果：
+
+- RED：首次测试能看到 `YTDL 下载任务`，但未展开通知时找不到 `取消` action，证明测试确实覆盖通知栏交互细节。
+- GREEN：改为真实用户动作“展开通知后点击取消”后，API37 connected 测试 1/1 通过；P3 稳定性修正后复跑为 `BUILD SUCCESSFUL in 1m 14s`。
+- 同轮全量 `YtdlAppUiTest`：API37 7/7 tests passed；P3 稳定性修正后复跑为 `BUILD SUCCESSFUL in 11m 37s`。
+- 辅助截图已保存到 `docs/qa/android-notification-cancel-20260705/`。
+
+边界：这是 connected/UIAutomator 辅助证据，不替代最终 Computer Use 前台可见全量验收；通知权限拒绝路径仍需后续前台检查。

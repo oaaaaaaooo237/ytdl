@@ -1,6 +1,7 @@
 package com.garyapp.ytdl.ui
 
 import android.content.Context
+import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -127,6 +128,20 @@ class YtdlAppUiTest {
         )
         assertLatestHistoryEventuallyCanceled(cancelRequestedAt)
         saveScreen("08-queue-canceled.png")
+    }
+
+    @Test
+    fun notificationActionCanCancelRunningForegroundTask() {
+        grantNotificationPermissionIfRuntimeRequired()
+        startRealDownloadFromDownloadPage(
+            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            expectedTitleText = "Jalen Brunson",
+        )
+
+        val cancelRequestedAt = System.currentTimeMillis()
+        openNotificationShadeAndTapCancel()
+        assertLatestHistoryEventuallyCanceled(cancelRequestedAt)
+        saveScreen("09-notification-canceled.png")
     }
 
     @Test
@@ -281,6 +296,49 @@ class YtdlAppUiTest {
             "am startservice -a com.garyapp.ytdl.download.CANCEL -n $packageName/.download.DownloadService",
         )
         device.waitForIdle()
+    }
+
+    private fun grantNotificationPermissionIfRuntimeRequired() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            device.executeShellCommand("pm grant $packageName android.permission.POST_NOTIFICATIONS")
+        }
+    }
+
+    private fun openNotificationShadeAndTapCancel() {
+        device.openNotification()
+        val notificationTitle = device.wait(Until.findObject(By.textContains("YTDL 下载任务")), 10_000)
+        assertNotNull("通知栏未显示 YTDL 下载任务", notificationTitle)
+        assertAnyTextContains(
+            texts = listOf("正在下载视频", "正在下载音频", "正在原生合并", "等待下载"),
+            timeoutMs = 10_000,
+        )
+        saveScreen("09-notification-before-cancel.png")
+
+        val titleBounds = notificationTitle!!.visibleBounds
+        device.click(device.displayWidth - 120, titleBounds.centerY())
+        device.waitForIdle()
+        saveScreen("09-notification-expanded.png")
+
+        val cancelAction = waitForSystemNotificationCancelAction(titleBounds.top)
+        assertNotNull("通知栏未显示下载取消 action", cancelAction)
+        cancelAction!!.click()
+        device.waitForIdle()
+        device.pressBack()
+    }
+
+    private fun waitForSystemNotificationCancelAction(minTop: Int): UiObject2? {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            val candidates = device.findObjects(By.pkg("com.android.systemui").text("取消"))
+                .filter { it.visibleBounds.top >= minTop }
+                .sortedBy { it.visibleBounds.top }
+            if (candidates.isNotEmpty()) {
+                return candidates.first()
+            }
+            device.waitForIdle()
+            Thread.sleep(250)
+        }
+        return null
     }
 
     private fun tapTag(tag: String) {
