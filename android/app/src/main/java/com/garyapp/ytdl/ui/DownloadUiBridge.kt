@@ -129,6 +129,24 @@ fun historyActionLabels(item: HistoryUiItem): List<String> {
     }
 }
 
+fun suggestedExportDisplayName(item: HistoryUiItem, fallbackDisplayName: String): String {
+    val extension = fallbackDisplayName
+        .substringAfterLast('.', "")
+        .takeIf { it.isNotBlank() && it.length <= 8 }
+        ?.let { ".$it" }
+        .orEmpty()
+    val baseName = item.title
+        .replace(Regex("""[\\/:*?"<>|\r\n\t]"""), "_")
+        .trim('.', ' ')
+        .take(72)
+        .ifBlank { fallbackDisplayName.substringBeforeLast('.').ifBlank { "ytdl-export" } }
+    val suffix = item.completedAt
+        .takeIf { it > 0L }
+        ?.let { SimpleDateFormat("yyyyMMdd-HHmmss", Locale.CHINA).format(Date(it)) }
+        ?: "auto"
+    return "$baseName-$suffix$extension"
+}
+
 private fun historyBadge(status: String): String {
     return when (status) {
         HistoryItemEntity.STATUS_COMPLETED -> "完成"
@@ -242,3 +260,8 @@ internal fun subtitleSelectionLabelForUiTest(
 ): String = subtitleSelectionLabel(analysis, selectedSubtitles)
 
 internal fun historyActionLabelsForUiTest(item: HistoryUiItem): List<String> = historyActionLabels(item)
+
+internal fun suggestedExportDisplayNameForUiTest(
+    item: HistoryUiItem,
+    fallbackDisplayName: String,
+): String = suggestedExportDisplayName(item, fallbackDisplayName)

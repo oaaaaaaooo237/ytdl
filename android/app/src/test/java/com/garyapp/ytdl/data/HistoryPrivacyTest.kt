@@ -207,6 +207,11 @@ class HistoryPrivacyTest {
         assertEquals("video.mp4", createDocumentIntent.getStringExtra(Intent.EXTRA_TITLE))
         assertEquals("video.mp4", mediaStoreValues.getAsString(MediaStore.MediaColumns.DISPLAY_NAME))
         assertEquals("video/mp4", mediaStoreValues.getAsString(MediaStore.MediaColumns.MIME_TYPE))
+        assertEquals(
+            "video-20260705-112800.mp4",
+            ExportController.createDocumentIntent(discovered, "video-20260705-112800.mp4")
+                .getStringExtra(Intent.EXTRA_TITLE),
+        )
         val exportedBytes = ByteArrayOutputStream()
         val bytesCopied = ExportController.copyToStream(discovered, exportedBytes).getOrThrow()
         assertEquals(output.length(), bytesCopied)

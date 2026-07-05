@@ -65,6 +65,7 @@ import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,6 +83,8 @@ import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
 import com.garyapp.ytdl.download.DownloadOutputKind
+import com.garyapp.ytdl.download.DownloadRequest
+import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
 import com.garyapp.ytdl.download.NotificationController
@@ -125,6 +128,8 @@ data class YtdlDestination(
 internal data class RuntimeDownloadState(
     val url: String = "",
     val analysis: VideoAnalysis? = null,
+    val activeRequest: DownloadRequest? = null,
+    val activeStage: DownloadStage = DownloadStage.Idle,
     val formatSelection: FormatSelection = FormatSelection(),
     val appliedFormatSelection: FormatSelection = FormatSelection(),
     val selectedSubtitles: List<SubtitleInfo> = emptyList(),
@@ -134,6 +139,7 @@ internal data class RuntimeDownloadState(
     val isDownloading: Boolean = false,
     val userMessage: String = DefaultRuntimeMessage,
     val progressPercent: Double? = null,
+    val overallProgressPercent: Double? = null,
     val downloadedBytes: Long? = null,
     val totalBytes: Long? = null,
     val downloadStatus: String = "",
@@ -143,6 +149,17 @@ internal data class RuntimeDownloadState(
     val hasRealTask: Boolean
         get() = downloadStatus.isNotBlank() || progressPercent != null || outputPath.isNotBlank() || outputBytes > 0L || isDownloading
 }
+
+internal enum class QueueStageStatus {
+    Pending,
+    Current,
+    Completed,
+}
+
+internal data class QueueStageItem(
+    val label: String,
+    val status: QueueStageStatus,
+)
 
 internal data class FormatSettingSummaries(
     val frameRate: String,
@@ -515,7 +532,12 @@ fun YtdlApp() {
             return
         }
         pendingExportOutput = output
-        exportLauncher.launch(ExportController.createDocumentIntent(output))
+        exportLauncher.launch(
+            ExportController.createDocumentIntent(
+                output = output,
+                suggestedDisplayName = suggestedExportDisplayName(item, output.displayName),
+            ),
+        )
     }
 
     fun deleteHistoryItem(item: HistoryUiItem) {
@@ -730,9 +752,12 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             isDownloading = false,
             userMessage = "下载结果无有效输出，请重试。",
             progressPercent = null,
+            overallProgressPercent = null,
             downloadedBytes = null,
             totalBytes = null,
             downloadStatus = userVisibleDownloadStatus(DownloadStage.Failed),
+            activeRequest = state.request,
+            activeStage = DownloadStage.Failed,
             outputPath = "",
             outputBytes = 0L,
         )
@@ -742,9 +767,12 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             isDownloading = false,
             userMessage = DefaultRuntimeMessage,
             progressPercent = null,
+            overallProgressPercent = null,
             downloadedBytes = null,
             totalBytes = null,
             downloadStatus = "",
+            activeRequest = null,
+            activeStage = DownloadStage.Idle,
             outputPath = "",
             outputBytes = 0L,
         )
@@ -758,10 +786,13 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             else -> "正在$statusText..."
         },
         downloadStatus = statusText,
+        activeRequest = state.request,
+        activeStage = state.stage,
         progressPercent = when (state.stage) {
             DownloadStage.Completed -> 100.0
             else -> progress?.percent
         },
+        overallProgressPercent = queueOverallProgressPercent(state, progress?.percent),
         downloadedBytes = progress?.downloadedBytes ?: mediaOutput?.bytesWritten,
         totalBytes = progress?.totalBytes ?: mediaOutput?.bytesWritten,
         outputPath = mediaOutput?.path.orEmpty(),
@@ -970,7 +1001,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
             RuntimeMessageCard(state.userMessage)
         }
     }
-    item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录", leading = "□", trailing = "›") }
+    item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录 · 导出默认自动改名", leading = "□", trailing = "›") }
     item {
         SectionTitle("下载模式")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1367,6 +1398,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                     progress = progress,
                     status = queueCardStatus(state),
                     meta = "$downloaded / $total${if (state.outputPath.isNotBlank()) " · ${File(state.outputPath).name}" else ""}",
+                    stageItems = queueStageItems(state),
                     accent = queueCardAccent(state, palette),
                     actions = queueCardActions(state),
                     thumbnailBitmap = state.thumbnailBitmap,
@@ -1384,6 +1416,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                 progress = 0f,
                 status = "待开始",
                 meta = "这里不会显示假进度",
+                stageItems = emptyList(),
                 accent = palette.queueAccent,
                 actions = emptyList(),
                 modifier = Modifier.testTag("ytdl-queue-active-card"),
@@ -1430,12 +1463,66 @@ private fun queueCardSubtitle(state: RuntimeDownloadState): String {
 
 internal fun queueCardSubtitleForUiTest(state: RuntimeDownloadState): String = queueCardSubtitle(state)
 
+private data class QueueStageSpec(
+    val label: String,
+    val stage: DownloadStage,
+)
+
+private fun queueStageSpecs(request: DownloadRequest?): List<QueueStageSpec> {
+    if (request == null) return emptyList()
+    val mediaStages = when (request.route) {
+        is DownloadRoute.DirectSingleFile -> listOf(QueueStageSpec("下载视频", DownloadStage.DownloadingVideo))
+        is DownloadRoute.VideoOnly -> listOf(QueueStageSpec("下载视频", DownloadStage.DownloadingVideo))
+        is DownloadRoute.AudioOnly -> listOf(QueueStageSpec("下载音频", DownloadStage.DownloadingAudio))
+        is DownloadRoute.MergeRequired -> listOf(
+            QueueStageSpec("下载视频", DownloadStage.DownloadingVideo),
+            QueueStageSpec("下载音频", DownloadStage.DownloadingAudio),
+            QueueStageSpec("原生合并", DownloadStage.Merging),
+        )
+    }
+    if (request.selectedSubtitles.isEmpty()) return mediaStages
+    return mediaStages + QueueStageSpec("字幕文件", DownloadStage.DownloadingSubtitles)
+}
+
+private fun queueStageItems(state: RuntimeDownloadState): List<QueueStageItem> {
+    val specs = queueStageSpecs(state.activeRequest)
+    if (specs.isEmpty()) return emptyList()
+    if (state.activeStage == DownloadStage.Completed) {
+        return specs.map { QueueStageItem(it.label, QueueStageStatus.Completed) }
+    }
+
+    val currentIndex = specs.indexOfFirst { it.stage == state.activeStage }
+    return specs.mapIndexed { index, spec ->
+        val status = when {
+            currentIndex < 0 -> QueueStageStatus.Pending
+            index < currentIndex -> QueueStageStatus.Completed
+            index == currentIndex -> QueueStageStatus.Current
+            else -> QueueStageStatus.Pending
+        }
+        QueueStageItem(spec.label, status)
+    }
+}
+
+internal fun queueStageItemsForUiTest(state: RuntimeDownloadState): List<QueueStageItem> = queueStageItems(state)
+
+private fun queueOverallProgressPercent(state: DownloadTaskState, currentStagePercent: Double?): Double? {
+    if (state.stage == DownloadStage.Completed) return 100.0
+    if (state.stage in setOf(DownloadStage.Failed, DownloadStage.Canceled, DownloadStage.Idle)) return null
+    val specs = queueStageSpecs(state.request)
+    if (specs.isEmpty()) return currentStagePercent
+    if (state.stage == DownloadStage.Waiting) return 0.0
+    val currentIndex = specs.indexOfFirst { it.stage == state.stage }
+    if (currentIndex < 0) return currentStagePercent
+    val currentStageFraction = ((currentStagePercent ?: 0.0).coerceIn(0.0, 100.0)) / 100.0
+    return ((currentIndex + currentStageFraction) / specs.size) * 100.0
+}
+
 private fun queueCardStatus(state: RuntimeDownloadState): String {
     return when (state.downloadStatus) {
         "下载完成" -> "100%"
         "下载失败" -> "失败"
         "已取消" -> "取消"
-        else -> "${(state.progressPercent ?: 0.0).toInt()}%"
+        else -> "${(state.overallProgressPercent ?: state.progressPercent ?: 0.0).toInt()}%"
     }
 }
 
@@ -1611,7 +1698,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     onThemeModeChange: (String) -> Unit,
     onColorPresetChange: (String) -> Unit,
 ) {
-    item { SettingLineCard("默认保存位置", "App 私有目录", "▣", "›", LocalYtdlAppPalette.current.settingsAccent) }
+    item { SettingLineCard("默认保存位置", "App 私有目录 · 导出默认自动改名", "▣", "›", LocalYtdlAppPalette.current.settingsAccent) }
     item {
         SettingLineCard(
             "Cookies 文件",
@@ -1882,12 +1969,46 @@ private fun SettingLineCard(
 }
 
 @Composable
+private fun QueueStageStrip(stageItems: List<QueueStageItem>) {
+    val palette = LocalYtdlAppPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("ytdl-queue-stage-strip"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        stageItems.forEachIndexed { index, item ->
+            val completed = item.status == QueueStageStatus.Completed
+            val current = item.status == QueueStageStatus.Current
+            Text(
+                text = if (completed) "${item.label} ✓" else item.label,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("ytdl-queue-stage-$index"),
+                color = when {
+                    completed -> palette.successGreen
+                    current -> palette.softText
+                    else -> palette.softText.copy(alpha = 0.55f)
+                },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (current || completed) FontWeight.Bold else FontWeight.Normal,
+                textDecoration = if (current) TextDecoration.Underline else TextDecoration.None,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun QueueCard(
     title: String,
     subtitle: String,
     progress: Float,
     status: String,
     meta: String,
+    stageItems: List<QueueStageItem>,
     accent: Color,
     actions: List<String>,
     modifier: Modifier = Modifier,
@@ -1919,7 +2040,10 @@ private fun QueueCard(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (progress > 0f) {
+                if (stageItems.isNotEmpty()) {
+                    QueueStageStrip(stageItems)
+                }
+                if (stageItems.isNotEmpty() || progress > 0f) {
                     LinearProgressIndicator(
                         progress = { progress },
                         modifier = Modifier

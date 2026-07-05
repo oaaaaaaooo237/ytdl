@@ -73,11 +73,14 @@ object ExportController {
         }
     }
 
-    fun createDocumentIntent(output: AppPrivateOutput): Intent {
+    fun createDocumentIntent(
+        output: AppPrivateOutput,
+        suggestedDisplayName: String = output.displayName,
+    ): Intent {
         return Intent(Intent.ACTION_CREATE_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
             .setType(output.mimeType)
-            .putExtra(Intent.EXTRA_TITLE, output.displayName)
+            .putExtra(Intent.EXTRA_TITLE, suggestedDisplayName.safeDisplayName())
     }
 
     fun mediaStoreValues(output: AppPrivateOutput): ContentValues {

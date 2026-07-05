@@ -225,6 +225,59 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun mergeQueueStateSeparatesStageProgressFromOverallProgress() {
+        val request = mergeRequest()
+        val state = RuntimeDownloadState()
+            .withPipelineStateForUiTest(
+                DownloadTaskState.waiting(request)
+                    .atStage(DownloadStage.DownloadingVideo)
+                    .withProgress(
+                        DownloadProgress(
+                            status = "downloading",
+                            percent = 50.0,
+                            downloadedBytes = 50L,
+                            totalBytes = 100L,
+                            speedBytesPerSecond = null,
+                            etaSeconds = null,
+                            filename = "video.mp4",
+                        ),
+                    ),
+            )
+
+        assertEquals(50.0, state.progressPercent)
+        assertEquals(16.666666666666664, state.overallProgressPercent)
+        assertEquals("16%", queueCardStatusForUiTest(state))
+        assertEquals(
+            listOf(
+                QueueStageItem("下载视频", QueueStageStatus.Current),
+                QueueStageItem("下载音频", QueueStageStatus.Pending),
+                QueueStageItem("原生合并", QueueStageStatus.Pending),
+            ),
+            queueStageItemsForUiTest(state),
+        )
+    }
+
+    @Test
+    fun mergeQueueStateMarksCompletedStagesBeforeCurrentStage() {
+        val request = mergeRequest()
+        val state = RuntimeDownloadState()
+            .withPipelineStateForUiTest(
+                DownloadTaskState.waiting(request)
+                    .atStage(DownloadStage.Merging),
+            )
+
+        assertEquals(
+            listOf(
+                QueueStageItem("下载视频", QueueStageStatus.Completed),
+                QueueStageItem("下载音频", QueueStageStatus.Completed),
+                QueueStageItem("原生合并", QueueStageStatus.Current),
+            ),
+            queueStageItemsForUiTest(state),
+        )
+        assertEquals("66%", queueCardStatusForUiTest(state))
+    }
+
+    @Test
     fun terminalQueueHeaderDoesNotSayDownloading() {
         val request = request()
         val completed = RuntimeDownloadState().withPipelineStateForUiTest(
@@ -362,6 +415,30 @@ class DownloadUiBridgeTest {
         assertEquals(listOf(audio), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 2))
         assertEquals(emptyList<HistoryUiItem>(), filterHistoryItemsForUiTest(items, query = "不存在", selectedFilterIndex = 0))
     }
+
+    @Test
+    fun historyExportSuggestionUsesTitleAndTimestampToAvoidRepeatedMergedNames() {
+        val item = HistoryUiItem(
+            id = 1,
+            title = "Jalen/Brunson: Captain?",
+            meta = "视频+音频",
+            badge = "完成",
+            outputUri = "app-private://outputs/task-1/merged-299-140.mp4",
+            status = "completed",
+            completedAt = 1_783_250_902_008L,
+        )
+
+        val name = suggestedExportDisplayNameForUiTest(item, "merged-299-140.mp4")
+
+        assertTrue(name.startsWith("Jalen_Brunson_ Captain_"))
+        assertTrue(name.endsWith(".mp4"))
+        assertTrue(Regex(""".*-\d{8}-\d{6}\.mp4""").matches(name))
+        listOf("/", ":", "?").forEach { forbidden ->
+            assertFalse(name.contains(forbidden))
+        }
+        assertFalse(name.startsWith("merged-299-140"))
+    }
+
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(
         title = "测试视频",
         durationSeconds = 60,
@@ -393,6 +470,12 @@ class DownloadUiBridgeTest {
             ),
         ).getOrThrow()
     }
+
+    private fun mergeRequest() = DownloadRequest(
+        url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+        title = "测试视频",
+        route = DownloadRoute.MergeRequired(videoFormatId = "137", audioFormatId = "140"),
+    )
 
     private fun sourceFile(vararg candidates: String): File {
         return candidates
