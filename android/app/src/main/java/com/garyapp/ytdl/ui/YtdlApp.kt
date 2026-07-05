@@ -1048,6 +1048,15 @@ private fun shouldShowRuntimeMessage(message: String): Boolean {
         trimmed != AnalysisCompleteRuntimeMessage
 }
 
+internal fun shouldShowQueueRuntimeMessageForUiTest(message: String): Boolean = shouldShowQueueRuntimeMessage(message)
+
+private fun shouldShowQueueRuntimeMessage(message: String): Boolean {
+    val trimmed = message.trim()
+    return shouldShowRuntimeMessage(trimmed) &&
+        !trimmed.startsWith("正在") &&
+        !trimmed.startsWith("下载完成：")
+}
+
 private fun isRuntimeWarningMessage(message: String): Boolean {
     return listOf("失败", "无效", "未获得", "请先", "无法", "错误").any(message::contains)
 }
@@ -1336,6 +1345,11 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+        }
+    }
+    if (shouldShowQueueRuntimeMessage(state.userMessage)) {
+        item {
+            RuntimeMessageCard(state.userMessage)
         }
     }
     if (state.hasRealTask) {

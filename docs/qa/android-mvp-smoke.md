@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。仍不能写成“全量可视验收通过”，因为历史删除未执行、真实 cookies 文件未选择、外部导出写出和通知/取消前台路径仍未完成，且后续真机验收阶段尚未开始。
+截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消下载已补强到 connected 真实链路，但本轮 Computer Use 对模拟器窗口再次出现激活失败，系统通知栏取消、历史删除、真实 cookies 文件选择和外部导出写出仍未完成，所以不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
 
 ## 本轮已确认
 
@@ -86,7 +86,7 @@ cd android
 
 ## 当前下一步
 
-1. 在不触发外部发送/破坏性操作的前提下继续验证通知、取消、导出取消/写出和失败恢复等前台路径。
+1. 在不触发外部发送/破坏性操作的前提下继续验证系统通知栏取消、导出取消/写出和失败恢复等前台路径；队列页取消已有 connected 真实链路辅助证据，但仍需 Computer Use 能激活窗口后补前台点击证据。
 2. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
 3. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 4. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
@@ -421,3 +421,37 @@ cd android
 - 本轮 ADB 截图只算静态视觉证据，不替代 Computer Use 前台全功能验收。
 - 本轮没有重新执行破坏性历史删除、真实 cookies 文件选择、外部导出写出、通知/取消前台路径。
 - 小米 14 真机验收仍留到后续第 7 项且设备连接后执行。
+
+## 2026-07-05 队列取消路径补强
+
+本轮根据 fresh 审计结果修复了一个取消 race：用户在任务刚入队、前台服务尚未 attach 取消令牌时点击取消，旧逻辑可能丢失取消请求。现在 `DownloadCoordinator.cancelActive()` 会记住非终态任务的取消请求，并在服务 attach `MutableDownloadCancellation` 时立即传递。
+
+新增验证：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadCoordinatorTest.cancelBeforeServiceAttachesCancellationIsRemembered
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.queueRuntimeMessagesOnlyShowUserActionFeedback
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#downloadPageCanCancelRunningForegroundTask"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest"
+```
+
+结果：
+
+- race 单测先红后绿，证明早取消请求已被保留。
+- 全量 `:app:testDebugUnitTest`：`BUILD SUCCESSFUL`。
+- `:app:assembleDebug`：`BUILD SUCCESSFUL`。
+- API37 connected 真实取消测试：`BUILD SUCCESSFUL`，流程为真实分析 `https://www.youtube.com/watch?v=tkxzMEfp49Q`、应用 1080p 视频+音频选择、启动前台下载、进入队列后立即点击取消、UI 进入 `最近任务已取消`，Room 最新历史必须为 `canceled`，不能为空通过或写成 completed。
+- API37 connected 全量 `YtdlAppUiTest`：6/6 tests passed，`BUILD SUCCESSFUL in 11m 10s`。
+
+辅助截图：
+
+- `docs/qa/android-cancel-20260705/08-queue-canceled.png`
+
+Computer Use 边界：
+
+- 本轮 Computer Use 可以枚举 `Android Emulator - ytdl_api37_play_x86_64:5554`，但窗口捕获显示黑屏，实际点击失败：`failed to activate captured window`。
+- ADB 截图确认 App 前台画面正常，但 ADB 截图和 connected/UIAutomator 仍只能作为辅助证据，不能替代最终 Computer Use 前台可视验收。
+- 系统通知栏里的通知 action 取消仍未完成前台可视验收。

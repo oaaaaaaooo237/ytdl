@@ -111,6 +111,25 @@ class YtdlAppUiTest {
     }
 
     @Test
+    fun downloadPageCanCancelRunningForegroundTask() {
+        startRealDownloadFromDownloadPage(
+            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            expectedTitleText = "Jalen Brunson",
+        )
+
+        tapTag("ytdl-tab-queue")
+        assertTagVisible("ytdl-real-queue-card", timeoutMs = 30_000)
+        val cancelRequestedAt = System.currentTimeMillis()
+        tapTag("ytdl-queue-cancel-action")
+        assertAnyTextContains(
+            texts = listOf("已请求取消当前下载", "下载已取消", "最近任务已取消"),
+            timeoutMs = 120_000,
+        )
+        assertLatestHistoryEventuallyCanceled(cancelRequestedAt)
+        saveScreen("08-queue-canceled.png")
+    }
+
+    @Test
     fun shortsUrlRunsRealAnalyzePreviewAndDownloadFlow() {
         runRealAnalyzePreviewAndDownloadFlow(
             url = "https://www.youtube.com/shorts/QBwpO9f0oAw",
@@ -118,6 +137,24 @@ class YtdlAppUiTest {
             expectedTitleText = "Luka and Jalen",
             completeDownloadAndHistory = false,
         )
+    }
+
+    private fun startRealDownloadFromDownloadPage(
+        url: String,
+        expectedTitleText: String?,
+    ) {
+        setTextTag("ytdl-url-input", url)
+        tapTag("ytdl-analyze-button")
+        assertTextContains("分析完成", timeoutMs = 45_000)
+        expectedTitleText?.let { assertTextContains(it, timeoutMs = 1_000) }
+
+        tapTag("ytdl-tab-formats")
+        scrollUntilTag("ytdl-format-row-1080")
+        tapTag("ytdl-format-row-1080")
+        scrollUntilTag("ytdl-format-apply")
+        tapTag("ytdl-format-apply")
+        tapTag("ytdl-download-authorized-checkbox")
+        tapTag("ytdl-download-start")
     }
 
     private fun runRealAnalyzePreviewAndDownloadFlow(
@@ -217,6 +254,25 @@ class YtdlAppUiTest {
             "最新历史格式摘要未证明视频+音频合并：${latest.formatSummary}",
             latest.formatSummary.contains("视频") && latest.formatSummary.contains("音频"),
         )
+    }
+
+    private fun assertLatestHistoryEventuallyCanceled(cancelRequestedAt: Long) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val deadline = System.currentTimeMillis() + 120_000
+        var latest: HistoryItemEntity? = null
+        while (System.currentTimeMillis() < deadline) {
+            latest = historyDao.listRecent(1).firstOrNull()
+            if (latest?.status == HistoryItemEntity.STATUS_CANCELED && latest.completedAt >= cancelRequestedAt) {
+                return
+            }
+            assertTrue(
+                "取消流程不应写成完成历史：status=${latest?.status}, outputUri=${latest?.outputUri}",
+                latest?.status != HistoryItemEntity.STATUS_COMPLETED,
+            )
+            Thread.sleep(1_000)
+        }
+        assertEquals("取消流程必须写入 canceled 历史", HistoryItemEntity.STATUS_CANCELED, latest?.status)
     }
 
     private fun cancelActiveDownload() {

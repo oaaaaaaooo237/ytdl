@@ -102,6 +102,15 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun queueRuntimeMessagesOnlyShowUserActionFeedback() {
+        assertFalse(shouldShowQueueRuntimeMessageForUiTest("等待输入公开视频页面地址。"))
+        assertFalse(shouldShowQueueRuntimeMessageForUiTest("正在下载视频..."))
+        assertFalse(shouldShowQueueRuntimeMessageForUiTest("下载完成：merged-299-140.mp4"))
+        assertTrue(shouldShowQueueRuntimeMessageForUiTest("已请求取消当前下载。"))
+        assertTrue(shouldShowQueueRuntimeMessageForUiTest("下载失败：请检查网络或授权状态。"))
+    }
+
+    @Test
     fun formatRowsComeFromCurrentAnalysisAndDisabledRowsExplainWhy() {
         val analysis = analysisWith(
             progressiveFormat(id = "18", height = 360),

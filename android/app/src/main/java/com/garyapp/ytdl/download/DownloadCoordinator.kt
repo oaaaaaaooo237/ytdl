@@ -16,6 +16,7 @@ object DownloadCoordinator {
     private var pendingLaunch: DownloadLaunch? = null
     private var currentState: DownloadTaskState? = null
     private var activeCancellation: MutableDownloadCancellation? = null
+    private var cancellationRequested = false
 
     fun startForegroundDownload(
         context: Context,
@@ -70,6 +71,7 @@ object DownloadCoordinator {
             val waiting = DownloadTaskState.waiting(request)
             synchronized(lock) {
                 pendingLaunch = DownloadLaunch(request, outputDirectory)
+                cancellationRequested = false
                 currentState = waiting
             }
             publish(waiting)
@@ -95,8 +97,12 @@ object DownloadCoordinator {
     }
 
     internal fun attachCancellation(cancellation: MutableDownloadCancellation) {
-        synchronized(lock) {
+        val shouldCancel = synchronized(lock) {
             activeCancellation = cancellation
+            cancellationRequested
+        }
+        if (shouldCancel) {
+            cancellation.cancel()
         }
     }
 
@@ -104,14 +110,19 @@ object DownloadCoordinator {
         synchronized(lock) {
             if (activeCancellation === cancellation) {
                 activeCancellation = null
+                cancellationRequested = false
             }
         }
     }
 
     fun cancelActive() {
-        synchronized(lock) {
+        val cancellation = synchronized(lock) {
+            if (currentState?.stage?.let { it !in TerminalStages } == true) {
+                cancellationRequested = true
+            }
             activeCancellation
-        }?.cancel()
+        }
+        cancellation?.cancel()
     }
 
     internal fun resetForTests() {
@@ -120,6 +131,14 @@ object DownloadCoordinator {
             pendingLaunch = null
             currentState = null
             activeCancellation = null
+            cancellationRequested = false
         }
     }
+
+    private val TerminalStages = setOf(
+        DownloadStage.Completed,
+        DownloadStage.Failed,
+        DownloadStage.Canceled,
+        DownloadStage.Idle,
+    )
 }

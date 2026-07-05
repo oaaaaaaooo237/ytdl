@@ -482,7 +482,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M9: Full Foreground Visible Acceptance Flow
 
-**Status:** 进行中；M8 前置能力已到位，Computer Use 已恢复并完成普通 YouTube 链接与 Shorts 链接的部分前台真实流程，2026-07-05 已完成一次截图级视觉密度修复。M9 仍未完全通过，不能称为 MVP 验收完成。
+**Status:** 进行中；M8 前置能力已到位，Computer Use 已恢复并完成普通 YouTube 链接与 Shorts 链接的部分前台真实流程，2026-07-05 已完成一次截图级视觉密度修复，并补强队列页取消的 connected 真实链路。M9 仍未完全通过，不能称为 MVP 验收完成。
 
 **Purpose:** Run the meaningful GUI test only after media capability, subtitle-file output, queue, history, export, and privacy behavior exist: user-visible analysis, format choice, split download, merge, separate subtitle file where applicable, foreground progress, history, export, settings, and failures.
 
@@ -513,6 +513,8 @@ Checkboxes before this section are historical scope inventory and must not be us
 **M9 cold-start update, 2026-07-05 16:20:** A freshly built and reinstalled debug APK was launched on API37, then Computer Use completed a cold-start foreground flow: blank URL failure, clean hardware-key URL input with `mInputShown=false`, required URL analysis, 1080p merge-required format selection, authorization confirmation, real queue progress, audio download, native merge, 100% completion, history landing, system video open, share sheet invocation without sending, export save UI invocation without saving, settings privacy/cookies boundary visibility, and cookies picker invocation without selecting a file. Remaining M9 work: history delete is not executed without user confirmation, real cookies selection needs a user-provided `cookies.txt`, notification/cancel and export-write frontstage paths still need coverage, and a fresh audit subagent must review this evidence and plan state.
 
 **M9 visual-density update, 2026-07-05:** The GUI screenshot audit found oversized default Material typography and overly roomy shared components compared with `docs/android-gui-reference-v3.png`. The follow-up added compact app typography, tightened bottom navigation/cards/segmented rows/list rows, and stopped passive default runtime messages from occupying a large download-page card. Fresh checks passed: `:app:testDebugUnitTest`, `:app:assembleDebug`, and API37 `YtdlAppUiTest` 5/5. Static screenshots are saved under `docs/qa/android-visual-audit-20260705-compactfix/`. This is visual evidence only; it does not replace final Computer Use full-flow acceptance.
+
+**M9 cancel-path update, 2026-07-05:** A fresh audit found that canceling during the tiny gap before `DownloadService` attached its cancellation token could be lost. The fix records early cancellation in `DownloadCoordinator` and applies it as soon as `MutableDownloadCancellation` is attached. Fresh checks passed: targeted race unit test, queue runtime-message unit test, full `:app:testDebugUnitTest`, `:app:assembleDebug`, API37 connected `YtdlAppUiTest#downloadPageCanCancelRunningForegroundTask`, and full API37 connected `YtdlAppUiTest` 6/6. The connected test uses the required YouTube URL, starts a real foreground download, cancels from the queue page immediately after the real queue card appears, and asserts Room latest history is `canceled`, not empty and not completed. Screenshot evidence is saved under `docs/qa/android-cancel-20260705/`. Computer Use could enumerate the emulator window in this later run but failed to activate it (`failed to activate captured window`), so system notification cancel and final foreground Computer Use acceptance remain open.
 
 ### Continuation Task M10: Xiaomi 14 Real-Device Validation
 

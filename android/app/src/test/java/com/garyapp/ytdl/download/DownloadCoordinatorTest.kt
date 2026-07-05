@@ -45,6 +45,20 @@ class DownloadCoordinatorTest {
     }
 
     @Test
+    fun cancelBeforeServiceAttachesCancellationIsRemembered() {
+        val request = request()
+        DownloadCoordinator.enqueueForServiceStart(request, temp.newFolder("downloads")).getOrThrow()
+
+        DownloadCoordinator.cancelActive()
+        val launch = DownloadCoordinator.consumePendingLaunch()
+        val cancellation = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(cancellation)
+
+        assertNotNull(launch)
+        assertTrue("早取消请求应传递给刚 attach 的任务", cancellation.isCancellationRequested)
+    }
+
+    @Test
     fun serviceSourceRunsRealPipelineAndUpdatesForegroundNotification() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
