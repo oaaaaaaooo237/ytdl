@@ -2,6 +2,7 @@ package com.garyapp.ytdl.download
 
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
@@ -31,20 +32,14 @@ class DownloadService : Service() {
         val launch = DownloadCoordinator.consumePendingLaunch()
         if (launch == null) {
             val idle = DownloadTaskState.idle()
-            startForeground(
-                NotificationController.NotificationId,
-                notificationController.buildForegroundNotification(idle),
-            )
+            startTypedForeground(idle)
             DownloadCoordinator.publish(idle)
             stopSelf(startId)
             return START_NOT_STICKY
         }
 
         val state = DownloadTaskState.waiting(launch.request)
-        startForeground(
-            NotificationController.NotificationId,
-            notificationController.buildForegroundNotification(state),
-        )
+        startTypedForeground(state)
         DownloadCoordinator.publish(state)
 
         Thread {
@@ -85,6 +80,19 @@ class DownloadService : Service() {
     private fun publishForegroundState(state: DownloadTaskState) {
         DownloadCoordinator.publish(state)
         notificationController.notifyForegroundState(state)
+    }
+
+    private fun startTypedForeground(state: DownloadTaskState) {
+        val notification = notificationController.buildForegroundNotification(state)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NotificationController.NotificationId,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST,
+            )
+        } else {
+            startForeground(NotificationController.NotificationId, notification)
+        }
     }
 
     private fun stopForegroundAfterTerminalState() {

@@ -5,6 +5,7 @@ import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.ui.FormatMode
 import com.garyapp.ytdl.ui.FormatSelection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -64,11 +65,21 @@ class DownloadCoordinatorTest {
             "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
             "src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
         ).readText()
+        val manifest = sourceFile(
+            "app/src/main/AndroidManifest.xml",
+            "src/main/AndroidManifest.xml",
+        ).readText()
 
         assertTrue(source.contains("DownloadPipeline("))
         assertTrue(source.contains("YtdlpDownloadEngine("))
         assertTrue(source.contains("NativeMuxerMediaProcessor("))
         assertTrue(source.contains("notificationController.notifyForegroundState"))
+        assertTrue(source.contains("ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST"))
+        assertTrue(source.contains("Build.VERSION_CODES.Q"))
+        assertTrue(source.contains("startForeground("))
+        assertFalse(source.contains("ServiceCompat.startForeground"))
+        assertTrue(manifest.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC"))
+        assertTrue(manifest.contains("android:foregroundServiceType=\"dataSync\""))
         assertTrue(source.contains("DownloadCoordinator.publish"))
         assertTrue(source.contains("Thread"))
         assertTrue(source.contains("if (intent?.action == ActionCancel)"))

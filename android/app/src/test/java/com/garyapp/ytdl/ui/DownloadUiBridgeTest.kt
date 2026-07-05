@@ -368,6 +368,30 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun queueMetaExplainsPrivateOutputUsesAutoRenameInsteadOfInternalMergedName() {
+        val state = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Completed,
+                request = mergeRequest(),
+                outputs = listOf(
+                    DownloadOutputFile(
+                        DownloadOutputKind.Media,
+                        "/data/user/0/com.garyapp.ytdl/files/gui-downloads/task-1/merged-136-140.mp4",
+                        4096L,
+                    ),
+                ),
+            ),
+        )
+
+        val meta = queueCardMetaForUiTest(state)
+
+        assertTrue(meta.contains("4.0 KB / 4.0 KB"))
+        assertTrue(meta.contains("App 私有目录"))
+        assertTrue(meta.contains("导出默认自动改名"))
+        assertFalse(meta.contains("merged-136-140.mp4"))
+    }
+
+    @Test
     fun completedStateWithoutMediaOutputDoesNotRenderAsCompletedDownload() {
         val state = RuntimeDownloadState().withPipelineStateForUiTest(
             DownloadTaskState(

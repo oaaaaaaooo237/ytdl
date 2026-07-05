@@ -701,3 +701,37 @@ cd android
 - 全量 `YtdlAppUiTest`：API37 8/8 通过，`BUILD SUCCESSFUL in 15m 3s`。
 
 Computer Use 边界：本轮 Computer Use 可以连接并被动截图 `Android Emulator - ytdl_api37_play_x86_64:5554`，但 `activate_window` 仍返回 `failed to activate captured window`。因此以上仍是单元、构建和 connected/UIAutomator 辅助证据，不能写成最终前台可视验收通过。后续可视输入 URL 时默认用桌面剪贴板 + `Ctrl+V` 一次性粘贴，不再逐字输入。
+
+## 2026-07-06 API35 前台可视短视频 smoke
+
+本轮按用户反馈继续收敛队列页：视频+音频高分辨率下载当前不是并行链路，而是“下载视频 -> 下载音频 -> 原生合并”串行执行；队列页必须把这几个阶段直接展示出来，右侧百分比表达整个任务估算进度，下面进度条表达当前阶段进度。队列卡片不再显示内部 `merged-xxx.mp4` 文件名，改为说明“App 私有目录 · 导出默认自动改名”。
+
+验证范围：
+
+- 运行环境：前台可见 `Android Emulator - ytdl_api35_play_x86_64:5556`，Computer Use 操作真实 GUI。
+- 测试地址：`https://youtu.be/QBwpO9f0oAw`。
+- 操作覆盖：下载页输入 URL、分析、预览图和标题显示、授权确认、开始下载、切换队列、观察分阶段进度、等待原生合并完成。
+- 输入边界：未打开 Android 软键盘、候选栏或 Gboard 菜单。
+
+本轮观察到：
+
+- 分析后显示标题 `Luka and Jalen 🤝`、时长 `00:14`，格式显示 `自动（推荐） · 1280p MP4 需原生合并`。
+- 队列页下载中可见阶段条：`下载视频 ✓`、`下载音频`、`原生合并`；完成后三个阶段均显示绿色完成状态。
+- 完成卡片显示 `4.1 MB / 4.1 MB · App 私有目录 · 导出默认自动改名`，没有暴露内部 `merged-...` 文件名。
+- 同轮日志未发现 `AndroidRuntime`、`FATAL EXCEPTION`、`ComposeInternal`、`LayoutNode should be attached`、`Force finishing` 或进程退出。
+
+辅助验证：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+```
+
+结果均为 `BUILD SUCCESSFUL`。
+
+残留问题：
+
+- API35 日志仍有 `ForegroundServiceTypeLoggerModule ... does not have any types`；APK manifest 和 package granted permissions 已确认包含 `dataSync` 前台服务类型和权限，但系统日志告警未消失，不能写成已修复。
+- 成功合并后仍可见 `MPEG4Writer: Stop() called but track is not started or stopped`，当前未发现它导致输出失败，但需要后续单独调查。
+- 这是阶段 smoke，不等同于最终全功能全量验收；最终验收仍必须回到前台可见模拟器，按下载、格式、队列、历史、设置完整路径跑完。

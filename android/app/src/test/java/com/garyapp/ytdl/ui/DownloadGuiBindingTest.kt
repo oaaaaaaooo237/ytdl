@@ -33,6 +33,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -92,6 +93,40 @@ class DownloadGuiBindingTest {
             ),
             ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetCodex),
         )
+    }
+
+    @Test
+    fun bottomNavigationKeepsTabTargetsAboveSystemGestureArea() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("WindowInsets.navigationBars"))
+        assertTrue(source.contains("calculateBottomPadding()"))
+        assertTrue(source.contains("BottomBarGestureBuffer"))
+        assertFalse(source.contains("navigationBarsPadding()"))
+    }
+
+    @Test
+    fun queueProgressUsesPlainBarForFrequentStageUpdates() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("YtdlQueueProgressBar("))
+        assertFalse(source.contains("LinearProgressIndicator("))
+    }
+
+    @Test
+    fun bottomTabRouteChangesRecreateLazyListSlots() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("key(selected.route)"))
     }
 
     @Test
@@ -515,6 +550,13 @@ class DownloadGuiBindingTest {
         videoCodec = "none",
         audioCodec = "mp4a",
     )
+
+    private fun sourceFile(vararg candidates: String): File {
+        return candidates
+            .map(::File)
+            .firstOrNull { it.isFile }
+            ?: error("source file not found: ${candidates.joinToString()}")
+    }
 
     private companion object {
         const val TestUrl = "https://www.youtube.com/watch?v=tkxzMEfp49Q"

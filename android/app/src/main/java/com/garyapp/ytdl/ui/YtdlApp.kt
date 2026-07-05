@@ -29,9 +29,13 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
@@ -43,7 +47,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -119,6 +123,7 @@ private const val DefaultRuntimeMessage = "等待输入公开视频页面地址�
 private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始下载。"
 private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
 private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
+private val BottomBarGestureBuffer = 32.dp
 
 internal val YtdlColorPresetIdKey = SemanticsPropertyKey<String>("YtdlColorPresetId")
 internal var SemanticsPropertyReceiver.ytdlColorPresetId by YtdlColorPresetIdKey
@@ -631,7 +636,8 @@ fun YtdlApp() {
                     .background(palette.appBackground)
                     .padding(innerPadding),
             ) {
-                LazyColumn(
+                key(selected.route) {
+                    LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .semantics {
@@ -730,6 +736,7 @@ fun YtdlApp() {
                                 runtimeState = runtimeState.copy(userMessage = "已切换颜色方案。")
                             },
                         )
+                    }
                     }
                 }
                 if (selected.route == "queue" && shouldShowQueueScrollIndicator(runtimeState)) {
@@ -909,6 +916,9 @@ private fun YtdlBottomBar(
     onSelected: (String) -> Unit,
 ) {
     val palette = LocalYtdlAppPalette.current
+    val navigationBottomPadding = WindowInsets.navigationBars
+        .asPaddingValues()
+        .calculateBottomPadding()
     Surface(
         color = palette.bottomBarBackground,
         shadowElevation = 8.dp,
@@ -917,7 +927,12 @@ private fun YtdlBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { testTagsAsResourceId = true }
-                .padding(horizontal = 10.dp, vertical = 7.dp),
+                .padding(
+                    start = 10.dp,
+                    top = 7.dp,
+                    end = 10.dp,
+                    bottom = 7.dp + navigationBottomPadding + BottomBarGestureBuffer,
+                ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1520,8 +1535,6 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
         item {
             val palette = LocalYtdlAppPalette.current
             val progress = queueProgressPresentation(state)
-            val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
-            val total = state.totalBytes?.let(::formatBytes) ?: "未知大小"
             val title = state.analysis?.title?.takeIf { it.isNotBlank() } ?: "真实下载任务"
             Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
                 QueueCard(
@@ -1529,7 +1542,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                     subtitle = queueCardSubtitle(state),
                     progress = progress,
                     status = queueCardStatus(state),
-                    meta = "$downloaded / $total${if (state.outputPath.isNotBlank()) " · ${File(state.outputPath).name}" else ""}",
+                    meta = queueCardMeta(state),
                     stageItems = queueStageItems(state),
                     accent = queueCardAccent(state, palette),
                     actions = queueCardActions(state),
@@ -1671,6 +1684,19 @@ private fun queueCardStatus(state: RuntimeDownloadState): String {
 }
 
 internal fun queueCardStatusForUiTest(state: RuntimeDownloadState): String = queueCardStatus(state)
+
+private fun queueCardMeta(state: RuntimeDownloadState): String {
+    val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
+    val total = state.totalBytes?.let(::formatBytes) ?: "未知大小"
+    val outputPolicy = if (state.outputPath.isNotBlank()) {
+        " · App 私有目录 · 导出默认自动改名"
+    } else {
+        ""
+    }
+    return "$downloaded / $total$outputPolicy"
+}
+
+internal fun queueCardMetaForUiTest(state: RuntimeDownloadState): String = queueCardMeta(state)
 
 private fun queueCardAccent(
     state: RuntimeDownloadState,
@@ -2188,24 +2214,11 @@ private fun QueueCard(
                     QueueStageStrip(stageItems)
                 }
                 if (stageItems.isNotEmpty() || progress.fraction != null || progress.isIndeterminate) {
-                    val progressModifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                    if (progress.isIndeterminate) {
-                        LinearProgressIndicator(
-                            modifier = progressModifier,
-                            color = accent,
-                            trackColor = palette.borderColor,
-                        )
-                    } else {
-                        LinearProgressIndicator(
-                            progress = { progress.fraction ?: 0f },
-                            modifier = progressModifier,
-                            color = accent,
-                            trackColor = palette.borderColor,
-                        )
-                    }
+                    YtdlQueueProgressBar(
+                        progress = progress,
+                        accent = accent,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
                 Text(meta, color = palette.softText, style = MaterialTheme.typography.labelSmall)
                 if (actions.isNotEmpty()) {
@@ -2245,6 +2258,31 @@ private fun QueueCard(
                 Text(status, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), color = accent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+@Composable
+private fun YtdlQueueProgressBar(
+    progress: QueueProgressPresentation,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalYtdlAppPalette.current
+    val fraction = progress.fraction?.coerceIn(0f, 1f)
+        ?: if (progress.isIndeterminate) 0.08f else 0f
+    Box(
+        modifier = modifier
+            .height(6.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(palette.borderColor),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction)
+                .clip(RoundedCornerShape(5.dp))
+                .background(accent),
+        )
     }
 }
 
