@@ -1,6 +1,7 @@
 package com.garyapp.ytdl.ui
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.test.SemanticsMatcher
@@ -99,6 +100,20 @@ class DownloadGuiBindingTest {
         assertFalse(shouldShowRuntimeMessageForUiTest("分析完成，可以开始下载。"))
         assertTrue(shouldShowRuntimeMessageForUiTest("请先输入公开视频页面地址。"))
         assertTrue(shouldShowRuntimeMessageForUiTest("真实下载已加入前台队列，当前阶段：等待中。"))
+    }
+
+    @Test
+    fun urlInputOnlySuppressesSoftwareKeyboardWhenHardwareKeyboardExists() {
+        assertFalse(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_QWERTY))
+        assertFalse(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_12KEY))
+        assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_NOKEYS))
+    }
+
+    @Test
+    fun urlInputDisablesAutoHandwritingOnAndroid14AndNewer() {
+        assertFalse(urlInputDisableAutoHandwritingForUiTest(33))
+        assertTrue(urlInputDisableAutoHandwritingForUiTest(34))
+        assertTrue(urlInputDisableAutoHandwritingForUiTest(37))
     }
 
     @Test

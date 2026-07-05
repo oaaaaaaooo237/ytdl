@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。确认删除和真实 cookies 文件选择仍未完成；本轮 URL 输入时出现 Android 输入法浮层，所以仍不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。确认删除和真实 cookies 文件选择仍未完成；URL 输入浮层阻断已在 API35 前台复测中收敛，但仍需把干净输入重新串到完整下载链路里，不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。该证据证明当前前台可见控制链路可用，并覆盖一次真实下载后的五页状态；但 URL 输入过程出现 Android 输入法浮层，所以仍不替代最终干净输入全量验收。
 
@@ -88,7 +88,7 @@ cd android
 
 ## 当前下一步
 
-1. 补一个不触发 Android 输入法浮层的 URL 输入方式，再跑一次关键路径；最终 T12 不能使用出现候选栏/输入法浮层的输入证据。
+1. 用不触发 Android 输入法浮层的 URL 输入方式重新串完整关键路径；最终 T12 不能使用出现候选栏/输入法浮层的输入证据。
 2. 在不触发外部发送/破坏性操作的前提下继续验证系统通知栏取消和失败恢复等前台路径；队列页取消已有 connected 真实链路辅助证据，Computer Use 当前已恢复，需要补前台点击证据。
 3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
 4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
@@ -110,6 +110,23 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
 ```
 
 结果：三项均 `BUILD SUCCESSFUL`。该代码修正小节当时未完成 Computer Use 前台点击验收；随后 2026-07-06 前台复测见下文。
+
+## 2026-07-06 URL 输入浮层收敛
+
+- 现场根因：API35 的 Gboard `Use stylus to write in text fields` 打开时，Computer Use 文本注入会触发手写输入浮层；`show_ime_with_hard_keyboard=0` 只能关闭普通软键盘，不能单独关闭该 Gboard 浮层。
+- 代码修正：下载页 URL 输入框改为受控原生输入控件，并在 Android 14+ 对该输入控件关闭 `autoHandwriting`；保留原 `ytdl-url-input` 测试标签，并补充原生资源 id 兼容 UIAutomator。该代码修正降低输入法接管风险，但本轮证据不证明它可单独压制 Gboard 手写浮层。
+- 测试环境：API35 已关闭 `show_ime_with_hard_keyboard` 和 Gboard `Write in text fields -> Use stylus to write in text fields`。
+- Computer Use 前台可见复测：在上述测试环境和当前 APK 下，于 `Android Emulator - ytdl_api35_play_x86_64:5556` 点击 URL 输入框，输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，屏幕未出现 Android 软键盘、候选栏或 Gboard 浮动工具条；仅出现 Android 粘贴提示 toast。toast 消失后的证据图：`docs/qa/android-computer-use-20260706/url-input-clean-api35.png`。
+
+新鲜验证：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.urlInputDisablesAutoHandwritingOnAndroid14AndNewer
+.\gradlew.bat :app:assembleDebug
+```
+
+结果：两项均 `BUILD SUCCESSFUL`。该小节只证明“测试环境配置 + 当前 APK”的 URL 输入浮层阻断已收敛，不等于完整下载链路通过。
 
 ## 2026-07-06 Computer Use 五页前台导航复核
 

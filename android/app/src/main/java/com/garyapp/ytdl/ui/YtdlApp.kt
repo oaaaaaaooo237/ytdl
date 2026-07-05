@@ -3,6 +3,7 @@ package com.garyapp.ytdl.ui
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -10,6 +11,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -51,6 +57,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +69,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
@@ -72,10 +80,12 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.garyapp.ytdl.R
 import com.garyapp.ytdl.core.settings.AppSettings
 import com.garyapp.ytdl.core.settings.AppearanceSettings
 import com.garyapp.ytdl.core.settings.CookiesReference as SettingsCookiesReference
@@ -116,6 +126,16 @@ internal val YtdlSettingsAccentArgbKey = SemanticsPropertyKey<String>("YtdlSetti
 internal var SemanticsPropertyReceiver.ytdlSettingsAccentArgb by YtdlSettingsAccentArgbKey
 
 internal fun colorArgbHexForUiTest(color: Color): String = String.format(Locale.US, "#%08X", color.toArgb())
+
+internal fun urlInputShowKeyboardOnFocusForUiTest(keyboard: Int): Boolean = shouldShowUrlInputKeyboardOnFocus(keyboard)
+
+internal fun urlInputDisableAutoHandwritingForUiTest(sdkInt: Int): Boolean = shouldDisableUrlInputAutoHandwriting(sdkInt)
+
+private fun shouldShowUrlInputKeyboardOnFocus(keyboard: Int): Boolean {
+    return keyboard == Configuration.KEYBOARD_NOKEYS || keyboard == Configuration.KEYBOARD_UNDEFINED
+}
+
+private fun shouldDisableUrlInputAutoHandwriting(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 
 @Immutable
 data class YtdlDestination(
@@ -1015,17 +1035,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     val modeSelections = downloadModeSelections(state)
     item {
         val palette = LocalYtdlAppPalette.current
+        val showKeyboardOnFocus = shouldShowUrlInputKeyboardOnFocus(LocalConfiguration.current.keyboard)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
+            UrlInputField(
                 value = state.url,
                 onValueChange = onUrlChange,
+                showKeyboardOnFocus = showKeyboardOnFocus,
                 modifier = Modifier
                     .weight(1f)
                     .testTag("ytdl-url-input"),
-                placeholder = { Text("粘贴公开视频页面地址") },
-                leadingIcon = { Text("🔗") },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
             )
             Button(
                 onClick = onAnalyze,
@@ -1140,6 +1158,76 @@ internal fun downloadModeSelectionsForUiTest(state: RuntimeDownloadState): Map<F
 
 private fun downloadModeSelections(state: RuntimeDownloadState): Map<FormatMode, Boolean> {
     return FormatMode.entries.associateWith { mode -> mode == state.appliedFormatSelection.mode }
+}
+
+@Composable
+private fun UrlInputField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    showKeyboardOnFocus: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalYtdlAppPalette.current
+    val currentOnValueChange = rememberUpdatedState(onValueChange)
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = modifier
+            .height(54.dp)
+            .clip(shape)
+            .border(1.dp, palette.borderColor, shape)
+            .background(Color.White.copy(alpha = 0.92f))
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("🔗", color = palette.softText)
+        Spacer(Modifier.size(8.dp))
+        AndroidView(
+            factory = { context ->
+                EditText(context).apply {
+                    id = R.id.ytdl_url_input
+                    setSingleLine(true)
+                    setPadding(0, 0, 0, 0)
+                    background = null
+                    includeFontPadding = false
+                    textSize = 16f
+                    hint = "粘贴公开视频页面地址"
+                    inputType = InputType.TYPE_CLASS_TEXT or
+                        InputType.TYPE_TEXT_VARIATION_URI or
+                        InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    imeOptions = EditorInfo.IME_ACTION_DONE
+                    setShowSoftInputOnFocus(showKeyboardOnFocus)
+                    if (shouldDisableUrlInputAutoHandwriting(Build.VERSION.SDK_INT)) {
+                        setAutoHandwritingEnabled(false)
+                    }
+                    addTextChangedListener(
+                        object : TextWatcher {
+                            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                            override fun afterTextChanged(s: Editable?) {
+                                currentOnValueChange.value(s?.toString().orEmpty())
+                            }
+                        },
+                    )
+                }
+            },
+            update = { editText ->
+                editText.hint = "粘贴公开视频页面地址"
+                editText.setTextColor(palette.titleText.toArgb())
+                editText.setHintTextColor(palette.softText.toArgb())
+                editText.setShowSoftInputOnFocus(showKeyboardOnFocus)
+                if (shouldDisableUrlInputAutoHandwriting(Build.VERSION.SDK_INT)) {
+                    editText.setAutoHandwritingEnabled(false)
+                }
+                if (editText.text.toString() != value) {
+                    editText.setText(value)
+                    editText.setSelection(editText.text.length)
+                }
+            },
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+        )
+    }
 }
 
 @Composable

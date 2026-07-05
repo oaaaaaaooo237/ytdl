@@ -13,7 +13,7 @@
 - JDK 17、Android SDK、adb、emulator、sdkmanager、avdmanager 可用。
 - Android 12/API 31、Android 15/API 35、Android 16/API 36.1、Android 17/API 37.0 的 x86_64 Google Play AVD 均能启动到 `sys.boot_completed=1`。
 - API 37 AVD 可安装并启动临时探针 APK。
-- 矩阵 AVD 必须启用硬件键盘：`hw.keyboard=yes`。这是 Computer Use 前台可视测试的输入前置；是否全程不触发 Android 软键盘、候选词栏或输入法浮层，仍以后续前台干净复测为准。
+- 矩阵 AVD 必须启用硬件键盘：`hw.keyboard=yes`。这是 Computer Use 前台可视测试的输入前置。2026-07-06 已在 API35 验证：`show_ime_with_hard_keyboard=0` 且 Gboard `Write in text fields -> Use stylus to write in text fields` 关闭后，配合当前 APK 的 URL 输入控件，Computer Use 可在前台可见窗口写入 URL，不出现 Android 软键盘、候选栏或 Gboard 浮动工具条。该结论依赖上述测试环境配置，不代表代码可单独压制 Gboard 手写浮层。
 - 临时 Android 探针工程已成功构建：Gradle 9.4.1、AGP 9.2.1、`compileSdk = 37`、`targetSdk = 37`、Chaquopy 17.0.0、Room 2.8.4、Compose BOM 2026.06.00、activity-compose 1.13.0、Compose Compiler plugin 2.3.0。
 - Chaquopy 构建已显式使用项目 venv Python：`D:\garyapp\ytdl\.venv\Scripts\python.exe`，版本为 Python 3.12.13。系统 PATH 中没有 `python`，后续 Android 工程不得依赖 PATH 自动发现 Python。
 

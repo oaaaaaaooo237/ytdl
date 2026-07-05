@@ -483,7 +483,7 @@ class YtdlAppUiTest {
     }
 
     private fun setTextTag(tag: String, value: String) {
-        val node = findTag(tag)
+        val node = findTag(if (tag == "ytdl-url-input") "ytdl_url_input" else tag)
         assertNotNull("未找到可输入 UI 节点：$tag", node)
         node!!.text = value
         device.waitForIdle()
@@ -518,7 +518,11 @@ class YtdlAppUiTest {
     }
 
     private fun findTag(tag: String, timeoutMs: Long = 5_000): UiObject2? {
-        return device.wait(Until.findObject(By.res(packageName, tag)), timeoutMs)
-            ?: device.wait(Until.findObject(By.res(tag)), 500)
+        val candidates = if (tag == "ytdl-url-input") listOf(tag, "ytdl_url_input") else listOf(tag)
+        for (candidate in candidates) {
+            device.wait(Until.findObject(By.res(packageName, candidate)), timeoutMs)?.let { return it }
+            device.wait(Until.findObject(By.res(candidate)), 500)?.let { return it }
+        }
+        return null
     }
 }
