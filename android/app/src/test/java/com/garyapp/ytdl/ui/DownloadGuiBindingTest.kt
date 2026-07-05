@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.core.app.ApplicationProvider
+import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.settings.AppearanceSettings
 import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.ytdlp.DownloadProgress
@@ -138,10 +139,44 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun urlInputOnlySuppressesSoftwareKeyboardWhenHardwareKeyboardExists() {
-        assertFalse(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_QWERTY))
-        assertFalse(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_12KEY))
+    fun urlBoundaryFailureMessagesStayVisibleAndDoNotExposeSensitiveInput() {
+        val messages = listOf(
+            "请先输入公开视频页面地址。",
+            "分析失败：${UrlPolicy.evaluate("https://exa mple.com/watch?token=secret").userMessage.orEmpty()}",
+            "分析失败：${UrlPolicy.evaluate("ftp://example.com/watch?token=secret").userMessage.orEmpty()}",
+        )
+        val joined = messages.joinToString("\n")
+
+        messages.forEach { message ->
+            assertTrue("message should be visible: $message", shouldShowRuntimeMessageForUiTest(message))
+        }
+        listOf("请先输入", "有效的公开视频", "http 或 https").forEach { cue ->
+            assertTrue("missing readable cue $cue", joined.contains(cue))
+        }
+        listOf("token=secret", "secret", "exa mple.com", "example.com").forEach { sensitive ->
+            assertFalse("URL boundary message leaked $sensitive", joined.contains(sensitive, ignoreCase = true))
+        }
+    }
+
+    @Test
+    fun urlInputShowsSoftwareKeyboardForRealisticForegroundInput() {
+        assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_QWERTY))
+        assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_12KEY))
         assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_NOKEYS))
+        assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_UNDEFINED))
+    }
+
+    @Test
+    fun urlInputActivelyRequestsSoftwareKeyboardOnForegroundTouch() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("InputMethodManager"))
+        assertTrue(source.contains("showSoftInput(this, 0)"))
+        assertTrue(source.contains("setOnFocusChangeListener"))
+        assertTrue(source.contains("setOnClickListener"))
     }
 
     @Test

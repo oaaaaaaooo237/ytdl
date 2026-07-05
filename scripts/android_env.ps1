@@ -97,6 +97,25 @@ function Set-AvdHardwareKeyboard {
   return "yes"
 }
 
+function Set-OnlineEmulatorSoftKeyboard {
+  param([string]$AdbPath)
+
+  $deviceLines = & $AdbPath devices | Select-String -Pattern "^emulator-\d+\s+device"
+  foreach ($deviceLine in $deviceLines) {
+    $serial = ($deviceLine.Line -split "\s+")[0]
+    & $AdbPath -s $serial shell settings put secure show_ime_with_hard_keyboard 1 | Out-Null
+    $imeList = & $AdbPath -s $serial shell ime list -s
+    $gboard = $imeList | Where-Object { $_ -eq "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME" } | Select-Object -First 1
+    if ($gboard) {
+      & $AdbPath -s $serial shell ime enable $gboard | Out-Null
+      & $AdbPath -s $serial shell ime set $gboard | Out-Null
+      Write-Host "SOFT_KEYBOARD $serial showImeWithHardKeyboard=1 ime=Gboard"
+    } else {
+      Write-Host "SOFT_KEYBOARD $serial showImeWithHardKeyboard=1 ime=unchanged"
+    }
+  }
+}
+
 function Resolve-Gradle {
   $candidates = @(
     "D:\DevTools\gradle-9.4.1\bin\gradle.bat",
@@ -177,6 +196,7 @@ Write-Host ""
 Write-Host "ADB version and connected devices:"
 Invoke-Tool $adb.Source @("version")
 Invoke-Tool $adb.Source @("devices", "-l")
+Set-OnlineEmulatorSoftKeyboard -AdbPath $adb.Source
 
 Write-Host ""
 Write-Host "Emulator acceleration:"

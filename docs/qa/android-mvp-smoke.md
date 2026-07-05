@@ -6,14 +6,15 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。API35 已完成无软键盘/候选栏/Gboard 浮层的真实输入、分析、格式选择、1080p 视频+音频原生合并下载、历史落库和合并后中间流清理抽样。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。确认删除、真实 cookies 文件选择、失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已观察到一个非破坏性失败恢复前台路径：非 http/https URL 显示中文错误且不会入队；但该次 URL 输入使用硬件键事件，按 2026-07-06 最新拟真软键盘口径只能作为功能观察证据，不能作为最终输入验收。确认删除、真实 cookies 文件选择、更多失败恢复前台路径和系统软键盘拟真输入下的完整主路径仍未完成；后续真机验收阶段也尚未开始。
 
-2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期 `Ctrl+V` 和文本注入会触发 Android 输入法浮层，未计入干净输入证据；随后用前台硬件键事件输入完成真实 URL 输入，过程中未出现 Android 软键盘、候选栏或 Gboard 菜单。剪贴板粘贴在 API37 上仍是待优化测试摩擦点。
+2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
 ## 本轮已确认
 
 - 当前分支：`feature/android-play-mvp-1`
 - 当前远程同步提交：
+  - `16cb073 android: retry failed format downloads`
   - `7d37978 Clean merged Android download intermediates`
   - `792c737 Fix Android URL input state reset`
   - `e1e0ac1 android: improve queue progress feedback`
@@ -95,8 +96,8 @@ cd android
 
 ## 当前下一步
 
-1. 继续补齐不触发破坏性操作的前台失败恢复路径；队列页取消已有 connected 真实链路辅助证据，Computer Use 当前已恢复，需要补前台点击证据。
-2. 继续优化 API37 前台 URL 输入体验；当前干净证据来自硬件键事件输入，`Ctrl+V` 粘贴仍可能触发 Android 输入法浮层。
+1. 继续补齐不触发破坏性操作的前台失败恢复路径；非 http/https URL 已有前台证据，仍需导出取消/写出等恢复路径。
+2. 按最新口径重测 API37 前台 URL 输入：必须点击输入框、弹出系统软键盘并通过软键盘输入，确认 URL 未被候选词、自动补全、手写浮层或菜单改写。
 3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
 4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 5. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
@@ -135,7 +136,7 @@ cd android
 
 结果：两项均 `BUILD SUCCESSFUL`。该小节只证明“测试环境配置 + 当前 APK”的 URL 输入浮层阻断已收敛，不等于完整下载链路通过。
 
-## 2026-07-06 API35 干净输入真实合并下载抽样
+## 2026-07-06 API35 历史输入真实合并下载抽样
 
 本轮在 `Android Emulator - ytdl_api35_play_x86_64:5556` 上继续用 Computer Use 前台可见操作真实链接 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。
 
@@ -175,7 +176,7 @@ files/gui-downloads/task-1783279356106-1/merged-299-140.mp4                 355,
 - `docs/qa/android-computer-use-20260706/history.png`
 - `docs/qa/android-computer-use-20260706/settings.png`
 
-边界：这次是前台可见 Computer Use 操作，截图文件是点击后同步拉取当前模拟器画面形成的辅助留痕；该项仅证明五页导航和页面状态可见，不替代最终 T12 干净 URL 输入和全功能验收。
+边界：这次是前台可见 Computer Use 操作，截图文件是点击后同步拉取当前模拟器画面形成的辅助留痕；该项仅证明五页导航和页面状态可见，不替代最终 T12 系统软键盘拟真 URL 输入和全功能验收。
 
 ## 2026-07-06 Computer Use 真实下载、导出和打开复测
 
@@ -203,7 +204,7 @@ files/gui-downloads/task-1783279356106-1/merged-299-140.mp4                 355,
 
 边界：
 
-- 本轮 URL 输入先尝试 `Ctrl+V`，未落入输入框；随后用 Computer Use 直接文本输入成功，但 Android 输入法浮层短暂出现。它证明真实功能链路可运行，但不满足最终 T12 对“不得出现软键盘/候选词栏/输入法浮层”的干净输入要求。
+- 本轮 URL 输入先尝试 `Ctrl+V`，未落入输入框；随后用 Computer Use 直接文本输入成功，但 Android 输入法浮层短暂出现。它证明真实功能链路可运行；按 2026-07-06 最新口径，后续需要用当前 APK、系统软键盘和前台可见操作重测输入链路。
 - 本轮未点击 `删除` 的确认删除按钮；该动作仍需用户明确授权。
 - 本轮未选择真实 `cookies.txt`。
 
@@ -418,7 +419,7 @@ cd android
 
 ## 2026-07-05 Computer Use 输入环境与真实下载复核
 
-本轮复核前台可视测试前置时发现：矩阵 AVD 的 `config.ini` 均为 `hw.keyboard=no`，点击 URL 输入框会触发 Android 输入法/工具浮层，违反“不使用 Android 软键盘、候选词栏或 Gboard 菜单”的验收规则。
+本轮按当时旧口径复核前台可视测试前置时发现：矩阵 AVD 的 `config.ini` 均为 `hw.keyboard=no`，点击 URL 输入框会触发 Android 输入法/工具浮层。该段保留为历史记录；2026-07-06 用户已把最终验收口径调整为必须使用系统软键盘拟真输入。
 
 修复：
 
@@ -454,9 +455,9 @@ cache/gui-downloads/task-1783236126094-1/download-tkxzMEfp49Q-140-audio.m4a 7806
 
 - 使用 `adb shell ime disable` 禁用 API37 测试 AVD 上的 Gboard 和语音输入法后，`adb shell dumpsys input_method` 显示 `mInputShown=false`。
 - 在前台可见模拟器窗口中仅使用 Computer Use 硬件按键重新输入同一 URL，并点击“分析”，公开视频解析再次成功。
-- 复测期间没有弹出完整 Android 软键盘、候选词栏或 Gboard 菜单；但输入框左侧仍出现一个系统折叠小浮动按钮，后续最终 T12 前仍需决定是否接受该测试环境表现，或继续压制该浮动按钮。
+- 按当时旧口径，复测期间没有弹出完整 Android 软键盘、候选词栏或 Gboard 菜单，但输入框左侧仍出现一个系统折叠小浮动按钮。该输入证据已被 2026-07-06 最新系统软键盘拟真口径取代。
 
-当前边界：本轮已证明真实分析、真实分离流下载、原生合并、队列进度和历史落地在前台可见模拟器中跑通；但最终 T12 仍需从空白页面开始完整跑一次，包括格式选择、下载、队列、历史、设置，并确认输入过程不触发不可接受的软键盘/Gboard UI。
+当前边界：本轮已证明真实分析、真实分离流下载、原生合并、队列进度和历史落地在前台可见模拟器中跑通；但最终 T12 仍需从空白页面开始完整跑一次，包括系统软键盘拟真输入、格式选择、下载、队列、历史和设置。
 
 ## 2026-07-05 15:50 Computer Use 恢复后前台复测
 
@@ -516,7 +517,7 @@ Computer Use 冷启动前台流程：
 - 冷启动下载页可见：空输入框、预览占位、保存位置、下载模式、授权确认和禁用的开始按钮。
 - 空 URL 点击分析后可见失败提示：`请先输入公开视频页面地址。`
 - 初次输入时发现系统 `mInputShown=true`，不计入验收；随后禁用 Gboard 和语音输入法，确认 `mInputShown=false` 且 `ime list -s` 为空。
-- 在干净输入状态下仅用 Computer Use 硬件按键重新输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，未出现软键盘、候选栏或 Gboard 工具浮层。
+- 在当时压制输入法的测试环境下，仅用 Computer Use 硬件按键重新输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，未出现软键盘、候选栏或 Gboard 工具浮层。按 2026-07-06 最新口径，该记录只作为历史支持证据，后续最终验收需使用系统软键盘拟真输入。
 - 分析成功：标题 `Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season`，预览图可见，时长 `08:02`，摘要 `自动（推荐） · 1080p MP4 需原生合并`。
 - 格式页可见：2160p/1440p 灰显并显示 `当前视频未提供`；1080p 可选并显示 `需原生合并`；应用后下载页摘要同步为 `1080p MP4 需原生合并`。
 - 授权确认勾选后启动下载；队列页进入真实任务，进度连续变化：`23% / 77.6 MB`、`30% / 101.0 MB`、`35% / 116.9 MB`、`45% / 150.4 MB`、`52% / 175.7 MB`、`63% / 208.9 MB`、`83% / 277.6 MB`、`94% / 313.3 MB`。
@@ -650,7 +651,7 @@ cd android
 
 同名输出处理也已收敛：App 私有下载目录继续使用每任务唯一目录避免内部串档；历史页导出时，系统保存对话框默认文件名改为“视频标题 + 完成时间 + 扩展名”，避免多个导出任务都显示 `merged-299-140.mp4`。外部覆盖仍不作为默认行为；覆盖应由用户在系统保存器或后续明确选项中确认。
 
-Computer Use 边界：本轮重新连接后可以枚举窗口并被动截图模拟器，但对窗口点击/按键仍报 `failed to activate captured window`，所以本节不是最终前台可视验收通过记录。进一步跨窗口 smoke 显示，不只是 Android Emulator，多个普通 Windows 窗口的 `activate_window` 也返回同一错误；当时阻断位于 Computer Use/Windows 窗口激活链路，而不是 App 代码或模拟器内页面。后续可视 URL 输入必须先由 Computer Use 正常聚焦输入框；优先设置桌面剪贴板并用 `Ctrl+V` 一次性粘贴 URL。若剪贴板粘贴不可用，再使用 `type_text` 或可访问性写入；不能再把逐字慢速输入作为常规测试方式。若 Computer Use 仍不能激活窗口，必须先修测试环境。
+Computer Use 边界：本轮重新连接后可以枚举窗口并被动截图模拟器，但对窗口点击/按键仍报 `failed to activate captured window`，所以本节不是最终前台可视验收通过记录。进一步跨窗口 smoke 显示，不只是 Android Emulator，多个普通 Windows 窗口的 `activate_window` 也返回同一错误；当时阻断位于 Computer Use/Windows 窗口激活链路，而不是 App 代码或模拟器内页面。按 2026-07-06 最新口径，后续可视 URL 输入必须先由 Computer Use 正常聚焦输入框，并通过系统软键盘拟真输入；剪贴板、硬件键或可访问性写入只能作为环境诊断证据，不能替代最终验收。若 Computer Use 仍不能激活窗口，必须先修测试环境。
 
 ## 2026-07-05 通知拒权时 app 内进度补强
 
@@ -707,7 +708,7 @@ cd android
 - 通知拒权目标 connected：API37 1/1 通过，`BUILD SUCCESSFUL in 3m 16s`。
 - 全量 `YtdlAppUiTest`：API37 8/8 通过，`BUILD SUCCESSFUL in 15m 3s`。
 
-Computer Use 边界：本轮 Computer Use 可以连接并被动截图 `Android Emulator - ytdl_api37_play_x86_64:5554`，但 `activate_window` 仍返回 `failed to activate captured window`。因此以上仍是单元、构建和 connected/UIAutomator 辅助证据，不能写成最终前台可视验收通过。后续可视输入 URL 时默认用桌面剪贴板 + `Ctrl+V` 一次性粘贴，不再逐字输入。
+Computer Use 边界：本轮 Computer Use 可以连接并被动截图 `Android Emulator - ytdl_api37_play_x86_64:5554`，但 `activate_window` 仍返回 `failed to activate captured window`。因此以上仍是单元、构建和 connected/UIAutomator 辅助证据，不能写成最终前台可视验收通过。按 2026-07-06 最新口径，后续可视输入 URL 时必须使用系统软键盘拟真输入，不能用后台写入替代。
 
 ## 2026-07-06 API35 前台可视短视频 smoke
 
@@ -797,10 +798,52 @@ cd android
 API37 前台可见复测：
 
 - Computer Use 激活 `Android Emulator - ytdl_api37_play_x86_64:5554`，最新 APK 已安装并启动。
-- `Ctrl+V` 和直接文本注入在 API37 上会触发 Gboard，未计入干净输入证据；随后用前台硬件键事件输入 URL，过程中未出现 Android 软键盘、候选栏或 Gboard 菜单。
+- `Ctrl+V` 和直接文本注入在 API37 上会触发 Gboard；随后为排查功能链路，曾用前台硬件键事件输入 URL。按 2026-07-06 最新拟真软键盘口径，该输入方式只作为历史支持证据，不计入最终输入验收。
 - 真实分析成功，格式摘要为 `1080p MP4 需原生合并`。
 - 队列页观察到真实阶段进度：约 `4%`、`15%`、`31%`，随后视频和音频阶段均变为完成，进入 `66%` 原生合并，最终 `100%`。
 - 历史页显示最新完成记录，上一条保留为本轮修复前的失败记录，便于追溯。
 - 最新输出目录只保留 `files/gui-downloads/task-1783289403701-1/merged-299-140.mp4`，大小约 `339M`；中间视频流和音频流文件已清理。
 
 边界：这次已经证明最新 APK 可以安装，且 API37 前台真实 1080p 视频+音频下载、音频段重试、原生合并和历史落库可用；但它仍不是最终 T12 全功能通过，因为确认删除、真实 cookies 文件选择和更多失败恢复前台路径尚未完成。
+
+## 2026-07-06 M9.1 非破坏性失败恢复与输入边界
+
+本轮按 M9.1 只补非破坏性路径，不执行历史确认删除，不要求真实 cookies 文件。
+
+代码/测试层：
+
+- 新增单元测试覆盖下载页 runtime message 必须显示空 URL、非法 URL、非 http/https URL 的中文错误提示。
+- 同一测试断言错误提示不泄露 `token=secret`、host 或敏感输入片段。
+- 按 2026-07-06 最新拟真输入口径，URL 输入框不再因模拟器/设备存在硬件键盘而压制系统软键盘；点击/聚焦输入框会主动请求系统输入法。单元测试已改为覆盖 `QWERTY`、`12KEY`、`NOKEYS`、`UNDEFINED` 配置下都允许软键盘弹出，并检查输入框包含主动请求系统输入法的代码路径。
+- 失败文案链路继续通过 `UrlPolicy` 和下载页 runtime message 呈现安全错误。
+
+前台可见验证：
+
+- 设备：`Android Emulator - ytdl_api37_play_x86_64:5554`。
+- 环境：API37 AVD 当前 `hw.keyboard=yes`；已设置 `show_ime_with_hard_keyboard=1`，Gboard 启用。
+- 操作：安装最新 `app-debug.apk` 后启动 App，用 Computer Use 点击 URL 输入框，Android 系统软键盘真实弹出；随后只点击软键盘键位输入非法文本 `avx`，没有选择候选词、自动补全、手写浮层或 Gboard 菜单，再点击 `分析`。
+- 结果：下载页显示 `分析失败：仅支持 http 或 https 开头的公开视频地址。`，`开始下载` 保持禁用；软键盘未遮挡错误提示。
+- 队列页复核：显示 `暂无真实下载任务` / `尚未开始真实下载`，说明失败没有误加入下载队列。
+- 截图证据：
+  - `docs/qa/android-computer-use-20260706-m9-failure/04-soft-keyboard-invalid-url-error.png`
+  - `docs/qa/android-computer-use-20260706-m9-failure/05-soft-keyboard-no-queue-task.png`
+
+输入边界：
+
+- 旧的硬件键输入 `ftp://x.y` 证据已降级为历史支持，不再作为最终输入验收。
+- 本轮已按最新口径完成软键盘拟真输入：系统键盘可见、文本真实进入 URL 输入框、未选择候选词、错误提示可见、队列无真实任务。
+- 小屏键位坐标较密，本轮原计划输入 `abc`，实际点击得到 `avx`；该文本仍是有效的非法 URL 测试输入，且未通过候选词改写。
+
+新鲜验证：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests "com.garyapp.ytdl.ui.DownloadGuiBindingTest"
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+```
+
+结果：均 `BUILD SUCCESSFUL`。Gradle 10 兼容性提示来自既有 Chaquopy 依赖声明，不是本轮改动引入。
+
+边界：M9.1 补齐了一个可恢复失败场景；最终 T12 仍需确认删除、真实 cookies 文件选择、更多失败恢复路径，以及完整主路径的一次全量前台复测。

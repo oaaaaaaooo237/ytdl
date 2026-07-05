@@ -13,7 +13,7 @@
 - JDK 17、Android SDK、adb、emulator、sdkmanager、avdmanager 可用。
 - Android 12/API 31、Android 15/API 35、Android 16/API 36.1、Android 17/API 37.0 的 x86_64 Google Play AVD 均能启动到 `sys.boot_completed=1`。
 - API 37 AVD 可安装并启动临时探针 APK。
-- 矩阵 AVD 必须启用硬件键盘：`hw.keyboard=yes`。这是 Computer Use 前台可视测试的输入前置。2026-07-06 已在 API35 验证：`show_ime_with_hard_keyboard=0` 且 Gboard `Write in text fields -> Use stylus to write in text fields` 关闭后，配合当前 APK 的 URL 输入控件，Computer Use 可在前台可见窗口写入 URL，不出现 Android 软键盘、候选栏或 Gboard 浮动工具条。该结论依赖上述测试环境配置，不代表代码可单独压制 Gboard 手写浮层。
+- 矩阵 AVD 当前仍配置 `hw.keyboard=yes`，但 2026-07-06 最新验收口径改为真机拟真输入：前台可视测试必须允许并使用 Android 系统软键盘输入 URL。API37 已实测需要 `settings put secure show_ime_with_hard_keyboard 1`，并保持 Gboard 启用；当前 APK 的 URL 输入框会在点击/聚焦时主动请求系统输入法。旧的“压制软键盘/硬件键输入”证据只作为历史支持，不再作为最终验收口径。
 - 临时 Android 探针工程已成功构建：Gradle 9.4.1、AGP 9.2.1、`compileSdk = 37`、`targetSdk = 37`、Chaquopy 17.0.0、Room 2.8.4、Compose BOM 2026.06.00、activity-compose 1.13.0、Compose Compiler plugin 2.3.0。
 - Chaquopy 构建已显式使用项目 venv Python：`D:\garyapp\ytdl\.venv\Scripts\python.exe`，版本为 Python 3.12.13。系统 PATH 中没有 `python`，后续 Android 工程不得依赖 PATH 自动发现 Python。
 
@@ -64,10 +64,10 @@
 
 | AVD | Target | 验证结果 |
 | --- | --- | --- |
-| `ytdl_api31_play_x86_64` | `android-31` | 已启动到 `sys.boot_completed=1`；需保持 `hw.keyboard=yes` |
-| `ytdl_api35_play_x86_64` | `android-35` | 已启动到 `sys.boot_completed=1`；需保持 `hw.keyboard=yes` |
-| `ytdl_api36_play_x86_64` | `android-36.1` | 已启动到 `sys.boot_completed=1`；需保持 `hw.keyboard=yes` |
-| `ytdl_api37_play_x86_64` | `android-37.0` | 已启动到 `sys.boot_completed=1`，已安装并启动探针 APK；需保持 `hw.keyboard=yes` |
+| `ytdl_api31_play_x86_64` | `android-31` | 已启动到 `sys.boot_completed=1`；当前配置 `hw.keyboard=yes`，前台输入验收需启用系统软键盘 |
+| `ytdl_api35_play_x86_64` | `android-35` | 已启动到 `sys.boot_completed=1`；当前配置 `hw.keyboard=yes`，前台输入验收需启用系统软键盘 |
+| `ytdl_api36_play_x86_64` | `android-36.1` | 已启动到 `sys.boot_completed=1`；当前配置 `hw.keyboard=yes`，前台输入验收需启用系统软键盘 |
+| `ytdl_api37_play_x86_64` | `android-37.0` | 已启动到 `sys.boot_completed=1`，已安装并启动探针 APK；当前配置 `hw.keyboard=yes`，前台输入验收需启用系统软键盘 |
 
 注意：本机 `emulator -list-avds` 和 `avdmanager list avd` 仍可能不列出这些 AVD，但直接用 `emulator -avd <name>` 启动已实测可用。后续不得仅凭 list 命令为空判断 AVD 不存在；应检查 `C:\Users\garyr\.android\avd\<name>.ini` 并直接启动验证。
 
@@ -134,7 +134,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1 -CreateMatrix
 - 优先识别 `D:\DevTools\gradle-9.4.1\bin\gradle.bat`。
 - 检查 `java`、`javac`、Gradle、`adb`、`emulator`、`sdkmanager`、`avdmanager`。
 - 列出关键 SDK 包和 AVD `.ini` 文件。
-- 对已存在或新建的矩阵 AVD 自动写入 `hw.keyboard=yes`，提供前台可视测试所需的硬件键盘输入前置；是否不触发 Android 输入法浮层仍以后续 Computer Use 干净复测为准。
+- 对已存在或新建的矩阵 AVD 自动写入 `hw.keyboard=yes`。后续前台输入验收必须额外确认 `show_ime_with_hard_keyboard=1`、Gboard 可用，并用 Computer Use 在可见窗口中通过系统软键盘输入；硬件键、剪贴板或后台写入只能作为环境诊断证据。
+- 对当前在线的 `emulator-*` 设备写入 `show_ime_with_hard_keyboard=1`；如果设备包含 Gboard，则启用并切换到 Gboard，保证后续前台拟真输入能弹出系统软键盘。
 - 创建 API31/API35/API36/API37 四个矩阵 AVD。
 
 ## 下一步开发前置条件

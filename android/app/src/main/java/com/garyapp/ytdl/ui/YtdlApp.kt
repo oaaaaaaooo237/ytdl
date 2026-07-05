@@ -2,8 +2,8 @@ package com.garyapp.ytdl.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -15,6 +15,7 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -136,8 +137,15 @@ internal fun urlInputShowKeyboardOnFocusForUiTest(keyboard: Int): Boolean = shou
 
 internal fun urlInputDisableAutoHandwritingForUiTest(sdkInt: Int): Boolean = shouldDisableUrlInputAutoHandwriting(sdkInt)
 
-private fun shouldShowUrlInputKeyboardOnFocus(keyboard: Int): Boolean {
-    return keyboard == Configuration.KEYBOARD_NOKEYS || keyboard == Configuration.KEYBOARD_UNDEFINED
+@Suppress("UNUSED_PARAMETER")
+private fun shouldShowUrlInputKeyboardOnFocus(keyboard: Int): Boolean = true
+
+private fun EditText.showUrlInputKeyboard() {
+    requestFocus()
+    post {
+        val inputMethodManager = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        inputMethodManager?.showSoftInput(this, 0)
+    }
 }
 
 private fun shouldDisableUrlInputAutoHandwriting(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
@@ -1231,6 +1239,16 @@ private fun UrlInputField(
                         InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                     imeOptions = EditorInfo.IME_ACTION_DONE
                     setShowSoftInputOnFocus(showKeyboardOnFocus)
+                    setOnFocusChangeListener { view, hasFocus ->
+                        if (hasFocus && showKeyboardOnFocus) {
+                            (view as EditText).showUrlInputKeyboard()
+                        }
+                    }
+                    setOnClickListener {
+                        if (showKeyboardOnFocus) {
+                            showUrlInputKeyboard()
+                        }
+                    }
                     if (shouldDisableUrlInputAutoHandwriting(Build.VERSION.SDK_INT)) {
                         setAutoHandwritingEnabled(false)
                     }
