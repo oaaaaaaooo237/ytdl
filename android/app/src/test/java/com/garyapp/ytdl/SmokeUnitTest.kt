@@ -1,5 +1,6 @@
 package com.garyapp.ytdl
 
+import androidx.compose.ui.unit.sp
 import com.garyapp.ytdl.ui.ytdlNavigationDestinations
 import com.garyapp.ytdl.ui.ytdlVisibleContentLabels
 import com.garyapp.ytdl.core.settings.AppSettings
@@ -8,6 +9,7 @@ import com.garyapp.ytdl.ui.theme.YtdlThemeMode
 import com.garyapp.ytdl.ui.theme.defaultYtdlThemeConfig
 import com.garyapp.ytdl.ui.theme.themeConfigForSettings
 import com.garyapp.ytdl.ui.theme.ytdlAppPaletteForPreset
+import com.garyapp.ytdl.ui.theme.ytdlCompactTypographyForUiTest
 import com.garyapp.ytdl.ui.theme.ytdlColorPresets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -74,5 +76,15 @@ class SmokeUnitTest {
         assertNotEquals(reference.appBackground, codex.appBackground)
         assertNotEquals(reference.downloadAccent, codex.downloadAccent)
         assertNotEquals(reference.formatAccent, codex.formatAccent)
+    }
+
+    @Test
+    fun compactTypographyMatchesReferenceDensity() {
+        val typography = ytdlCompactTypographyForUiTest()
+
+        assertEquals(20.sp, typography.headlineMedium.fontSize)
+        assertEquals(14.sp, typography.bodyLarge.fontSize)
+        assertEquals(13.sp, typography.labelLarge.fontSize)
+        assertEquals(10.sp, typography.labelSmall.fontSize)
     }
 }

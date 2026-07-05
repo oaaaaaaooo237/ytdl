@@ -92,6 +92,15 @@ class DownloadGuiBindingTest {
             ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetCodex),
         )
     }
+
+    @Test
+    fun passiveRuntimeMessagesDoNotOccupyDownloadLayout() {
+        assertFalse(shouldShowRuntimeMessageForUiTest("等待输入公开视频页面地址。"))
+        assertFalse(shouldShowRuntimeMessageForUiTest("分析完成，可以开始下载。"))
+        assertTrue(shouldShowRuntimeMessageForUiTest("请先输入公开视频页面地址。"))
+        assertTrue(shouldShowRuntimeMessageForUiTest("真实下载已加入前台队列，当前阶段：等待中。"))
+    }
+
     @Test
     fun formatRowsComeFromCurrentAnalysisAndDisabledRowsExplainWhy() {
         val analysis = analysisWith(

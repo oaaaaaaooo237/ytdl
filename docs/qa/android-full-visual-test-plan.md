@@ -583,11 +583,11 @@ cd android
 - 前台可见操作全流程通过。
 - 证据写入 `docs/qa/android-mvp-smoke.md`。
 
-当前状态：未完成。2026-06-21 命令层和 API37 connected 层已通过，但 Computer Use 前台可视操作入口仍因工具层错误阻断，不能记为 T12 通过。
+当前状态：未完成。2026-07-05 已恢复 Computer Use 并完成冷启动真实前台流程和一轮视觉密度截图修复；T12 仍未通过，是因为删除确认、真实 cookies 文件选择、外部导出写出、通知/取消前台路径仍未覆盖。
 
-本轮阻断证据：尝试通过 Computer Use 技能入口连接 Windows 自动化 helper 时，工具调用失败：`Mcp error: -32602: js: codex/sandbox-state-meta: missing field sandboxPolicy`。2026-06-21 再次按技能流程确认入口文件存在，连接轻量 `list_apps()` 失败；重置会话后重试仍为同一错误。因此本轮没有完成“前台可见模拟器窗口 + Computer Use 全流程”验收。
+历史阻断记录：2026-06-21 曾尝试通过 Computer Use 技能入口连接 Windows 自动化 helper，当时工具调用失败：`Mcp error: -32602: js: codex/sandbox-state-meta: missing field sandboxPolicy`。该阻断已被 2026-07-05 的 Computer Use 前台复测取代，不能再作为当前阻断原因。
 
-2026-06-21 继续复核：再次重置连接上下文后执行轻量 `list_apps()`，仍返回同一 `sandboxPolicy` 工具层错误。作为辅助视觉巡检，已用 adb 安装当前 APK、前台启动 API37 模拟器并截图查看下载、格式、队列、历史、设置五页空态；五页布局和关键文案可见，队列页有可滚动区域，设置页明确“仅校验空地址、非法地址和非 http/https”。该辅助巡检只用于发现明显 GUI 偏差，不计入 T12 通过证据。
+2026-07-05 更新：已用 Computer Use 在前台可见 API37 模拟器窗口完成普通链接、Shorts 链接和一次冷启动串联流程；已用 ADB 静态截图完成一轮视觉密度修复复核。ADB 截图和 UIAutomator/connected 测试仍只是辅助证据，不替代最终 T12 全量前台验收。
 
 ## 当前总状态
 
@@ -597,9 +597,9 @@ cd android
 | T1 构建与单元测试 | 已测 | `testDebugUnitTest`、`assembleDebug` 已通过 |
 | T2 真实 URL 分析核心 | 已测 | API37 真实分析 `tkxzMEfp49Q`，formats=27，highest=1080 |
 | T3 真实单文件下载核心 | 已测 | API37 真实下载 `download-tkxzMEfp49Q.mp4`，44,556,988 字节，69 个进度事件 |
-| T4 前台 GUI 分析 | Computer Use 冷启动已测/待视觉审计 | 2026-07-05 已用 Computer Use 在前台可见 API37 模拟器中完成冷启动输入、空 URL 失败提示、必测 URL 分析、Shorts 分析，预览图/标题/时长/格式摘要可见 |
+| T4 前台 GUI 分析 | Computer Use 冷启动已测/视觉密度已修复 | 2026-07-05 已用 Computer Use 在前台可见 API37 模拟器中完成冷启动输入、空 URL 失败提示、必测 URL 分析、Shorts 分析，预览图/标题/时长/格式摘要可见；同日已补截图级视觉密度修复 |
 | T5 前台 GUI 下载进度 | Computer Use 冷启动已测/待通知取消 | 2026-07-05 已观察真实队列进度从 7% 到 99%、进入音频下载、合并并完成；Shorts 也完成真实下载和合并；仍需通知/取消/拒权前台检查 |
-| T6 格式真实可选项 | Computer Use 部分通过/待视觉审计 | M7 已用单元测试和审计覆盖当前分析结果格式绑定；2026-07-05 前台格式页确认 2160p/1440p 灰显、1080p 可选并同步下载页摘要；仍需截图级视觉还原审计 |
+| T6 格式真实可选项 | Computer Use 部分通过/视觉密度已修复 | M7 已用单元测试和审计覆盖当前分析结果格式绑定；2026-07-05 前台格式页确认 2160p/1440p 灰显、1080p 可选并同步下载页摘要；同日已补空态格式页静态截图审计，分析后格式页仍以后续最终前台验收截图为准 |
 | T7 前台服务通知 | 绑定层补强/待前台可视验收 | M6 已完成 foreground service 声明、通知控制器、`DownloadService` 承载 pipeline 和核心状态模型；M9 前置补上队列页真实取消入口和通知取消 action；尚未做前台可见通知/拒权 GUI 验收 |
 | T8A MediaProcessor 合同与路线 | 已完成合同层 | 已定义合同、校验边界和原生 muxer 职责；真实合并在 T8B |
 | T8B 原生音视频合并能力 | 已测 | API37 instrumentation 已证明输出 MP4 含 1 条视频轨和 1 条音频轨 |
@@ -609,7 +609,7 @@ cd android
 | T9 历史保存导出 | 前台入口已测/破坏性动作未执行 | 2026-07-05 Computer Use 已确认普通视频与 Shorts 完成后历史页出现真实完成卡片；冷启动流已打开系统视频查看器、打开分享面板但未发送、打开导出保存界面但未保存；删除需要用户明确确认 |
 | T10 cookies 隐私边界 | 前台边界已测/真实文件未选 | cookies 只保存引用、临时文件终态删除、复制失败清理、拒绝原始 cookies 路径、设置/历史/日志/错误脱敏已覆盖；2026-07-05 设置页隐私边界和 cookies 文件选择器入口可见；真实 cookies 选择需要用户提供测试 `cookies.txt` |
 | T11 失败恢复 | 空 URL 前台已测/其余待测 | 失败文案和脱敏已覆盖；2026-07-05 冷启动流已验证空 URL 前台提示；仍需通知拒权、取消、导出取消等前台恢复路径 |
-| T12 全量 MVP 回归 | 未完成 | `testDebugUnitTest`、`assembleDebug`、`connectedDebugAndroidTest` 已通过；Computer Use 已恢复并完成冷启动真实前台流程，但删除确认、真实 cookies 文件选择、外部导出写出、通知/取消前台路径和视觉还原审计仍未完成 |
+| T12 全量 MVP 回归 | 未完成 | `testDebugUnitTest`、`assembleDebug`、`connectedDebugAndroidTest` 已通过；Computer Use 已恢复并完成冷启动真实前台流程；视觉密度截图审计已完成一轮，但删除确认、真实 cookies 文件选择、外部导出写出、通知/取消前台路径仍未完成 |
 
 ## 下一步推进顺序
 
@@ -619,6 +619,6 @@ cd android
 4. M7：绑定层通过/待前台重测；测试口径为 `DownloadGuiBindingTest` 覆盖当前 `VideoAnalysis` 格式选择、下载摘要防旧值、队列阶段文案、设置页 parser/media 标签、开始下载即时状态、模式卡真实选中态、格式详情真实摘要和无输出完成态防误报，并已通过审计。该状态不代表前台可见模拟器全流程通过。
 5. M8：已完成单元层实现并通过 2026-06-21 全量 `testDebugUnitTest` / `assembleDebug` 复核，APK 已在 API37 上安装并启动到 `MainActivity`；前台可见历史、导出、cookies 和失败恢复留到 M9/T12。
 6. M9 前置：已补外观配色设置持久化与即时应用、队列/通知取消、历史打开/分享/导出/删除、字幕独立文件选择绑定、重复下载唯一输出和历史相对 URI；全量单测、构建、connected 已通过。2026-07-05 Computer Use 已恢复并完成普通视频与 Shorts 的部分真实前台流程。
-7. M9/T12：继续完成 Computer Use 冷启动前台可见全真全量验收；这是模拟器最终通过口径。
+7. M9/T12：继续完成 Computer Use 冷启动前台可见全真全量验收；2026-07-05 已完成一轮视觉密度截图修复，但这仍不是模拟器最终通过口径。
 8. M10：等推进到后续第 7 项且真机已连接时，在小米14或同级 `arm64-v8a` 真机上验证通知、后台下载、打开/导出/分享、存储拒权恢复和真实 UI 适配；该阶段只做真机验收，不做正式 Google Play 商店交付。
 9. Google Play 商店交付：发布签名、商店列表、最终 Data safety 提交、隐私政策 URL 和商店截图不作为当前阶段任务。

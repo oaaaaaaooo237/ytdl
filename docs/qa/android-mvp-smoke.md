@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证。仍不能写成“全量可视验收通过”，因为历史删除未执行、真实 cookies 文件未选择、截图级视觉还原审计未完成，且后续真机验收阶段尚未开始。
+截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。仍不能写成“全量可视验收通过”，因为历史删除未执行、真实 cookies 文件未选择、外部导出写出和通知/取消前台路径仍未完成，且后续真机验收阶段尚未开始。
 
 ## 本轮已确认
 
@@ -86,9 +86,9 @@ cd android
 
 ## 当前下一步
 
-1. 继续做截图级视觉还原审计，对照 `docs/android-gui-reference-v3.png` 检查下载、格式、队列、历史、设置五页。
-2. 在不触发外部发送/破坏性操作的前提下继续验证通知、取消、失败恢复等前台路径。
-3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
+1. 在不触发外部发送/破坏性操作的前提下继续验证通知、取消、导出取消/写出和失败恢复等前台路径。
+2. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
+3. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 4. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
 
 ## 2026-06-21 继续修复：UI 审计问题收敛
@@ -381,4 +381,43 @@ cache/gui-downloads/task-1783239204052-1/merged-299-140.mp4 355645249 bytes
 - 未执行历史删除，因为需要用户明确确认删除动作。
 - 未选择真实 cookies 文件，因为当前没有用户提供的测试 `cookies.txt`。
 - 未做小米 14 真机验收；当前 ADB 只检测到模拟器，且用户确认电脑暂不连接小米 14。
-- 仍需继续做截图级视觉还原审计和 fresh audit subagent 复核。
+- 仍需继续做通知/取消、外部导出写出、真实 cookies 文件选择和删除确认等剩余 M9/T12 项；视觉密度审计见后续小节。
+
+## 2026-07-05 视觉密度修复与截图审计
+
+本轮继续按顺序处理 Android GUI 与基准图的视觉差距，没有开始小米 14 真机验收。
+
+修复内容：
+
+- 增加项目内紧凑 Typography，降低页标题、正文、标签等默认字号密度。
+- 收紧底部导航、卡片、分段按钮、列表项、队列/历史缩略图和页面间距。
+- 下载页常态消息不再长期占据首屏提示卡；空 URL、失败、下载入队、导出/cookies/通知等需要用户知道的反馈仍显示。
+
+新鲜验证：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1
+cd android
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest"
+```
+
+结果：
+
+- 环境脚本：JDK 17、Android SDK、Gradle 9.4.1、ADB、emulator 可用；API37 模拟器在线。
+- `:app:testDebugUnitTest`：`BUILD SUCCESSFUL`。
+- `:app:assembleDebug`：`BUILD SUCCESSFUL`。
+- `YtdlAppUiTest`：API37 `ytdl_api37_play_x86_64(AVD) - 17` 上 5/5 tests passed，0 failed，0 skipped；`BUILD SUCCESSFUL in 9m 17s`。
+
+静态视觉证据：
+
+- 已安装当前 debug APK 到 API37 模拟器，并采集五页截图：`docs/qa/android-visual-audit-20260705-compactfix/`。
+- `download.png` 显示下载页首屏不再被常态消息卡挤压。
+- `history.png` 与 `settings.png` 相比修复前信息密度更接近基准图。
+
+边界：
+
+- 本轮 ADB 截图只算静态视觉证据，不替代 Computer Use 前台全功能验收。
+- 本轮没有重新执行破坏性历史删除、真实 cookies 文件选择、外部导出写出、通知/取消前台路径。
+- 小米 14 真机验收仍留到后续第 7 项且设备连接后执行。

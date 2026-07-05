@@ -99,6 +99,8 @@ import java.util.Locale
 
 private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
 
+private const val DefaultRuntimeMessage = "等待输入公开视频页面地址。"
+private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始下载。"
 private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
 private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
 
@@ -130,7 +132,7 @@ internal data class RuntimeDownloadState(
     val thumbnailStatus: String = "",
     val isAnalyzing: Boolean = false,
     val isDownloading: Boolean = false,
-    val userMessage: String = "等待输入公开视频页面地址。",
+    val userMessage: String = DefaultRuntimeMessage,
     val progressPercent: Double? = null,
     val downloadedBytes: Long? = null,
     val totalBytes: Long? = null,
@@ -582,8 +584,8 @@ fun YtdlApp() {
                             ytdlSettingsAccentArgb = colorArgbHexForUiTest(palette.settingsAccent)
                         }
                         .testTag("ytdl-screen-${selected.route}"),
-                    contentPadding = PaddingValues(start = 18.dp, top = 26.dp, end = 18.dp, bottom = 28.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(start = 16.dp, top = 22.dp, end = 16.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item { PageHeader(selected) }
                     when (selected.route) {
@@ -704,7 +706,7 @@ private fun RuntimeDownloadState.withAnalysisResult(analysis: VideoAnalysis): Ru
             "正在加载预览图"
         },
         isAnalyzing = false,
-        userMessage = "分析完成，可以开始下载。",
+        userMessage = AnalysisCompleteRuntimeMessage,
     )
 }
 
@@ -738,7 +740,7 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
     if (state.stage == DownloadStage.Idle || (state.request == null && state.outputs.isEmpty() && state.stage == DownloadStage.Failed)) {
         return copy(
             isDownloading = false,
-            userMessage = "等待输入公开视频页面地址。",
+            userMessage = DefaultRuntimeMessage,
             progressPercent = null,
             downloadedBytes = null,
             totalBytes = null,
@@ -820,7 +822,7 @@ private fun YtdlBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { testTagsAsResourceId = true }
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -828,17 +830,17 @@ private fun YtdlBottomBar(
                 val selected = destination.route == selectedRoute
                 Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .testTag("ytdl-tab-${destination.route}")
                         .clickable { onSelected(destination.route) }
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(width = 46.dp, height = 28.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .size(width = 42.dp, height = 24.dp)
+                            .clip(RoundedCornerShape(14.dp))
                             .background(if (selected) destination.accent.copy(alpha = 0.16f) else Color.Transparent),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -864,7 +866,7 @@ private fun YtdlBottomBar(
 @Composable
 private fun PageHeader(destination: YtdlDestination) {
     val palette = LocalYtdlAppPalette.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -956,41 +958,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
                 modifier = Modifier.testTag("ytdl-analyze-button"),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = palette.downloadAccent),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             ) {
                 Text(if (state.isAnalyzing) "分析中" else "分析", fontWeight = FontWeight.Bold)
             }
         }
     }
     item { DownloadPreviewCard(state) }
-    item {
-        val palette = LocalYtdlAppPalette.current
-        Surface(
-            color = if (state.userMessage.contains("失败")) {
-                palette.downloadAccent.copy(alpha = 0.11f)
-            } else {
-                palette.formatAccent.copy(alpha = 0.11f)
-            },
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (state.userMessage.contains("失败")) {
-                    palette.downloadAccent.copy(alpha = 0.35f)
-                } else {
-                    palette.formatAccent.copy(alpha = 0.35f)
-                },
-            ),
-        ) {
-            Text(
-                text = state.userMessage,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("ytdl-runtime-message")
-                    .padding(13.dp),
-                color = if (state.userMessage.contains("失败")) palette.downloadAccent else palette.formatAccent,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-            )
+    if (shouldShowRuntimeMessage(state.userMessage)) {
+        item {
+            RuntimeMessageCard(state.userMessage)
         }
     }
     item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录", leading = "□", trailing = "›") }
@@ -1060,6 +1037,19 @@ internal fun canStartDownloadForUiTest(state: RuntimeDownloadState, hasUserConfi
 
 private fun canStartDownload(state: RuntimeDownloadState, hasUserConfirmed: Boolean): Boolean {
     return !state.isAnalyzing && !state.isDownloading && state.analysis != null && hasUserConfirmed
+}
+
+internal fun shouldShowRuntimeMessageForUiTest(message: String): Boolean = shouldShowRuntimeMessage(message)
+
+private fun shouldShowRuntimeMessage(message: String): Boolean {
+    val trimmed = message.trim()
+    return trimmed.isNotEmpty() &&
+        trimmed != DefaultRuntimeMessage &&
+        trimmed != AnalysisCompleteRuntimeMessage
+}
+
+private fun isRuntimeWarningMessage(message: String): Boolean {
+    return listOf("失败", "无效", "未获得", "请先", "无法", "错误").any(message::contains)
 }
 
 internal fun downloadModeSelectionsForUiTest(state: RuntimeDownloadState): Map<FormatMode, Boolean> = downloadModeSelections(state)
@@ -1134,6 +1124,29 @@ private fun DownloadPreviewCard(state: RuntimeDownloadState) {
             InfoPill("时长", duration)
             InfoPill("格式", formatSummary)
         }
+    }
+}
+
+@Composable
+private fun RuntimeMessageCard(message: String) {
+    val palette = LocalYtdlAppPalette.current
+    val isWarning = isRuntimeWarningMessage(message)
+    val accent = if (isWarning) palette.downloadAccent else palette.formatAccent
+    Surface(
+        color = accent.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ytdl-runtime-message")
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            color = accent,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 
@@ -1669,15 +1682,15 @@ private fun AppCard(modifier: Modifier = Modifier, content: @Composable ColumnSc
     Surface(
         modifier = modifier,
         color = palette.cardBackground,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, palette.borderColor),
         shadowElevation = 1.dp,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
             content = content,
         )
     }
@@ -1687,7 +1700,7 @@ private fun AppCard(modifier: Modifier = Modifier, content: @Composable ColumnSc
 private fun InfoPill(label: String, value: String) {
     val palette = LocalYtdlAppPalette.current
     Surface(color = palette.mutedCardBackground, shape = RoundedCornerShape(12.dp)) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
             Text(label, color = palette.softText, style = MaterialTheme.typography.labelSmall)
             Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         }
@@ -1698,14 +1711,14 @@ private fun InfoPill(label: String, value: String) {
 private fun ModeCard(icon: String, label: String, selected: Boolean, modifier: Modifier = Modifier) {
     val palette = LocalYtdlAppPalette.current
     Surface(
-        modifier = modifier.height(72.dp),
+        modifier = modifier.height(64.dp),
         color = if (selected) palette.downloadAccent else palette.cardBackground,
         contentColor = if (selected) Color.White else palette.neutralText,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, palette.borderColor),
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier.padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -1727,7 +1740,7 @@ private fun SegmentedRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(palette.segmentedBackground)
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1753,11 +1766,11 @@ private fun SegmentedRow(
                     ),
                 color = if (selected) accent else palette.cardBackground.copy(alpha = 0.7f),
                 contentColor = if (selected) Color.White else palette.neutralText,
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
             ) {
                 Text(
                     text = label,
-                    modifier = Modifier.padding(vertical = 10.dp),
+                    modifier = Modifier.padding(vertical = 8.dp),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.labelLarge,
@@ -1784,7 +1797,7 @@ private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
             .background(if (row.selected) palette.formatAccent.copy(alpha = 0.11f) else Color.Transparent)
             .clickable(enabled = row.selectable, onClick = onSelect)
             .testTag("ytdl-format-row-$tagSuffix")
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -1828,22 +1841,22 @@ private fun SettingLineCard(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(9.dp))
                     .background(resolvedAccent.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(leading, color = resolvedAccent, fontWeight = FontWeight.Bold)
+                Text(leading, color = resolvedAccent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Text(trailing, color = palette.softText, style = MaterialTheme.typography.titleMedium)
+            Text(trailing, color = palette.softText, style = MaterialTheme.typography.titleSmall)
         }
     }
 
@@ -1869,13 +1882,13 @@ private fun QueueCard(
 ) {
     val palette = LocalYtdlAppPalette.current
     AppCard(modifier = modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (thumbnailBitmap != null) {
                 Image(
                     bitmap = thumbnailBitmap.asImageBitmap(),
                     contentDescription = "队列任务缩略图",
                     modifier = Modifier
-                        .size(58.dp)
+                        .size(52.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .testTag(QueueThumbnailImageTag),
                     contentScale = ContentScale.Crop,
@@ -1883,14 +1896,14 @@ private fun QueueCard(
             } else {
                 Box(
                     modifier = Modifier
-                        .size(58.dp)
+                        .size(52.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .testTag(QueueThumbnailPlaceholderTag)
                         .background(Brush.linearGradient(listOf(Color(0xFF74B9E7), Color(0xFFE8C27D)))),
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (progress > 0f) {
                     LinearProgressIndicator(
@@ -1928,7 +1941,7 @@ private fun QueueCard(
                 }
             }
             Surface(color = accent.copy(alpha = 0.12f), shape = CircleShape) {
-                Text(status, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = accent, fontWeight = FontWeight.Bold)
+                Text(status, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), color = accent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1945,16 +1958,16 @@ private fun HistoryCard(
 ) {
     val palette = LocalYtdlAppPalette.current
     AppCard(modifier = modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(56.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Brush.linearGradient(listOf(Color(0xFF97C9E8), Color(0xFF8EBE8A)))),
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(item.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Surface(color = palette.successGreen.copy(alpha = 0.14f), shape = RoundedCornerShape(9.dp)) {
                         Text(item.badge, color = palette.successGreen, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall)
                     }
