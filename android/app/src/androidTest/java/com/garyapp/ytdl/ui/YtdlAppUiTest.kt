@@ -33,6 +33,10 @@ class YtdlAppUiTest {
         cancelActiveDownload()
         DownloadCoordinator.resetForTests()
         clearHistoryRows(context)
+        openAppToDownloadPage()
+    }
+
+    private fun openAppToDownloadPage() {
         device.pressHome()
         device.executeShellCommand("am start -W -n $packageName/.MainActivity")
         if (findTag("ytdl-screen-download", timeoutMs = 5_000) == null) {
@@ -142,6 +146,42 @@ class YtdlAppUiTest {
         openNotificationShadeAndTapCancel()
         assertLatestHistoryEventuallyCanceled(cancelRequestedAt)
         saveScreen("09-notification-canceled.png")
+    }
+
+    @Test
+    fun notificationPermissionDeniedStillShowsInAppProgress() {
+        revokeNotificationPermissionIfRuntimeRequired()
+        openAppToDownloadPage()
+
+        try {
+            tapTag("ytdl-tab-settings")
+            assertTextContains("未授权 · 下载仍在应用内显示进度", timeoutMs = 5_000)
+            assertTextContains("请求", timeoutMs = 1_000)
+
+            tapTag("ytdl-tab-download")
+            startRealDownloadFromDownloadPage(
+                url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+                expectedTitleText = "Jalen Brunson",
+            )
+
+            tapTag("ytdl-tab-queue")
+            assertTagVisible("ytdl-real-queue-card", timeoutMs = 30_000)
+            assertTagVisible("ytdl-queue-stage-strip", timeoutMs = 60_000)
+            assertTextContains("下载视频", timeoutMs = 5_000)
+            assertTextContains("下载音频", timeoutMs = 5_000)
+            assertTextContains("原生合并", timeoutMs = 5_000)
+            saveScreen("10-notification-denied-in-app-progress.png")
+
+            val cancelRequestedAt = System.currentTimeMillis()
+            tapTag("ytdl-queue-cancel-action")
+            assertAnyTextContains(
+                texts = listOf("已请求取消当前下载", "下载已取消", "最近任务已取消"),
+                timeoutMs = 120_000,
+            )
+            assertLatestHistoryEventuallyCanceled(cancelRequestedAt)
+        } finally {
+            grantNotificationPermissionIfRuntimeRequired()
+        }
     }
 
     @Test
@@ -301,6 +341,24 @@ class YtdlAppUiTest {
     private fun grantNotificationPermissionIfRuntimeRequired() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             device.executeShellCommand("pm grant $packageName android.permission.POST_NOTIFICATIONS")
+            clearNotificationPermissionFlagsIfRuntimeRequired()
+        }
+    }
+
+    private fun revokeNotificationPermissionIfRuntimeRequired() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            device.executeShellCommand("pm revoke $packageName android.permission.POST_NOTIFICATIONS")
+            device.executeShellCommand("pm set-permission-flags $packageName android.permission.POST_NOTIFICATIONS user-set")
+            clearNotificationPermissionFlagsIfRuntimeRequired(clearUserSet = false)
+        }
+    }
+
+    private fun clearNotificationPermissionFlagsIfRuntimeRequired(clearUserSet: Boolean = true) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (clearUserSet) {
+                device.executeShellCommand("pm clear-permission-flags $packageName android.permission.POST_NOTIFICATIONS user-set")
+            }
+            device.executeShellCommand("pm clear-permission-flags $packageName android.permission.POST_NOTIFICATIONS user-fixed")
         }
     }
 

@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消和系统通知栏取消均已补强到 API37 connected 真实链路，但本轮 Computer Use 对模拟器窗口再次出现激活失败，历史删除、真实 cookies 文件选择和外部导出写出仍未完成，所以不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
+截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路，但本轮 Computer Use 对模拟器窗口再次出现激活失败，历史删除、真实 cookies 文件选择和外部导出写出仍未完成，所以不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
 
 ## 本轮已确认
 
@@ -489,4 +489,61 @@ cd android
 
 同名输出处理也已收敛：App 私有下载目录继续使用每任务唯一目录避免内部串档；历史页导出时，系统保存对话框默认文件名改为“视频标题 + 完成时间 + 扩展名”，避免多个导出任务都显示 `merged-299-140.mp4`。外部覆盖仍不作为默认行为；覆盖应由用户在系统保存器或后续明确选项中确认。
 
-Computer Use 边界：本轮重新连接后可以枚举窗口并被动截图模拟器，但对窗口点击/按键仍报 `failed to activate captured window`，所以本节不是最终前台可视验收通过记录。进一步跨窗口 smoke 显示，不只是 Android Emulator，多个普通 Windows 窗口的 `activate_window` 也返回同一错误；当前阻断位于 Computer Use/Windows 窗口激活链路，而不是 App 代码或模拟器内页面。后续可视 URL 输入必须先由 Computer Use 正常聚焦输入框；优先使用 `type_text` 或可访问性写入，也允许在不触发软键盘/Gboard 浮层的前提下用 `Ctrl+V` 粘贴，不能再把逐字慢速输入作为常规测试方式。若 Computer Use 仍不能激活窗口，必须先修测试环境。
+Computer Use 边界：本轮重新连接后可以枚举窗口并被动截图模拟器，但对窗口点击/按键仍报 `failed to activate captured window`，所以本节不是最终前台可视验收通过记录。进一步跨窗口 smoke 显示，不只是 Android Emulator，多个普通 Windows 窗口的 `activate_window` 也返回同一错误；当前阻断位于 Computer Use/Windows 窗口激活链路，而不是 App 代码或模拟器内页面。后续可视 URL 输入必须先由 Computer Use 正常聚焦输入框；优先设置桌面剪贴板并用 `Ctrl+V` 一次性粘贴 URL。若剪贴板粘贴不可用，再使用 `type_text` 或可访问性写入；不能再把逐字慢速输入作为常规测试方式。若 Computer Use 仍不能激活窗口，必须先修测试环境。
+
+## 2026-07-05 通知拒权时 app 内进度补强
+
+本轮新增 `YtdlAppUiTest.notificationPermissionDeniedStillShowsInAppProgress`，用真实链接 `https://www.youtube.com/watch?v=tkxzMEfp49Q` 覆盖 Android 13+ 通知权限被拒绝后的应用内状态：
+
+```powershell
+cd android
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#notificationPermissionDeniedStillShowsInAppProgress"
+```
+
+结果：API37 `ytdl_api37_play_x86_64(AVD) - 17` 上 1/1 通过，`BUILD SUCCESSFUL in 3m 25s`。
+
+覆盖内容：
+
+- 通过系统权限命令拒绝 `POST_NOTIFICATIONS` 后重启前台页面。
+- 设置页显示 `未授权 · 下载仍在应用内显示进度` 和 `请求`。
+- 启动真实 1080p 视频+音频下载后，队列页显示真实任务卡与阶段条。
+- 阶段条包含 `下载视频`、`下载音频`、`原生合并`。
+- 从 app 内队列点击 `取消` 后，Room 最新历史进入 `canceled`，不允许写成 completed。
+- 测试结束恢复通知权限，避免污染后续通知栏测试。
+
+边界：这是 connected/UIAutomator 辅助证据，不替代最终 Computer Use 前台可见全量验收。拒绝通知权限时不要求通知抽屉显示 `YTDL 下载任务`；验收重点是 app 内队列状态仍可见、可理解、可取消。
+
+## 2026-07-05 App 私有输出目录和取消触控补强
+
+本轮全量 `YtdlAppUiTest` 初次复跑时发现真实大文件下载可能被 Android 清理：日志显示 App `cache/gui-downloads/...` 已用约 955MB、超过当前缓存配额后被 `installd` 清理，导致长视频完成链路超时。根因不是下载/合并能力失败，而是把用户下载输出放进了系统可主动回收的 cache 目录。
+
+修复：
+
+- GUI 下载输出根目录从 `context.cacheDir/gui-downloads` 迁到 `context.filesDir/gui-downloads`。
+- FileProvider 路径从 `<cache-path>` 同步改为 `<files-path>`。
+- 为迁移前已存在的历史记录保留只读 legacy cache fallback：新下载不再写 cache；旧 `app-private://outputs/...` 历史只有在旧 cache 文件仍存在时才可继续打开、分享或导出。
+- 新增单元保护 `ytdlAppStoresLargeDownloadsOutsideCacheDirectory`，避免后续回退到 cache。
+- 队列页 `取消` 从小文字点击区改为最小 `56dp x 36dp` 的触控目标，新增 `queueCancelActionUsesStableTouchTarget` 保护测试。
+
+本轮顺序验证：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.data.HistoryPrivacyTest.appPrivateDiscoveryCanReadLegacyCacheHistoryWhenFilesRootMisses --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.ytdlAppStoresLargeDownloadsOutsideCacheDirectory --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.queueCancelActionUsesStableTouchTarget
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.queueCancelActionUsesStableTouchTarget
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#notificationPermissionDeniedStillShowsInAppProgress"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest"
+```
+
+结果：
+
+- 取消触控保护测试先红后绿，最终通过。
+- legacy cache 历史 fallback、filesDir 输出目录和取消触控目标测试通过。
+- `:app:testDebugUnitTest`：`BUILD SUCCESSFUL in 18s`。
+- `:app:assembleDebug`：`BUILD SUCCESSFUL in 4s`。
+- 通知拒权目标 connected：API37 1/1 通过，`BUILD SUCCESSFUL in 3m 16s`。
+- 全量 `YtdlAppUiTest`：API37 8/8 通过，`BUILD SUCCESSFUL in 15m 3s`。
+
+Computer Use 边界：本轮 Computer Use 可以连接并被动截图 `Android Emulator - ytdl_api37_play_x86_64:5554`，但 `activate_window` 仍返回 `failed to activate captured window`。因此以上仍是单元、构建和 connected/UIAutomator 辅助证据，不能写成最终前台可视验收通过。后续可视输入 URL 时默认用桌面剪贴板 + `Ctrl+V` 一次性粘贴，不再逐字输入。

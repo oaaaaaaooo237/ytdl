@@ -223,6 +223,30 @@ class HistoryPrivacyTest {
     }
 
     @Test
+    fun appPrivateDiscoveryCanReadLegacyCacheHistoryWhenFilesRootMisses() {
+        val filesRoot = temp.newFolder("app-files")
+        val legacyCacheRoot = temp.newFolder("app-cache")
+        val legacyOutput = File(legacyCacheRoot, "task-old/video.mp4").apply {
+            parentFile?.mkdirs()
+            writeText("legacy-media")
+        }
+        val legacyUri = ExportController.appPrivateOutputUri(
+            legacyOutput.absolutePath,
+            legacyCacheRoot.absolutePath,
+        )
+
+        val discovered = ExportController.discoverAppPrivateOutputUri(
+            appPrivateUri = legacyUri,
+            appPrivateRoot = filesRoot,
+            legacyRoots = listOf(legacyCacheRoot),
+        ).getOrThrow()
+
+        assertEquals("video.mp4", discovered.displayName)
+        assertEquals(legacyOutput.canonicalFile, discovered.sourceFile.canonicalFile)
+        assertTrue(discovered.appPrivateUri.startsWith("app-private://outputs/"))
+    }
+
+    @Test
     fun userReadableFailureMessagesCoverM8CasesWithoutSensitiveLeakage() {
         val messages = listOf(
             UrlPolicy.evaluate("  ").userMessage.orEmpty(),

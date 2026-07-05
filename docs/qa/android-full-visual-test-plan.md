@@ -24,7 +24,7 @@
 5. 当前 APK 安装到模拟器并重新操作后才算新鲜证据。代码变更后，受影响功能的旧截图和旧测试结论自动变为待重测。
 6. 对 `tkxzMEfp49Q` 的后续测试顺序必须是：真实分析 -> 分离视频/音频下载能力 -> MediaProcessor 合并能力 -> 独立字幕文件能力 -> GUI 绑定 -> 前台可视下载/合并/队列/历史/导出/通知全流程。
 7. 每项测试完成后必须记录命令、设备、时间、输出摘要、截图或文件证据、是否通过、遗留问题。
-8. 前台可视测试输入 URL 时不得打开或使用模拟器软键盘、候选词栏或 Gboard 菜单；必须用 Computer Use 正常聚焦输入框后完成输入。优先使用 `type_text` 或可访问性写入；为避免逐字慢速输入，也允许在不触发软键盘/Gboard 浮层的前提下使用 Computer Use 发送 `Ctrl+V` 粘贴。若这些方式失败，记录原因并修复测试环境；不得用软键盘绕过。
+8. 前台可视测试输入 URL 时不得打开或使用模拟器软键盘、候选词栏或 Gboard 菜单；必须用 Computer Use 正常聚焦输入框后完成输入。优先设置桌面剪贴板并发送 `Ctrl+V` 一次性粘贴 URL；若剪贴板粘贴不可用，再使用 `type_text` 或可访问性写入。若这些方式失败，记录原因并修复测试环境；不得用软键盘绕过。
 9. “通过验收”只用于 T12 全量 MVP 回归通过之后；T0-T11 只能标记为“已测/能力层通过/绑定层通过/待重测”，不能替代最终用户验收。
 10. 最终验收必须是全面但不重复的前台可视测试：一个主路径覆盖五个页面和核心功能矩阵，另用 Shorts 做兼容抽样；不得用多轮相同按钮点击替代未覆盖功能。
 11. 测试报告必须明确区分“能力层通过”“GUI 绑定通过”“全量可视验收通过”。任何一层未通过时，后续层只能记录为未开始或阻断，不能写成通过。
@@ -595,11 +595,11 @@ cd android
 - 前台可见操作全流程通过。
 - 证据写入 `docs/qa/android-mvp-smoke.md`。
 
-当前状态：未完成。2026-07-05 已恢复 Computer Use 并完成冷启动真实前台流程和一轮视觉密度截图修复；同日已补强队列页取消和系统通知栏取消的 connected 真实链路，覆盖早取消 race、通知展开后点击 `取消` action，以及 Room `canceled` 历史写入。T12 仍未通过，因为本轮 Computer Use 再次无法激活模拟器窗口，删除确认、真实 cookies 文件选择和外部导出写出仍未覆盖。
+当前状态：未完成。2026-07-05 已恢复 Computer Use 并完成冷启动真实前台流程和一轮视觉密度截图修复；同日已补强队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见的 connected 真实链路，覆盖早取消 race、通知展开后点击 `取消` action、拒权后队列阶段条可见，以及 Room `canceled` 历史写入。T12 仍未通过，因为本轮 Computer Use 再次无法激活模拟器窗口，删除确认、真实 cookies 文件选择和外部导出写出仍未覆盖。
 
 历史阻断记录：2026-06-21 曾尝试通过 Computer Use 技能入口连接 Windows 自动化 helper，当时工具调用失败：`Mcp error: -32602: js: codex/sandbox-state-meta: missing field sandboxPolicy`。该阻断已被 2026-07-05 的 Computer Use 前台复测取代，不能再作为当前阻断原因。
 
-2026-07-05 更新：已用 Computer Use 在前台可见 API37 模拟器窗口完成普通链接、Shorts 链接和一次冷启动串联流程；已用 ADB 静态截图完成一轮视觉密度修复复核；队列页取消和系统通知栏取消已有 API37 connected 真实链路辅助证据。系统通知栏测试首次因未展开通知找不到 `取消` action 而失败，随后改为展开 `YTDL 下载任务` 后点击 `取消` 并通过，证明测试覆盖了真实通知交互细节。ADB 截图和 UIAutomator/connected 测试仍只是辅助证据，不替代最终 T12 全量前台验收。
+2026-07-05 更新：已用 Computer Use 在前台可见 API37 模拟器窗口完成普通链接、Shorts 链接和一次冷启动串联流程；已用 ADB 静态截图完成一轮视觉密度修复复核；队列页取消、系统通知栏取消和通知权限拒绝路径已有 API37 connected 真实链路辅助证据。系统通知栏测试首次因未展开通知找不到 `取消` action 而失败，随后改为展开 `YTDL 下载任务` 后点击 `取消` 并通过，证明测试覆盖了真实通知交互细节；通知拒权测试确认拒绝 `POST_NOTIFICATIONS` 后，真实下载仍能在 app 内队列显示阶段条并可从队列取消。本轮还修复了真实大文件输出放在 `cacheDir` 被系统清理的问题，改为 `filesDir/gui-downloads`，并把队列页 `取消` 触控目标扩大到 `56dp x 36dp`；API37 全量 `YtdlAppUiTest` 已更新到 8/8 connected 通过。ADB 截图和 UIAutomator/connected 测试仍只是辅助证据，不替代最终 T12 全量前台验收。
 
 ## 当前总状态
 
@@ -610,9 +610,9 @@ cd android
 | T2 真实 URL 分析核心 | 已测 | API37 真实分析 `tkxzMEfp49Q`，formats=27，highest=1080 |
 | T3 真实单文件下载核心 | 已测 | API37 真实下载 `download-tkxzMEfp49Q.mp4`，44,556,988 字节，69 个进度事件 |
 | T4 前台 GUI 分析 | Computer Use 冷启动已测/视觉密度已修复 | 2026-07-05 已用 Computer Use 在前台可见 API37 模拟器中完成冷启动输入、空 URL 失败提示、必测 URL 分析、Shorts 分析，预览图/标题/时长/格式摘要可见；同日已补截图级视觉密度修复 |
-| T5 前台 GUI 下载进度 | Computer Use 冷启动已测/取消 connected 已测 | 2026-07-05 已观察真实队列进度从 7% 到 99%、进入音频下载、合并并完成；Shorts 也完成真实下载和合并；队列取消和系统通知栏取消均已通过 API37 connected 真实链路进入 canceled；仍需通知拒权前台检查 |
+| T5 前台 GUI 下载进度 | Computer Use 冷启动已测/取消 connected 已测 | 2026-07-05 已观察真实队列进度从 7% 到 99%、进入音频下载、合并并完成；Shorts 也完成真实下载和合并；队列取消、系统通知栏取消和通知拒权后 app 内队列进度均已通过 API37 connected 真实链路进入 canceled；大文件输出已迁到 `filesDir/gui-downloads`，避免 cache 配额清理；仍需最终前台可视复测 |
 | T6 格式真实可选项 | Computer Use 部分通过/视觉密度已修复 | M7 已用单元测试和审计覆盖当前分析结果格式绑定；2026-07-05 前台格式页确认 2160p/1440p 灰显、1080p 可选并同步下载页摘要；同日已补空态格式页静态截图审计，分析后格式页仍以后续最终前台验收截图为准 |
-| T7 前台服务通知 | 通知栏取消 connected 已测/拒权前台待测 | M6 已完成 foreground service 声明、通知控制器、`DownloadService` 承载 pipeline 和核心状态模型；M9 前置补上队列页真实取消入口和通知取消 action；2026-07-05 队列页取消和系统通知栏展开后取消均通过 API37 connected 真实链路，早取消 race 已修复；通知拒权和最终 Computer Use 前台可见验收仍待补 |
+| T7 前台服务通知 | 通知栏取消/拒权 connected 已测/前台待测 | M6 已完成 foreground service 声明、通知控制器、`DownloadService` 承载 pipeline 和核心状态模型；M9 前置补上队列页真实取消入口和通知取消 action；2026-07-05 队列页取消、系统通知栏展开后取消、通知拒权后 app 内队列阶段条可见均通过 API37 connected 真实链路，早取消 race 已修复；最终 Computer Use 前台可见验收仍待补 |
 | T8A MediaProcessor 合同与路线 | 已完成合同层 | 已定义合同、校验边界和原生 muxer 职责；真实合并在 T8B |
 | T8B 原生音视频合并能力 | 已测 | API37 instrumentation 已证明输出 MP4 含 1 条视频轨和 1 条音频轨 |
 | T8C yt-dlp 指定格式分离下载 | 已测 | API37 已真实下载 video-only format 394 与 audio-only format 139 两个文件 |
@@ -620,8 +620,8 @@ cd android
 | T8E 独立字幕文件输出 | 能力层通过/GUI 绑定补强 | API37 已下载 `tkxzMEfp49Q` 自动英文 `vtt` 字幕到 app 私有 cache；M9 前置补上格式页字幕开关和下载请求 `selectedSubtitles` 传递；真实前台字幕下载仍待 T12 |
 | T9 历史保存导出 | 前台入口已测/破坏性动作未执行 | 2026-07-05 Computer Use 已确认普通视频与 Shorts 完成后历史页出现真实完成卡片；冷启动流已打开系统视频查看器、打开分享面板但未发送、打开导出保存界面但未保存；删除需要用户明确确认 |
 | T10 cookies 隐私边界 | 前台边界已测/真实文件未选 | cookies 只保存引用、临时文件终态删除、复制失败清理、拒绝原始 cookies 路径、设置/历史/日志/错误脱敏已覆盖；2026-07-05 设置页隐私边界和 cookies 文件选择器入口可见；真实 cookies 选择需要用户提供测试 `cookies.txt` |
-| T11 失败恢复 | 空 URL 前台已测/队列取消 connected 已测/其余待测 | 失败文案和脱敏已覆盖；2026-07-05 冷启动流已验证空 URL 前台提示；队列取消已通过 connected 真实链路；仍需通知拒权、导出取消/写出等前台恢复路径 |
-| T12 全量 MVP 回归 | 未完成 | `testDebugUnitTest`、`assembleDebug`、API37 connected `YtdlAppUiTest` 7/7 已覆盖普通下载、Shorts、队列取消和通知栏取消；Computer Use 曾完成冷启动真实前台流程，视觉密度截图审计已完成一轮；但最终 Computer Use 全量前台复测、删除确认、真实 cookies 文件选择和外部导出写出仍未完成 |
+| T11 失败恢复 | 空 URL 前台已测/取消和通知拒权 connected 已测/其余待测 | 失败文案和脱敏已覆盖；2026-07-05 冷启动流已验证空 URL 前台提示；队列取消和通知拒权后 app 内进度可见已通过 connected 真实链路；仍需导出取消/写出等前台恢复路径 |
+| T12 全量 MVP 回归 | 未完成 | `testDebugUnitTest`、`assembleDebug`、API37 connected `YtdlAppUiTest` 8/8 已覆盖普通下载、Shorts、队列取消、通知栏取消和通知拒权 app 内进度；Computer Use 曾完成冷启动真实前台流程，视觉密度截图审计已完成一轮；但最终 Computer Use 全量前台复测、删除确认、真实 cookies 文件选择和外部导出写出仍未完成 |
 
 ## 下一步推进顺序
 

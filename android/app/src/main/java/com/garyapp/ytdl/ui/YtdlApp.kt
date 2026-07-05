@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -458,7 +459,7 @@ fun YtdlApp() {
         }
         val request = requestResult.getOrThrow()
 
-        val outputDir = File(context.cacheDir, "gui-downloads").apply { mkdirs() }
+        val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
         val startResult = DownloadCoordinator.startForegroundDownload(
             context = context.applicationContext,
             request = request,
@@ -481,7 +482,8 @@ fun YtdlApp() {
     fun outputForHistoryItem(item: HistoryUiItem): Result<ExportController.AppPrivateOutput> {
         return ExportController.discoverAppPrivateOutputUri(
             appPrivateUri = item.outputUri,
-            appPrivateRoot = File(context.cacheDir, "gui-downloads"),
+            appPrivateRoot = File(context.filesDir, "gui-downloads"),
+            legacyRoots = listOf(File(context.cacheDir, "gui-downloads")),
         )
     }
 
@@ -2058,22 +2060,32 @@ private fun QueueCard(
                 if (actions.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         actions.forEach { action ->
-                            val modifier = if (action == "取消" && onCancel != null) {
-                                Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable(onClick = onCancel)
-                                    .testTag("ytdl-queue-cancel-action")
-                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            if (action == "取消" && onCancel != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .testTag("ytdl-queue-cancel-action")
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable(onClick = onCancel)
+                                        .defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        action,
+                                        color = palette.downloadAccent,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
                             } else {
-                                Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                Text(
+                                    action,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                    color = palette.neutralText,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
                             }
-                            Text(
-                                action,
-                                modifier = modifier,
-                                color = if (action == "取消") palette.downloadAccent else palette.neutralText,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
                         }
                     }
                 }

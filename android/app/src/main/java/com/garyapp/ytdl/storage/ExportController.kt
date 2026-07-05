@@ -51,6 +51,7 @@ object ExportController {
     fun discoverAppPrivateOutputUri(
         appPrivateUri: String?,
         appPrivateRoot: File,
+        legacyRoots: List<File> = emptyList(),
     ): Result<AppPrivateOutput> {
         return runCatching {
             val uri = URI(appPrivateUri.orEmpty())
@@ -69,7 +70,13 @@ object ExportController {
             val relativePath = relativeSegments.fold(File("")) { current, segment ->
                 File(current, segment)
             }
-            discoverAppPrivateOutput(File(appPrivateRoot, relativePath.path), appPrivateRoot).getOrThrow()
+            val primary = discoverAppPrivateOutput(File(appPrivateRoot, relativePath.path), appPrivateRoot)
+            if (primary.isSuccess) {
+                return@runCatching primary.getOrThrow()
+            }
+            legacyRoots.firstNotNullOfOrNull { legacyRoot ->
+                discoverAppPrivateOutput(File(legacyRoot, relativePath.path), legacyRoot).getOrNull()
+            } ?: primary.getOrThrow()
         }
     }
 

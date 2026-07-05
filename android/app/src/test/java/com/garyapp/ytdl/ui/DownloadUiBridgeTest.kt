@@ -28,6 +28,35 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun ytdlAppStoresLargeDownloadsOutsideCacheDirectory() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+        val fileProviderPaths = sourceFile(
+            "app/src/main/res/xml/ytdl_file_paths.xml",
+            "src/main/res/xml/ytdl_file_paths.xml",
+        ).readText()
+
+        assertFalse(source.contains("val outputDir = File(context.cacheDir, \"gui-downloads\")"))
+        assertTrue(source.contains("File(context.filesDir, \"gui-downloads\")"))
+        assertTrue(source.contains("legacyRoots = listOf(File(context.cacheDir, \"gui-downloads\"))"))
+        assertTrue(fileProviderPaths.contains("<files-path"))
+        assertTrue(fileProviderPaths.contains("name=\"legacy_gui_downloads\""))
+    }
+
+    @Test
+    fun queueCancelActionUsesStableTouchTarget() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("testTag(\"ytdl-queue-cancel-action\")"))
+        assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)"))
+    }
+
+    @Test
     fun ytdlAppSourceDoesNotExposeDemoQueueFakeHistoryOrUncheckedPermissionState() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
