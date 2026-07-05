@@ -254,6 +254,21 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun activeQueueStageWithoutReliablePercentUsesIndeterminateProgress() {
+        val state = RuntimeDownloadState()
+            .withPipelineStateForUiTest(
+                DownloadTaskState.waiting(mergeRequest())
+                    .atStage(DownloadStage.DownloadingAudio),
+            )
+
+        val progress = queueProgressPresentationForUiTest(state)
+
+        assertEquals(null, progress.fraction)
+        assertTrue(progress.isIndeterminate)
+        assertEquals("33%", queueCardStatusForUiTest(state))
+    }
+
+    @Test
     fun mergeQueueStateSeparatesStageProgressFromOverallProgress() {
         val request = mergeRequest()
         val state = RuntimeDownloadState()

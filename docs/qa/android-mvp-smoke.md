@@ -8,6 +8,8 @@ Android Play MVP 尚未通过最终验收。
 
 截至 2026-07-05，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路，但本轮 Computer Use 对模拟器窗口再次出现激活失败，历史删除、真实 cookies 文件选择和外部导出写出仍未完成，所以不能写成“全量可视验收通过”；后续真机验收阶段也尚未开始。
 
+2026-07-06 复查：Computer Use 可以枚举 `Android Emulator - ytdl_api37_play_x86_64:5554`，但 `activate_window` 仍返回 `failed to activate captured window`，被动截图显示旧壁纸而不是 App。ADB 同时确认 `com.garyapp.ytdl/.MainActivity` 为 `mCurrentFocus`，并抓到下载页真实画面。结论：应用已在模拟器前台，ADB 截图只能作为辅助证据；本轮仍不能把 Computer Use 前台全量验收写为通过。
+
 ## 本轮已确认
 
 - 当前分支：`feature/android-play-mvp-1`
@@ -90,6 +92,23 @@ cd android
 2. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
 3. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 4. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
+
+## 2026-07-06 队列进度修正
+
+- 当前 Android 下载编排仍是串行：视频流 -> 音频流 -> 原生合并；不是并行下载。
+- 每个真实下载任务写入 App 私有 `gui-downloads/task-时间戳-序号` 子目录，App 私有输出不会互相覆盖；导出到系统下载目录时默认应继续走自动改名策略，覆盖必须由用户明确选择。
+- 队列卡片已区分“当前阶段真实百分比”和“当前阶段进行中但百分比未知”：有真实百分比时显示确定进度；没有可靠百分比时显示进行中进度条，避免卡在 `0%` 造成误解。右侧百分比继续显示整个下载大项的估算进度。
+
+本轮新鲜验证：
+
+```powershell
+cd android
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.activeQueueStageWithoutReliablePercentUsesIndeterminateProgress
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
+```
+
+结果：三项均 `BUILD SUCCESSFUL`。本轮未完成 Computer Use 前台点击验收，原因见当前结论。
 
 ## 2026-06-21 继续修复：UI 审计问题收敛
 

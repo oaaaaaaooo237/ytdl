@@ -162,6 +162,11 @@ internal data class QueueStageItem(
     val status: QueueStageStatus,
 )
 
+internal data class QueueProgressPresentation(
+    val fraction: Float?,
+    val isIndeterminate: Boolean,
+)
+
 internal data class FormatSettingSummaries(
     val frameRate: String,
     val videoCodec: String,
@@ -1389,7 +1394,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
         item { SectionTitle("真实任务（1）") }
         item {
             val palette = LocalYtdlAppPalette.current
-            val progress = ((state.progressPercent ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
+            val progress = queueProgressPresentation(state)
             val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
             val total = state.totalBytes?.let(::formatBytes) ?: "未知大小"
             val title = state.analysis?.title?.takeIf { it.isNotBlank() } ?: "真实下载任务"
@@ -1415,7 +1420,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
             QueueCard(
                 title = "尚未开始真实下载",
                 subtitle = "请在下载页输入地址并点击开始下载",
-                progress = 0f,
+                progress = QueueProgressPresentation(fraction = null, isIndeterminate = false),
                 status = "待开始",
                 meta = "这里不会显示假进度",
                 stageItems = emptyList(),
@@ -1506,6 +1511,18 @@ private fun queueStageItems(state: RuntimeDownloadState): List<QueueStageItem> {
 }
 
 internal fun queueStageItemsForUiTest(state: RuntimeDownloadState): List<QueueStageItem> = queueStageItems(state)
+
+private fun queueProgressPresentation(state: RuntimeDownloadState): QueueProgressPresentation {
+    val fraction = state.progressPercent?.let { (it / 100.0).toFloat().coerceIn(0f, 1f) }
+    val hasCurrentStage = queueStageItems(state).any { it.status == QueueStageStatus.Current }
+    return QueueProgressPresentation(
+        fraction = fraction,
+        isIndeterminate = fraction == null && state.isDownloading && hasCurrentStage,
+    )
+}
+
+internal fun queueProgressPresentationForUiTest(state: RuntimeDownloadState): QueueProgressPresentation =
+    queueProgressPresentation(state)
 
 private fun queueOverallProgressPercent(state: DownloadTaskState, currentStagePercent: Double?): Double? {
     if (state.stage == DownloadStage.Completed) return 100.0
@@ -2007,7 +2024,7 @@ private fun QueueStageStrip(stageItems: List<QueueStageItem>) {
 private fun QueueCard(
     title: String,
     subtitle: String,
-    progress: Float,
+    progress: QueueProgressPresentation,
     status: String,
     meta: String,
     stageItems: List<QueueStageItem>,
@@ -2045,16 +2062,25 @@ private fun QueueCard(
                 if (stageItems.isNotEmpty()) {
                     QueueStageStrip(stageItems)
                 }
-                if (stageItems.isNotEmpty() || progress > 0f) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(5.dp)),
-                        color = accent,
-                        trackColor = palette.borderColor,
-                    )
+                if (stageItems.isNotEmpty() || progress.fraction != null || progress.isIndeterminate) {
+                    val progressModifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                    if (progress.isIndeterminate) {
+                        LinearProgressIndicator(
+                            modifier = progressModifier,
+                            color = accent,
+                            trackColor = palette.borderColor,
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { progress.fraction ?: 0f },
+                            modifier = progressModifier,
+                            color = accent,
+                            trackColor = palette.borderColor,
+                        )
+                    }
                 }
                 Text(meta, color = palette.softText, style = MaterialTheme.typography.labelSmall)
                 if (actions.isNotEmpty()) {
