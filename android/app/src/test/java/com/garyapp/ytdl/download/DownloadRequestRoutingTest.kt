@@ -168,6 +168,40 @@ class DownloadRequestRoutingTest {
     }
 
     @Test
+    fun mergeRequiredRouteRetriesOnlyFailedFormatPartOnceForNetworkFailure() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            failOnceByRole[DownloadFormatRole.Audio] = YtdlpDownloadException(
+                category = AnalysisErrorCategory.Network,
+                safeMessage = "HTTP Error 403: Forbidden",
+            )
+        }
+        val mediaProcessor = RecordingMediaProcessor()
+
+        val result = DownloadPipeline(engine, mediaProcessor).run(request, temp.root)
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(
+            listOf("format:video:137", "format:audio:140", "format:audio:140"),
+            engine.calls,
+        )
+        assertEquals(1, mediaProcessor.mergeRequests.size)
+    }
+
+    @Test
     fun repeatedMergeRunsCreateDistinctHistoryUrisThatResolveToOriginalFiles() {
         val request = DownloadRequest.fromAnalysis(
             url = TestUrl,
@@ -526,6 +560,7 @@ class DownloadRequestRoutingTest {
         var returnedFormatId: String? = null
         var returnedRole: DownloadFormatRole? = null
         var downloadFailure: YtdlpDownloadException? = null
+        val failOnceByRole = mutableMapOf<DownloadFormatRole, YtdlpDownloadException>()
         val returnedRoleByRequestRole = mutableMapOf<DownloadFormatRole, DownloadFormatRole>()
 
         override fun downloadFormat(
@@ -538,6 +573,7 @@ class DownloadRequestRoutingTest {
         ): Result<DownloadResult> {
             throwableToThrow?.let { throw it }
             calls += "format:${role.pythonValue}:$formatId"
+            failOnceByRole.remove(role)?.let { return Result.failure(it) }
             downloadFailure?.let { return Result.failure(it) }
             if (failingRole == role) {
                 return Result.failure(IllegalStateException("${role.pythonValue} failed"))

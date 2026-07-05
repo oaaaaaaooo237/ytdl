@@ -280,21 +280,36 @@ class DownloadPipeline(
         role: DownloadFormatRole,
         listener: DownloadProgressListener,
     ): DownloadResult {
-        val download = engine.downloadFormat(
-            url = request.url,
-            outputDirectory = outputDirectory,
-            formatId = formatId,
-            role = role,
-            cookiesPath = request.cookiesPath,
-            listener = listener,
-        ).getOrThrow()
-        if (download.formatId != formatId) {
-            throw DownloadStateException("下载结果 formatId 与请求不一致。")
+        var lastFailure: Exception? = null
+        for (attempt in 1..MaxFormatDownloadAttempts) {
+            try {
+                val download = engine.downloadFormat(
+                    url = request.url,
+                    outputDirectory = outputDirectory,
+                    formatId = formatId,
+                    role = role,
+                    cookiesPath = request.cookiesPath,
+                    listener = listener,
+                ).getOrThrow()
+                if (download.formatId != formatId) {
+                    throw DownloadStateException("下载结果 formatId 与请求不一致。")
+                }
+                if (download.role != role) {
+                    throw DownloadStateException("下载结果 role 与请求不一致。")
+                }
+                return download
+            } catch (exc: Exception) {
+                lastFailure = exc
+                if (attempt >= MaxFormatDownloadAttempts || !exc.isRetryableFormatDownloadFailure()) {
+                    throw exc
+                }
+            }
         }
-        if (download.role != role) {
-            throw DownloadStateException("下载结果 role 与请求不一致。")
-        }
-        return download
+        throw lastFailure ?: DownloadStateException("下载失败。")
+    }
+
+    private fun Exception.isRetryableFormatDownloadFailure(): Boolean {
+        return this is YtdlpDownloadException && category == AnalysisErrorCategory.Network
     }
 
     private fun validateCookiesPath(path: String?): String? {
@@ -370,6 +385,7 @@ class DownloadPipeline(
     }
 
     private companion object {
+        const val MaxFormatDownloadAttempts = 2
         private val TaskSequence = AtomicLong()
     }
 }

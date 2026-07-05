@@ -433,7 +433,13 @@ def _error_category(exc):
     text = str(exc).lower()
     if "canceled" in text or "cancelled" in text or "取消" in text:
         return "canceled"
-    if "network" in text or "timed out" in text or "timeout" in text:
+    if (
+        "network" in text
+        or "timed out" in text
+        or "timeout" in text
+        or "http error 403" in text
+        or "forbidden" in text
+    ):
         return "network"
     if "unsupported" in text or "no suitable extractor" in text:
         return "unsupported"

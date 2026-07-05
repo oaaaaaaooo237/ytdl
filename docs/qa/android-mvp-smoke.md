@@ -6,14 +6,20 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。API35 已完成一次无软键盘/候选栏/Gboard 浮层的真实输入、分析、1080p 视频+音频原生合并下载和历史落库抽样。确认删除、真实 cookies 文件选择、同一运行时队列进行中/完成态前台采集仍未完成；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。API35 已完成无软键盘/候选栏/Gboard 浮层的真实输入、分析、格式选择、1080p 视频+音频原生合并下载、历史落库和合并后中间流清理抽样。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。确认删除、真实 cookies 文件选择、失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
 
-2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。该证据证明当前前台可见控制链路可用，并覆盖一次真实下载后的五页状态；但 URL 输入过程出现 Android 输入法浮层，所以仍不替代最终干净输入全量验收。
+2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期 `Ctrl+V` 和文本注入会触发 Android 输入法浮层，未计入干净输入证据；随后用前台硬件键事件输入完成真实 URL 输入，过程中未出现 Android 软键盘、候选栏或 Gboard 菜单。剪贴板粘贴在 API37 上仍是待优化测试摩擦点。
 
 ## 本轮已确认
 
 - 当前分支：`feature/android-play-mvp-1`
 - 当前远程同步提交：
+  - `7d37978 Clean merged Android download intermediates`
+  - `792c737 Fix Android URL input state reset`
+  - `e1e0ac1 android: improve queue progress feedback`
+  - `4609fb1 android: record api35 clean download evidence`
+  - `667df01 android: harden foreground url input`
+  - `85650be android: record foreground smoke evidence`
   - `3d8a455 android: confirm history deletes`
   - `b3ccea3 android: harden export file probe`
   - `41f4a1f android: clarify queue progress state`
@@ -22,6 +28,7 @@ Android Play MVP 尚未通过最终验收。
   - `5ff7449 android: clarify staged progress and export names`
 - API37 模拟器进程存在：`Android Emulator - ytdl_api37_play_x86_64:5554`
 - ADB 设备在线：`emulator-5554 device product:sdk_gphone16k_x86_64`
+- 用户确认可删除旧测试视频后，API37 `/sdcard/Download` 顶层两个旧 `.mp4` 测试导出已删除，空间从约 `230M` 恢复到约 `909M`；最新 `app-debug.apk` 已重新安装成功并启动到 `com.garyapp.ytdl/.MainActivity`。当前复查空间约 `1.1G`。
 
 ## 最近验证命令
 
@@ -88,8 +95,8 @@ cd android
 
 ## 当前下一步
 
-1. 在窗口完整可见状态下重新采集一次同一运行时队列页进行中和完成态；最终 T12 不能使用出现候选栏/输入法浮层的输入证据。
-2. 在不触发外部发送/破坏性操作的前提下继续验证系统通知栏取消和失败恢复等前台路径；队列页取消已有 connected 真实链路辅助证据，Computer Use 当前已恢复，需要补前台点击证据。
+1. 继续补齐不触发破坏性操作的前台失败恢复路径；队列页取消已有 connected 真实链路辅助证据，Computer Use 当前已恢复，需要补前台点击证据。
+2. 继续优化 API37 前台 URL 输入体验；当前干净证据来自硬件键事件输入，`Ctrl+V` 粘贴仍可能触发 Android 输入法浮层。
 3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
 4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 5. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
@@ -735,3 +742,65 @@ cd android
 - API35 日志仍有 `ForegroundServiceTypeLoggerModule ... does not have any types`；APK manifest 和 package granted permissions 已确认包含 `dataSync` 前台服务类型和权限，但系统日志告警未消失，不能写成已修复。
 - 成功合并后仍可见 `MPEG4Writer: Stop() called but track is not started or stopped`，当前未发现它导致输出失败，但需要后续单独调查。
 - 这是阶段 smoke，不等同于最终全功能全量验收；最终验收仍必须回到前台可见模拟器，按下载、格式、队列、历史、设置完整路径跑完。
+
+## 2026-07-06 API35 格式保持与中间流清理复测
+
+本轮在最新提交 `792c737` 和 `7d37978` 后，用 API35 前台可见模拟器补做非最终回归：
+
+- 测试地址：`https://www.youtube.com/watch?v=tkxzMEfp49Q`。
+- URL 输入：用桌面剪贴板和 `Ctrl+V` 粘贴到下载页输入框，未出现 Android 软键盘、候选栏或 Gboard 菜单。
+- 真实分析：标题、预览图、时长和格式摘要正常显示。
+- 格式页：选择 `1080p` 并应用后，下载页分析结果没有被 TextWatcher 清空，格式摘要保持为高分辨率视频+音频原生合并路径。
+- 真实下载：启动后队列页能看到真实阶段进度，先出现低百分比下载状态，再进入完成态。
+- 输出检查：最新任务目录只保留合并文件 `files/gui-downloads/task-1783286879264-1/merged-299-140.mp4`，约 `339M`；成功合并后的分离视频流和音频流中间文件已清理。
+
+新鲜验证：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+```
+
+结果：两项均 `BUILD SUCCESSFUL`。
+
+边界：这是 API35 前台真实回归，不是最终 T12 API37 验收。随后用户确认可以删除旧测试视频，API37 `/sdcard/Download` 顶层两个旧 `.mp4` 测试导出已清理，空间恢复到约 `909M`；最新 `app-debug.apk` 已安装成功，包信息显示 `targetSdk=37`，并已启动到 `com.garyapp.ytdl/.MainActivity`。后续 API37 前台可视验收必须基于这个最新安装状态继续。
+
+## 2026-07-06 API37 音频 403 重试与最新 APK 复测
+
+用户确认可以删除旧测试视频后，本轮清理了 API37 外部下载目录中的旧 `.mp4` 测试导出，并删除旧 app-private 失败任务目录；`/sdcard/Download` 顶层不再保留旧测试视频，当前空间约 `1.1G`。最新 `app-debug.apk` 已重新安装成功。
+
+根因记录：
+
+- 安装空间紧张和下载失败是两件事：旧测试视频导致安装最新 APK 一度空间不足；真实下载失败发生在安装后的音频流下载阶段。
+- 失败复现：同一地址 `https://www.youtube.com/watch?v=tkxzMEfp49Q` 的 1080p 视频流 `299` 已下载完成，随后音频流 `140` 报 `HTTP Error 403: Forbidden`；任务目录只留下 `download-tkxzMEfp49Q-299-video.mp4`。
+- 对照验证：Windows 侧 `tools\yt-dlp.exe 2026.03.17 -f 140` 可下载同一音频格式，说明格式本身可用，Android 侧需要把 403 归类为可重试网络失败，而不是直接把整个任务判为合并/文件处理失败。
+
+修复内容：
+
+- Python 桥接层把 `HTTP Error 403` / `Forbidden` 归类为 `network`。
+- Android 下载编排对单个 format 下载段做最多一次网络失败重试；已下载成功的视频段不重复下载，只重试失败的音频段。
+- 新增单元测试覆盖“视频成功、音频首次网络失败、仅音频重试一次、随后合并成功”。
+
+新鲜验证：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadRequestRoutingTest.mergeRequiredRouteRetriesOnlyFailedFormatPartOnceForNetworkFailure
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadRequestRoutingTest
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+```
+
+结果：四项均 `BUILD SUCCESSFUL`。
+
+API37 前台可见复测：
+
+- Computer Use 激活 `Android Emulator - ytdl_api37_play_x86_64:5554`，最新 APK 已安装并启动。
+- `Ctrl+V` 和直接文本注入在 API37 上会触发 Gboard，未计入干净输入证据；随后用前台硬件键事件输入 URL，过程中未出现 Android 软键盘、候选栏或 Gboard 菜单。
+- 真实分析成功，格式摘要为 `1080p MP4 需原生合并`。
+- 队列页观察到真实阶段进度：约 `4%`、`15%`、`31%`，随后视频和音频阶段均变为完成，进入 `66%` 原生合并，最终 `100%`。
+- 历史页显示最新完成记录，上一条保留为本轮修复前的失败记录，便于追溯。
+- 最新输出目录只保留 `files/gui-downloads/task-1783289403701-1/merged-299-140.mp4`，大小约 `339M`；中间视频流和音频流文件已清理。
+
+边界：这次已经证明最新 APK 可以安装，且 API37 前台真实 1080p 视频+音频下载、音频段重试、原生合并和历史落库可用；但它仍不是最终 T12 全功能通过，因为确认删除、真实 cookies 文件选择和更多失败恢复前台路径尚未完成。
