@@ -46,6 +46,57 @@ function Invoke-Tool {
   }
 }
 
+function Resolve-AvdConfigPath {
+  param([string]$Name)
+
+  $ini = Join-Path $env:ANDROID_AVD_HOME "$Name.ini"
+  if (Test-Path $ini) {
+    $pathLine = Get-Content -Path $ini | Where-Object { $_ -match "^path=" } | Select-Object -First 1
+    if ($pathLine) {
+      $avdDir = $pathLine.Substring("path=".Length)
+      if ($avdDir) {
+        return Join-Path $avdDir "config.ini"
+      }
+    }
+  }
+
+  return Join-Path $env:ANDROID_AVD_HOME "$Name.avd\config.ini"
+}
+
+function Set-AvdHardwareKeyboard {
+  param([string]$Name)
+
+  $config = Resolve-AvdConfigPath -Name $Name
+  if (!(Test-Path $config)) {
+    return "missing"
+  }
+
+  $lines = @(Get-Content -Path $config)
+  $found = $false
+  $updated = $false
+
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    if ($lines[$i] -match "^hw\.keyboard=") {
+      $found = $true
+      if ($lines[$i] -ne "hw.keyboard=yes") {
+        $lines[$i] = "hw.keyboard=yes"
+        $updated = $true
+      }
+    }
+  }
+
+  if (!$found) {
+    $lines += "hw.keyboard=yes"
+    $updated = $true
+  }
+
+  if ($updated) {
+    Set-Content -Path $config -Value $lines -Encoding ASCII
+  }
+
+  return "yes"
+}
+
 function Resolve-Gradle {
   $candidates = @(
     "D:\DevTools\gradle-9.4.1\bin\gradle.bat",
@@ -140,7 +191,8 @@ Write-Host "AVD matrix by ini files:"
 foreach ($entry in $avdMatrix) {
   $ini = Join-Path $env:ANDROID_AVD_HOME "$($entry.Name).ini"
   if (Test-Path $ini) {
-    Write-Host "READY $($entry.Name) target=$($entry.Target)"
+    $keyboard = Set-AvdHardwareKeyboard -Name $entry.Name
+    Write-Host "READY $($entry.Name) target=$($entry.Target) hardwareKeyboard=$keyboard"
   } else {
     Write-Host "MISSING $($entry.Name) target=$($entry.Target)"
   }
@@ -159,6 +211,9 @@ if ($CreateMatrixAvds) {
     if ($LASTEXITCODE -ne 0) {
       throw "Failed to create AVD $($entry.Name)."
     }
+
+    $keyboard = Set-AvdHardwareKeyboard -Name $entry.Name
+    Write-Host "Configured $($entry.Name) hardwareKeyboard=$keyboard"
   }
 }
 

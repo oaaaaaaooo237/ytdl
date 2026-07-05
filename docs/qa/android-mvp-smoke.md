@@ -254,3 +254,45 @@ cd android
 - `YtdlAppUiTest`：API37 `ytdl_api37_play_x86_64(AVD) - 17` 上 5/5 tests passed，0 failed，0 skipped；`BUILD SUCCESSFUL in 10m 11s`。
 
 边界：本轮补强的是五页导航 accent token 的自动化约束，仍不是像素级截图 diff，也不是最终 Computer Use 前台可见全功能验收。最终 M9/T12 仍必须用 Computer Use 在前台可见模拟器窗口完成 `https://www.youtube.com/watch?v=tkxzMEfp49Q` 的全流程。
+
+## 2026-07-05 Computer Use 输入环境与真实下载复核
+
+本轮复核前台可视测试前置时发现：矩阵 AVD 的 `config.ini` 均为 `hw.keyboard=no`，点击 URL 输入框会触发 Android 输入法/工具浮层，违反“不使用 Android 软键盘、候选词栏或 Gboard 菜单”的验收规则。
+
+修复：
+
+- `scripts/android_env.ps1` 现在会对已存在或新建的矩阵 AVD 自动写入 `hw.keyboard=yes`。
+- `docs/android-dev-environment.md` 已记录硬件键盘是 Computer Use 前台输入测试前置。
+
+复核命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1
+```
+
+结果：四个矩阵 AVD 均输出 `hardwareKeyboard=yes`；额外检查 `hw.keyboard=yes` 全部通过。
+
+前台真实流程复核：
+
+- API37 模拟器重启后，`adb shell dumpsys input_method` 显示 `mInputShown=false`。
+- 初次捕获到锁屏时，Computer Use 点击会被窗口激活状态影响；解锁并回到应用后，Computer Use 可以前台点击、输入和切页。
+- `type_text` 会在该模拟器上走剪贴板式输入并触发 Gboard 浮层；该输入尝试不计入验收。随后改用 Computer Use 硬件按键逐字输入，`?` 必须用 `Shift_L+slash`，成功输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。
+- 前台点击“分析”成功，识别标题 `Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season`，预览图显示，时长 `08:02`，格式摘要显示 `自动（推荐） · 1080p MP4 需原生合并`。
+- 勾选“我确认有权保存该内容”后前台点击“开始下载”，队列页真实进度从 `8% / 29.1 MB` 到 `30% / 101.7 MB`、`67% / 224.2 MB`，随后进入 `正在合并...`，最终显示 `100%`。
+- 历史页显示同一任务为 `完成`，文件名 `merged-299-140.mp4`。
+
+输出文件证据：
+
+```text
+cache/gui-downloads/task-1783236126094-1/merged-299-140.mp4 355645249 bytes
+cache/gui-downloads/task-1783236126094-1/download-tkxzMEfp49Q-299-video.mp4 347653714 bytes
+cache/gui-downloads/task-1783236126094-1/download-tkxzMEfp49Q-140-audio.m4a 7806830 bytes
+```
+
+补充输入复测：
+
+- 使用 `adb shell ime disable` 禁用 API37 测试 AVD 上的 Gboard 和语音输入法后，`adb shell dumpsys input_method` 显示 `mInputShown=false`。
+- 在前台可见模拟器窗口中仅使用 Computer Use 硬件按键重新输入同一 URL，并点击“分析”，公开视频解析再次成功。
+- 复测期间没有弹出完整 Android 软键盘、候选词栏或 Gboard 菜单；但输入框左侧仍出现一个系统折叠小浮动按钮，后续最终 T12 前仍需决定是否接受该测试环境表现，或继续压制该浮动按钮。
+
+当前边界：本轮已证明真实分析、真实分离流下载、原生合并、队列进度和历史落地在前台可见模拟器中跑通；但最终 T12 仍需从空白页面开始完整跑一次，包括格式选择、下载、队列、历史、设置，并确认输入过程不触发不可接受的软键盘/Gboard UI。
