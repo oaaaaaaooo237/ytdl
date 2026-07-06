@@ -249,6 +249,43 @@ class YtdlAppUiTest {
         }
     }
 
+    @Test
+    fun historyCardLoadsThumbnailForInsertedTestRecord() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val title = "UITEST_THUMBNAIL_${System.currentTimeMillis()}"
+        val now = System.currentTimeMillis()
+        val id = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                title,
+                8,
+                "https",
+                "test-host",
+                "video",
+                "",
+                "视频+音频 · 缩略图测试",
+                "https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg?token=secret",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+
+        try {
+            tapTag("ytdl-tab-history")
+            assertTextContains(title, timeoutMs = 5_000)
+            assertTagVisible("ytdl-history-thumbnail-image", timeoutMs = 20_000)
+            saveScreen("11-history-thumbnail.png")
+        } finally {
+            historyDao.deleteById(id)
+        }
+    }
+
     private fun startRealDownloadFromDownloadPage(
         url: String,
         expectedTitleText: String?,

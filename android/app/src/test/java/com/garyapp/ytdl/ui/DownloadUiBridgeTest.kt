@@ -4,6 +4,7 @@ import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.DownloadProgress
+import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadOutputFile
 import com.garyapp.ytdl.download.DownloadOutputKind
 import com.garyapp.ytdl.download.DownloadRequest
@@ -510,6 +511,69 @@ class DownloadUiBridgeTest {
         assertEquals(listOf(video), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 1))
         assertEquals(listOf(audio), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 2))
         assertEquals(emptyList<HistoryUiItem>(), filterHistoryItemsForUiTest(items, query = "不存在", selectedFilterIndex = 0))
+    }
+
+    @Test
+    fun historyModelAndCardSupportRealThumbnails() {
+        val historyEntityFields = HistoryItemEntity::class.java.declaredFields.map { it.name }
+        val historyUiFields = HistoryUiItem::class.java.declaredFields.map { it.name }
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(historyEntityFields.contains("thumbnailUrl"))
+        assertTrue(historyUiFields.contains("thumbnailUrl"))
+        assertTrue(source.contains("ytdl-history-thumbnail-image"))
+        assertTrue(source.contains("HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty())"))
+    }
+
+    @Test
+    fun historyThumbnailLoadingUsesBoundedCacheInsteadOfPerCardRawThreads() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("HistoryThumbnailLoader"))
+        assertTrue(source.contains("LruCache<String, Bitmap>(HistoryThumbnailCacheMaxItems)"))
+        assertTrue(source.contains("Executors.newFixedThreadPool(2)"))
+        assertTrue(source.contains("AtomicBoolean(false)"))
+        assertTrue(source.contains("historyThumbnailCache"))
+        assertTrue(source.contains("loadThumbnailBitmap(thumbnailUrl, targetSizePx = HistoryThumbnailTargetPx)"))
+        assertTrue(source.contains("BitmapFactory.Options"))
+        assertTrue(source.contains("calculateInSampleSize"))
+        assertFalse(source.contains("Thread {\n            val bitmap = loadThumbnailBitmap(item.thumbnailUrl.orEmpty())"))
+        assertFalse(source.contains("ConcurrentHashMap<String, Bitmap>"))
+    }
+
+    @Test
+    fun historyRowsPassThumbnailUrlToUiModel() {
+        val rows = listOf(
+            HistoryItemEntity.createSafe(
+                "完成视频",
+                60,
+                "https",
+                "host-hash",
+                "youtube",
+                "app-private://outputs/video.mp4",
+                "1080p",
+                "https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg?token=secret",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                null,
+                1_000,
+                1_000,
+                1_000,
+            ),
+        )
+
+        val item = historyUiItemsFromRows(rows).single()
+
+        assertEquals("https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg", item.thumbnailUrl)
+        assertTrue(!item.thumbnailUrl.orEmpty().contains("token=secret"))
     }
 
     @Test

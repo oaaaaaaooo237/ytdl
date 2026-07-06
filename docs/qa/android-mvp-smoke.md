@@ -906,3 +906,36 @@ adb -s emulator-5554 install -r app\build\outputs\apk\debug\app-debug.apk
 - `docs/qa/android-computer-use-20260706-m9-download-mainpath/07-settings-boundaries.png`
 
 边界：本节是系统软键盘拟真口径下的真实主路径阶段 smoke，仍不写成最终 T12 通过。确认删除需要用户明确授权；真实 cookies 文件选择需要用户提供测试 `cookies.txt`；更多失败恢复路径仍需补齐。历史页当前完成记录缩略图仍呈现为卡片占位图，后续若按设计图要求还原历史缩略图，需要单独修复和复测。
+
+## 2026-07-06 历史页真实缩略图修复
+
+本轮修复历史页完成记录只能显示固定渐变占位的问题：`VideoAnalysis.thumbnailUrl` 会随 `DownloadRequest` 进入终态历史记录，Room 从版本 1 迁移到 2 时新增 `thumbnailUrl` 字段；历史 UI 模型读取该安全缩略图引用后，历史卡片尝试加载真实图片，失败时继续回退到占位图。
+
+安全边界：
+
+- 只保存分析结果里的 http/https 缩略图 URL。
+- 写入历史前会去除 query 和 fragment，并拒绝含 userinfo 或疑似 token/secret/signature/auth 主机名/路径片段的缩略图 URL，避免把令牌类信息带入历史。
+- 不保存 Cookie、Authorization 或请求头。
+- 旧历史记录可通过 Room 1 -> 2 迁移继续保留，新增缩略图字段为空时仍显示占位图。
+- 历史卡片缩略图加载使用 64 条 LRU 缓存、有界线程池、采样解码和线程安全取消标记，不为每张卡片创建无限制原始线程。
+
+新鲜验证：
+
+```powershell
+cd android
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyModelAndCardSupportRealThumbnails
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyModelAndCardSupportRealThumbnails --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyRowsPassThumbnailUrlToUiModel --tests com.garyapp.ytdl.download.DownloadHistoryRecorderTest.recordsSafeThumbnailUrlForCompletedHistory
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadHistoryRecorderTest.rejectsSensitiveThumbnailUrlPartsBeforeHistoryPersistence --tests com.garyapp.ytdl.download.DownloadHistoryRecorderTest.rejectsSensitiveThumbnailUrlHostBeforeHistoryPersistence --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyThumbnailLoadingUsesBoundedCacheInsteadOfPerCardRawThreads
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.data.YtdlDatabaseMigrationTest#migration1To2AddsThumbnailUrlWithoutDroppingHistoryRows"
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#historyCardLoadsThumbnailForInsertedTestRecord"
+```
+
+结果：上述验证均已跑通到 `BUILD SUCCESSFUL`。迁移测试创建旧版 SQLite 表后，由 Room 通过 `MIGRATION_1_2` 打开到 v2，并用 DAO 读取确认旧历史保留且 `thumbnailUrl` 为空。Connected 缩略图辅助测试只插入并清理一条 `UITEST_THUMBNAIL_*` 测试历史记录，不触碰真实下载历史。
+
+截图证据：
+
+- `docs/qa/android-history-thumbnail-20260706/11-history-thumbnail.png`
+- `docs/qa/android-history-thumbnail-20260706/migration-connected-result.xml`
+- `docs/qa/android-history-thumbnail-20260706/thumbnail-connected-result.xml`
+
+边界：这是历史缩略图链路的辅助验证，不等于最终 T12 全功能前台验收通过。Computer Use 已确认当前只保留一个 API37 模拟器窗口；模拟器宿主窗口已恢复竖屏并移动到主屏幕可见区域。最终可视验收仍必须以可见窗口真实操作为准，不能用后台 connected 测试替代。

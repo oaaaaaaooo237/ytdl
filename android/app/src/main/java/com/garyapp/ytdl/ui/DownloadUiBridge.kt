@@ -50,6 +50,7 @@ data class HistoryUiItem(
     val outputUri: String,
     val status: String,
     val completedAt: Long,
+    val thumbnailUrl: String? = null,
 ) {
     val hasOutput: Boolean
         get() = outputUri.startsWith("app-private://outputs/") && status == HistoryItemEntity.STATUS_COMPLETED
@@ -65,6 +66,7 @@ fun historyUiItemsFromRows(rows: List<HistoryItemEntity>): List<HistoryUiItem> {
             outputUri = redactHistoryUiText(row.outputUri.orEmpty()),
             status = row.status.orEmpty(),
             completedAt = row.completedAt,
+            thumbnailUrl = row.thumbnailUrl?.takeIf { it.isNotBlank() },
         )
     }
 }

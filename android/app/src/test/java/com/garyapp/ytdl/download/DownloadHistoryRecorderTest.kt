@@ -96,6 +96,78 @@ class DownloadHistoryRecorderTest {
     }
 
     @Test
+    fun recordsSafeThumbnailUrlForCompletedHistory() {
+        val output = temp.newFile("completed-with-thumb.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 44_000L },
+        )
+        val completed = DownloadTaskState.waiting(
+            request(
+                title = "带缩略图视频",
+                thumbnailUrl = "https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg?token=secret#frag",
+            ),
+        ).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "1080p").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals("https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg", row.thumbnailUrl)
+        assertTrue(!row.toString().contains("token=secret"))
+        assertTrue(!row.toString().contains("#frag"))
+    }
+
+    @Test
+    fun rejectsSensitiveThumbnailUrlPartsBeforeHistoryPersistence() {
+        val output = temp.newFile("completed-with-sensitive-thumb.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 45_000L },
+        )
+        val completed = DownloadTaskState.waiting(
+            request(
+                title = "敏感缩略图视频",
+                thumbnailUrl = "https://user:pass@example.com/path/token-secret/hqdefault.jpg?token=secret#frag",
+            ),
+        ).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "1080p").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals(null, row.thumbnailUrl)
+        listOf("user:pass", "token-secret", "token=secret", "#frag").forEach {
+            assertTrue("thumbnail history leaked $it", !row.toString().contains(it))
+        }
+    }
+
+    @Test
+    fun rejectsSensitiveThumbnailUrlHostBeforeHistoryPersistence() {
+        val output = temp.newFile("completed-with-sensitive-host-thumb.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 46_000L },
+        )
+        val completed = DownloadTaskState.waiting(
+            request(
+                title = "敏感主机缩略图视频",
+                thumbnailUrl = "https://token-secret.example.com/hqdefault.jpg",
+            ),
+        ).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "1080p").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals(null, row.thumbnailUrl)
+        assertTrue(!row.toString().contains("token-secret"))
+    }
+
+    @Test
     fun historyRecordingFailureCreatesVisibleSafeFailureState() {
         val output = temp.newFile("completed-before-history-failure.mp4").apply { writeText("media") }
         val completed = DownloadTaskState.waiting(request(title = "完成视频")).completeWith(
@@ -114,13 +186,13 @@ class DownloadHistoryRecorderTest {
         }
     }
 
-    private fun request(title: String): DownloadRequest {
+    private fun request(title: String, thumbnailUrl: String? = null): DownloadRequest {
         return DownloadRequest.fromAnalysis(
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
             analysis = VideoAnalysis(
                 title = title,
                 durationSeconds = 60,
-                thumbnailUrl = null,
+                thumbnailUrl = thumbnailUrl,
                 formats = listOf(
                     VideoFormat(
                         id = "18",

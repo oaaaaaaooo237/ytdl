@@ -10,6 +10,7 @@ data class DownloadRequest(
     val url: String,
     val title: String,
     val route: DownloadRoute,
+    val thumbnailUrl: String? = null,
     val selectedSubtitles: List<SubtitleInfo> = emptyList(),
     val cookiesPath: String? = null,
 ) {
@@ -32,6 +33,7 @@ data class DownloadRequest(
                     url = url.trim(),
                     title = analysis.title,
                     route = route,
+                    thumbnailUrl = analysis.thumbnailUrl,
                     selectedSubtitles = selectedSubtitles,
                     cookiesPath = cookiesPath,
                 )

@@ -113,10 +113,15 @@ import com.garyapp.ytdl.ui.theme.YtdlTheme
 import com.garyapp.ytdl.ui.theme.themeConfigForSettings
 import com.garyapp.ytdl.ui.theme.ytdlAppPaletteForPreset
 import com.garyapp.ytdl.ui.theme.ytdlColorPresets
+import android.util.LruCache
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
 
@@ -124,6 +129,11 @@ private const val DefaultRuntimeMessage = "等待输入公开视频页面地址�
 private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始下载。"
 private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
 private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
+private const val HistoryThumbnailImageTag = "ytdl-history-thumbnail-image"
+private const val HistoryThumbnailPlaceholderTag = "ytdl-history-thumbnail-placeholder"
+private const val HistoryThumbnailTargetPx = 160
+private const val HistoryThumbnailCacheMaxItems = 64
+private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
 private val BottomBarGestureBuffer = 32.dp
 
 internal val YtdlColorPresetIdKey = SemanticsPropertyKey<String>("YtdlColorPresetId")
@@ -905,7 +915,7 @@ private val TerminalDownloadStages = setOf(
     DownloadStage.Idle,
 )
 
-private fun loadThumbnailBitmap(thumbnailUrl: String): Bitmap? {
+private fun loadThumbnailBitmap(thumbnailUrl: String, targetSizePx: Int? = null): Bitmap? {
     return runCatching {
         val connection = (URL(thumbnailUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8_000
@@ -914,10 +924,82 @@ private fun loadThumbnailBitmap(thumbnailUrl: String): Bitmap? {
             setRequestProperty("User-Agent", "YTDL-Android/0.1")
             setRequestProperty("Accept", "image/*")
         }
+        if (targetSizePx != null && connection.contentLengthLong > ThumbnailDecodeMaxBytes) {
+            return@runCatching null
+        }
         connection.inputStream.use { stream ->
-            BitmapFactory.decodeStream(stream)
+            if (targetSizePx == null) {
+                BitmapFactory.decodeStream(stream)
+            } else {
+                val bytes = readCappedBytes(stream, ThumbnailDecodeMaxBytes) ?: return@runCatching null
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = calculateInSampleSize(bounds, targetSizePx)
+                }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            }
         }
     }.getOrNull()
+}
+
+private fun readCappedBytes(stream: InputStream, maxBytes: Int): ByteArray? {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(8 * 1024)
+    var total = 0
+    while (true) {
+        val read = stream.read(buffer)
+        if (read < 0) {
+            return output.toByteArray()
+        }
+        total += read
+        if (total > maxBytes) {
+            return null
+        }
+        output.write(buffer, 0, read)
+    }
+}
+
+private fun calculateInSampleSize(bounds: BitmapFactory.Options, targetSizePx: Int): Int {
+    val height = bounds.outHeight
+    val width = bounds.outWidth
+    var inSampleSize = 1
+    if (height <= 0 || width <= 0) {
+        return inSampleSize
+    }
+    while (height / (inSampleSize * 2) >= targetSizePx && width / (inSampleSize * 2) >= targetSizePx) {
+        inSampleSize *= 2
+    }
+    return inSampleSize
+}
+
+private object HistoryThumbnailLoader {
+    private val historyThumbnailCache = LruCache<String, Bitmap>(HistoryThumbnailCacheMaxItems)
+    private val executor = Executors.newFixedThreadPool(2)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val cacheLock = Any()
+
+    fun load(thumbnailUrl: String, onLoaded: (Bitmap?) -> Unit): AutoCloseable {
+        val cached = synchronized(cacheLock) { historyThumbnailCache.get(thumbnailUrl) }
+        if (cached != null) {
+            mainHandler.post { onLoaded(cached) }
+            return AutoCloseable { }
+        }
+
+        val closed = AtomicBoolean(false)
+        executor.execute {
+            val bitmap = loadThumbnailBitmap(thumbnailUrl, targetSizePx = HistoryThumbnailTargetPx)
+            if (bitmap != null) {
+                synchronized(cacheLock) { historyThumbnailCache.put(thumbnailUrl, bitmap) }
+            }
+            mainHandler.post {
+                if (!closed.get()) {
+                    onLoaded(bitmap)
+                }
+            }
+        }
+        return AutoCloseable { closed.set(true) }
+    }
 }
 
 private fun displayNameForUri(context: android.content.Context, uri: Uri): String {
@@ -2339,14 +2421,38 @@ private fun HistoryCard(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalYtdlAppPalette.current
+    var thumbnailBitmap by remember(item.thumbnailUrl) { mutableStateOf<Bitmap?>(null) }
+    DisposableEffect(item.thumbnailUrl) {
+        if (item.thumbnailUrl.isNullOrBlank()) {
+            thumbnailBitmap = null
+            return@DisposableEffect onDispose { }
+        }
+        val closeable = HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty()) { bitmap ->
+            thumbnailBitmap = bitmap
+        }
+        onDispose { closeable.close() }
+    }
     AppCard(modifier = modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF97C9E8), Color(0xFF8EBE8A)))),
-            )
+            if (thumbnailBitmap != null) {
+                Image(
+                    bitmap = thumbnailBitmap!!.asImageBitmap(),
+                    contentDescription = "历史记录缩略图",
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .testTag(HistoryThumbnailImageTag),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .testTag(HistoryThumbnailPlaceholderTag)
+                        .background(Brush.linearGradient(listOf(Color(0xFF97C9E8), Color(0xFF8EBE8A)))),
+                )
+            }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -13,7 +13,10 @@ object YtdlDatabaseProvider {
                 context.applicationContext,
                 YtdlDatabase::class.java,
                 "ytdl.db",
-            ).build().also { instance = it }
+            )
+                .addMigrations(HistoryItemEntity.MIGRATION_1_2)
+                .build()
+                .also { instance = it }
         }
     }
 }

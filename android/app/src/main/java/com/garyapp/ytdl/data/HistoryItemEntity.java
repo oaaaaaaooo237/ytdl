@@ -3,6 +3,8 @@ package com.garyapp.ytdl.data;
 import androidx.room.Entity;
 import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
+import androidx.room.migration.Migration;
+import androidx.sqlite.db.SupportSQLiteDatabase;
 
 import com.garyapp.ytdl.core.policy.SafeUrlSummary;
 import com.garyapp.ytdl.core.policy.UrlPolicy;
@@ -34,6 +36,7 @@ public class HistoryItemEntity {
     public String sourceCategory;
     public String outputUri;
     public String formatSummary;
+    public String thumbnailUrl;
     public String status;
     public int progress;
     public String speed;
@@ -65,6 +68,47 @@ public class HistoryItemEntity {
             long updatedAt,
             long completedAt
     ) {
+        this(
+                id,
+                title,
+                durationSeconds,
+                sourceScheme,
+                sourceHostHash,
+                sourceCategory,
+                outputUri,
+                formatSummary,
+                null,
+                status,
+                progress,
+                speed,
+                eta,
+                errorSummary,
+                createdAt,
+                updatedAt,
+                completedAt
+        );
+    }
+
+    @Ignore
+    public HistoryItemEntity(
+            long id,
+            String title,
+            long durationSeconds,
+            String sourceScheme,
+            String sourceHostHash,
+            String sourceCategory,
+            String outputUri,
+            String formatSummary,
+            String thumbnailUrl,
+            String status,
+            int progress,
+            String speed,
+            String eta,
+            String errorSummary,
+            long createdAt,
+            long updatedAt,
+            long completedAt
+    ) {
         this.id = id;
         this.title = title;
         this.durationSeconds = durationSeconds;
@@ -73,6 +117,7 @@ public class HistoryItemEntity {
         this.sourceCategory = sourceCategory;
         this.outputUri = outputUri;
         this.formatSummary = formatSummary;
+        this.thumbnailUrl = thumbnailUrl;
         this.status = status;
         this.progress = progress;
         this.speed = speed;
@@ -100,6 +145,44 @@ public class HistoryItemEntity {
             long updatedAt,
             long completedAt
     ) {
+        return createSafe(
+                title,
+                durationSeconds,
+                sourceScheme,
+                sourceHostHash,
+                sourceCategory,
+                outputUri,
+                formatSummary,
+                null,
+                status,
+                progress,
+                speed,
+                eta,
+                errorSummary,
+                createdAt,
+                updatedAt,
+                completedAt
+        );
+    }
+
+    public static HistoryItemEntity createSafe(
+            String title,
+            long durationSeconds,
+            String sourceScheme,
+            String sourceHostHash,
+            String sourceCategory,
+            String outputUri,
+            String formatSummary,
+            String thumbnailUrl,
+            String status,
+            int progress,
+            String speed,
+            String eta,
+            String errorSummary,
+            long createdAt,
+            long updatedAt,
+            long completedAt
+    ) {
         return new HistoryItemEntity(
                 0,
                 PersistenceSanitizer.clean(title),
@@ -109,6 +192,7 @@ public class HistoryItemEntity {
                 PersistenceSanitizer.clean(sourceCategory),
                 PersistenceSanitizer.clean(outputUri),
                 PersistenceSanitizer.clean(formatSummary),
+                safeThumbnailUrl(thumbnailUrl),
                 status,
                 progress,
                 PersistenceSanitizer.clean(speed),
@@ -152,6 +236,7 @@ public class HistoryItemEntity {
                 sourceCategory,
                 outputUri,
                 formatSummary,
+                request.getThumbnailUrl(),
                 status,
                 progress,
                 "",
@@ -173,6 +258,7 @@ public class HistoryItemEntity {
                 PersistenceSanitizer.clean(sourceCategory),
                 PersistenceSanitizer.clean(outputUri),
                 PersistenceSanitizer.clean(formatSummary),
+                safeThumbnailUrl(thumbnailUrl),
                 status,
                 progress,
                 PersistenceSanitizer.clean(speed),
@@ -195,6 +281,7 @@ public class HistoryItemEntity {
                 ", sourceCategory='" + sourceCategory + '\'' +
                 ", outputUri='" + outputUri + '\'' +
                 ", formatSummary='" + formatSummary + '\'' +
+                ", thumbnailUrl='" + thumbnailUrl + '\'' +
                 ", status='" + status + '\'' +
                 ", progress=" + progress +
                 ", speed='" + speed + '\'' +
@@ -279,4 +366,54 @@ public class HistoryItemEntity {
             return fallback;
         }
     }
+
+    private static String safeThumbnailUrl(String rawThumbnailUrl) {
+        if (rawThumbnailUrl == null || rawThumbnailUrl.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            String cleaned = PersistenceSanitizer.clean(rawThumbnailUrl).trim();
+            URI uri = new URI(cleaned);
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+                return null;
+            }
+            if (uri.getHost() == null
+                    || uri.getUserInfo() != null
+                    || hasSensitiveUrlPart(uri.getHost())
+                    || hasSensitiveUrlPart(uri.getPath())) {
+                return null;
+            }
+            return new URI(
+                    scheme.toLowerCase(),
+                    null,
+                    uri.getHost(),
+                    uri.getPort(),
+                    uri.getPath(),
+                    null,
+                    null
+            ).toString();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static boolean hasSensitiveUrlPart(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        String normalized = value.toLowerCase();
+        return normalized.contains("token")
+                || normalized.contains("secret")
+                || normalized.contains("signature")
+                || normalized.contains("/sig")
+                || normalized.contains("auth");
+    }
+
+    public static final Migration MIGRATION_1_2 = new Migration(1, 2) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE history_items ADD COLUMN thumbnailUrl TEXT");
+        }
+    };
 }
