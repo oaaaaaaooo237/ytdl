@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认。确认删除、真实 cookies 文件选择、更多失败恢复前台路径，以及系统软键盘拟真输入下的完整下载主路径仍未完成；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认；M9.3 已沿用该软键盘输入验收口径继续到真实 1080p 视频+音频下载，保存了视频阶段进度、最终完成态、历史落库和设置边界证据。确认删除、真实 cookies 文件选择、更多失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
@@ -97,7 +97,7 @@ cd android
 ## 当前下一步
 
 1. 继续补齐不触发破坏性操作的前台失败恢复路径；非 http/https URL 已有前台证据，仍需导出取消/写出等恢复路径。
-2. 用系统软键盘拟真输入的完整主路径仍需继续到下载、队列、历史和设置，不再把后台写入、硬件键或剪贴板输入算作验收。
+2. 系统软键盘拟真输入的主路径已继续到真实下载、队列、历史和设置；后续不能回退到后台写入、硬件键或剪贴板输入作为验收。
 3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
 4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 5. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
@@ -881,3 +881,28 @@ adb -s emulator-5554 install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
 结果：环境复查通过，`assembleDebug` 为 `BUILD SUCCESSFUL`，APK 安装返回 `Success`。本节只证明系统软键盘拟真输入后的真实分析和格式页联动，不计为完整 T12 下载验收；下载、队列、历史、设置、确认删除、真实 cookies 文件选择和更多失败恢复仍需继续。
+
+## 2026-07-06 M9.3 系统软键盘主路径下载、队列和历史复核
+
+本轮继续使用 API37 前台可见模拟器窗口和 Computer Use。系统软键盘输入验收口径沿用 M9.2 已保存证据：M9.2 已证明 `https://www.youtube.com/watch?v=tkxzMEfp49Q` 通过可见 Gboard 逐键输入且未被候选词、自动补全、手写浮层或 Gboard 菜单改写。M9.3 的独立保存证据从队列生命周期开始，不把本轮未落盘的输入过程另算为截图/XML 证据。
+
+已观察到：
+
+- 真实分析和下载承接 M9.2 的同一测试地址：标题为 `Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season`，时长 `08:02`，下载页显示真实预览图和 `自动（推荐） · 1080p MP4 需原生合并`。
+- 当前高分辨率 `视频+音频` 不是并行下载，而是串行执行：`下载视频 -> 下载音频 -> 原生合并`。
+- 队列页真实进度不是从 `0%` 直接跳到 `100%`：前台截图记录了视频阶段约 `18.0 MB / 331.5 MB`、`156.7 MB / 331.5 MB`、`293.0 MB / 331.5 MB` 的推进。
+- 保存下来的 M9.3 截图/XML 未单独覆盖音频下载中或原生合并进行中的瞬间；它们覆盖视频阶段推进和最终完成态。完成态显示 `下载视频✓ / 下载音频✓ / 原生合并✓`、`100%`。
+- 完成卡片显示 `339.2 MB / 339.2 MB · App 私有目录 · 导出默认自动改名`。App 私有目录内最新合并文件为 `files/gui-downloads/task-1783294386576-1/merged-299-140.mp4`，大小约 `339M`。
+- 历史页出现最新完成记录，包含 `打开 / 分享 / 导出 / 删除` 操作；设置页继续显示 cookies 只保存引用、媒体处理边界、通知权限和隐私说明。
+
+截图和文本树证据：
+
+- `docs/qa/android-computer-use-20260706-m9-download-mainpath/01-queue-video-progress.png`
+- `docs/qa/android-computer-use-20260706-m9-download-mainpath/02-queue-video-progress-later.png`
+- `docs/qa/android-computer-use-20260706-m9-download-mainpath/03-queue-video-progress-near-complete.png`
+- `docs/qa/android-computer-use-20260706-m9-download-mainpath/04-queue-native-merge.png`
+- `docs/qa/android-computer-use-20260706-m9-download-mainpath/05-queue-complete.png`
+- `docs/qa/android-computer-use-20260706-m9-download-mainpath/06-history-complete.png`
+- `docs/qa/android-computer-use-20260706-m9-download-mainpath/07-settings-boundaries.png`
+
+边界：本节是系统软键盘拟真口径下的真实主路径阶段 smoke，仍不写成最终 T12 通过。确认删除需要用户明确授权；真实 cookies 文件选择需要用户提供测试 `cookies.txt`；更多失败恢复路径仍需补齐。历史页当前完成记录缩略图仍呈现为卡片占位图，后续若按设计图要求还原历史缩略图，需要单独修复和复测。
