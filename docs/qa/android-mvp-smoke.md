@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。历史删除确认已完成到“弹窗 + 取消保留”的前台可视检查；外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认；M9.3 已沿用该软键盘输入验收口径继续到真实 1080p 视频+音频下载，保存了视频阶段进度、最终完成态、历史落库和设置边界证据。确认删除、真实 cookies 文件选择、更多失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认；M9.3 已沿用该软键盘输入验收口径继续到真实 1080p 视频+音频下载，保存了视频阶段进度、最终完成态、历史落库和设置边界证据。M9.4 已用前台 Computer Use 完成历史测试记录删除确认路径，并用合成 `cookies.txt` 完成系统文件选择器和“仅保存引用”设置页复核。更多失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
@@ -98,7 +98,7 @@ cd android
 
 1. 继续补齐不触发破坏性操作的前台失败恢复路径；非 http/https URL 已有前台证据，仍需导出取消/写出等恢复路径。
 2. 系统软键盘拟真输入的主路径已继续到真实下载、队列、历史和设置；后续不能回退到后台写入、硬件键或剪贴板输入作为验收。
-3. 历史删除需要用户明确确认后才能执行；真实 cookies 选择需要用户提供测试用 `cookies.txt`。
+3. 历史测试记录确认删除和合成 `cookies.txt` 文件选择已完成前台可视复核；后续仍需补更多失败恢复前台路径。
 4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
 5. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
 
@@ -205,8 +205,8 @@ files/gui-downloads/task-1783279356106-1/merged-299-140.mp4                 355,
 边界：
 
 - 本轮 URL 输入先尝试 `Ctrl+V`，未落入输入框；随后用 Computer Use 直接文本输入成功，但 Android 输入法浮层短暂出现。它证明真实功能链路可运行；按 2026-07-06 最新口径，后续需要用当前 APK、系统软键盘和前台可见操作重测输入链路。
-- 本轮未点击 `删除` 的确认删除按钮；该动作仍需用户明确授权。
-- 本轮未选择真实 `cookies.txt`。
+- 本轮未点击 `删除` 的确认删除按钮；后续 M9.4 已在用户明确授权后只确认删除测试历史记录。
+- 本轮未选择 `cookies.txt`；后续 M9.4 已用合成测试 `cookies.txt` 完成系统文件选择器和“仅保存引用”前台复核。
 
 ## 2026-07-06 外部导出识别辅助测试收敛
 
@@ -232,7 +232,7 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
 - 单元层新增保护：`YtdlApp` 必须存在 `pendingDeleteHistoryItem`、`AlertDialog`、`ytdl-history-delete-dialog`、`ytdl-history-delete-confirm` 和 `ytdl-history-delete-cancel`。
 - connected 辅助测试新增 `YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord`：只插入一条 `UITEST_DELETE_CONFIRM_*` 测试历史，并按该记录 id 的按钮 tag 定位删除入口，验证点击删除后不会直接删除、取消后保留、确认后只删除该测试记录。
 - connected 测试启动前不再调用 `clearHistoryRows()`，避免清空真实历史记录；新增单元测试保护不再出现遍历删除所有历史行的危险清理模式。
-- Computer Use 前台可见验证已完成到“历史页测试记录可见 -> 点击删除弹出确认框 -> 点击取消后记录保留”。因为 UI 中点击确认删除属于破坏性本地操作，未获用户明确许可前不执行最终确认删除；本项不写成最终 T12 通过。
+- Computer Use 前台可见验证先完成“历史页测试记录可见 -> 点击删除弹出确认框 -> 点击取消后记录保留”；随后在用户明确同意删除 `UITEST_FOREGROUND_DELETE_M9_4` 后，确认删除该测试记录并验证历史页回到空状态。该路径只删除测试历史记录，不删除媒体文件；本项仍不写成最终 T12 通过。
 - 本轮临时插入的 `UITEST_VISIBLE_DELETE_*` 前台测试记录已通过精确前缀清理，未触碰真实下载历史。
 
 本轮新鲜验证：
@@ -251,7 +251,41 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
 - API37 connected 辅助测试 1/1 通过。
 - 全量 `:app:testDebugUnitTest`：`BUILD SUCCESSFUL`。
 - `:app:assembleDebug`：`BUILD SUCCESSFUL`。
-- 前台可见 Computer Use 已确认弹窗和取消保留；确认删除仍待用户授权后补测。
+- 前台可见 Computer Use 已确认弹窗、取消保留和用户授权后的测试记录确认删除。
+
+## 2026-07-06 M9.4 前台隐私动作复核
+
+本轮使用单个前台可见 API37 模拟器窗口，并通过 Computer Use 操作真实 GUI。
+
+已完成：
+
+- 历史页测试记录 `UITEST_FOREGROUND_DELETE_M9_4` 可见。
+- 点击 `删除` 后出现 `确认删除历史记录` 对话框，文案说明不会删除已保存的媒体文件。
+- 点击 `取消` 后测试记录仍保留。
+- 在用户明确同意后，确认删除该测试记录；历史页显示 `暂无真实历史记录`。
+- 设置页点击 `Cookies 文件` 选择入口，系统文件选择器打开。
+- 选择合成测试文件 `cookies.txt` 后，设置页只显示 `cookies.txt · 仅保存引用`，未显示 cookies 内容。
+
+证据：
+
+- `docs/qa/android-computer-use-20260706-m9-privacy-actions/history-delete-cancel-record-remains.png`
+- `docs/qa/android-computer-use-20260706-m9-privacy-actions/history-delete-dialog-visible.png`
+- `docs/qa/android-computer-use-20260706-m9-privacy-actions/history-delete-confirm-record-removed.png`
+- `docs/qa/android-computer-use-20260706-m9-privacy-actions/settings-cookies-reference-only.png`
+- 同目录保存了对应 `*.xml` 界面树。
+
+新鲜验证：
+
+```powershell
+cd android
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebug
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#seedForegroundDeleteRecordWhenExplicitlyRequested"
+```
+
+结果：三项均 `BUILD SUCCESSFUL`。connected 检查以无参数方式运行种子夹具，确认默认不会插入测试历史记录，同时覆盖 androidTest 编译运行。
+
+边界：cookies 文件为本轮合成测试文件，仅用于验证系统文件选择器和“只保存引用”的 UI 行为；未读取、显示、记录或持久化 cookies 内容。M9.4 补齐历史确认删除和 cookies 选择前台路径，但最终 T12 仍需更多失败恢复路径和一次完整全量前台回归。
 
 ## 2026-06-21 继续修复：UI 审计问题收敛
 
@@ -540,10 +574,10 @@ cache/gui-downloads/task-1783239204052-1/merged-299-140.mp4 355645249 bytes
 
 剩余边界：
 
-- 未执行历史删除，因为需要用户明确确认删除动作。
-- 未选择真实 cookies 文件，因为当前没有用户提供的测试 `cookies.txt`。
+- 该小节记录时未执行历史删除，因为需要用户明确确认删除动作；后续 M9.4 已在用户明确授权后只删除测试历史记录。
+- 该小节记录时未选择 cookies 文件；后续 M9.4 已用合成测试 `cookies.txt` 完成系统文件选择器和“仅保存引用”前台复核。
 - 未做小米 14 真机验收；当前 ADB 只检测到模拟器，且用户确认电脑暂不连接小米 14。
-- 外部导出写出和历史打开播放已在 2026-07-06 补充前台证据；仍需继续做真实 cookies 文件选择、确认删除、干净 URL 输入和最终 Computer Use 全量前台复测等剩余 M9/T12 项；视觉密度审计见后续小节。
+- 外部导出写出、历史打开播放、测试历史确认删除和合成 cookies 文件选择已在 2026-07-06 补充前台证据；仍需继续做更多失败恢复和最终 Computer Use 全量前台复测等剩余 M9/T12 项；视觉密度审计见后续小节。
 
 ## 2026-07-05 视觉密度修复与截图审计
 
@@ -581,7 +615,7 @@ cd android
 边界：
 
 - 本轮 ADB 截图只算静态视觉证据，不替代 Computer Use 前台全功能验收。
-- 本轮没有重新执行破坏性历史删除、真实 cookies 文件选择、外部导出写出、通知/取消前台路径。
+- 本轮没有重新执行破坏性历史删除、cookies 文件选择、外部导出写出、通知/取消前台路径；其中测试历史确认删除和合成 cookies 文件选择已在后续 M9.4 补齐。
 - 小米 14 真机验收仍留到后续第 7 项且设备连接后执行。
 
 ## 2026-07-05 队列取消路径补强
@@ -804,7 +838,7 @@ API37 前台可见复测：
 - 历史页显示最新完成记录，上一条保留为本轮修复前的失败记录，便于追溯。
 - 最新输出目录只保留 `files/gui-downloads/task-1783289403701-1/merged-299-140.mp4`，大小约 `339M`；中间视频流和音频流文件已清理。
 
-边界：这次已经证明最新 APK 可以安装，且 API37 前台真实 1080p 视频+音频下载、音频段重试、原生合并和历史落库可用；但它仍不是最终 T12 全功能通过，因为确认删除、真实 cookies 文件选择和更多失败恢复前台路径尚未完成。
+边界：这次已经证明最新 APK 可以安装，且 API37 前台真实 1080p 视频+音频下载、音频段重试、原生合并和历史落库可用；但它仍不是最终 T12 全功能通过。该小节记录时确认删除、cookies 文件选择和更多失败恢复前台路径尚未完成；其中确认删除和 cookies 文件选择已在后续 M9.4 前台复核补齐。
 
 ## 2026-07-06 M9.1 非破坏性失败恢复与输入边界
 
@@ -846,7 +880,7 @@ cd android
 
 结果：均 `BUILD SUCCESSFUL`。Gradle 10 兼容性提示来自既有 Chaquopy 依赖声明，不是本轮改动引入。
 
-边界：M9.1 补齐了一个可恢复失败场景；最终 T12 仍需确认删除、真实 cookies 文件选择、更多失败恢复路径，以及完整主路径的一次全量前台复测。
+边界：M9.1 补齐了一个可恢复失败场景；确认删除和 cookies 文件选择已在后续 M9.4 补齐。最终 T12 仍需更多失败恢复路径，以及完整主路径的一次全量前台复测。
 
 ## 2026-07-06 M9.2 系统软键盘主路径分析和格式页确认
 
@@ -880,7 +914,7 @@ cd android
 adb -s emulator-5554 install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-结果：环境复查通过，`assembleDebug` 为 `BUILD SUCCESSFUL`，APK 安装返回 `Success`。本节只证明系统软键盘拟真输入后的真实分析和格式页联动，不计为完整 T12 下载验收；下载、队列、历史、设置、确认删除、真实 cookies 文件选择和更多失败恢复仍需继续。
+结果：环境复查通过，`assembleDebug` 为 `BUILD SUCCESSFUL`，APK 安装返回 `Success`。本节只证明系统软键盘拟真输入后的真实分析和格式页联动，不计为完整 T12 下载验收；下载、队列、历史、设置和更多失败恢复仍需继续。该小节记录时确认删除和 cookies 文件选择仍未完成，二者已在后续 M9.4 补齐。
 
 ## 2026-07-06 M9.3 系统软键盘主路径下载、队列和历史复核
 
@@ -905,7 +939,7 @@ adb -s emulator-5554 install -r app\build\outputs\apk\debug\app-debug.apk
 - `docs/qa/android-computer-use-20260706-m9-download-mainpath/06-history-complete.png`
 - `docs/qa/android-computer-use-20260706-m9-download-mainpath/07-settings-boundaries.png`
 
-边界：本节是系统软键盘拟真口径下的真实主路径阶段 smoke，仍不写成最终 T12 通过。确认删除需要用户明确授权；真实 cookies 文件选择需要用户提供测试 `cookies.txt`；更多失败恢复路径仍需补齐。历史页当前完成记录缩略图仍呈现为卡片占位图，后续若按设计图要求还原历史缩略图，需要单独修复和复测。
+边界：本节是系统软键盘拟真口径下的真实主路径阶段 smoke，仍不写成最终 T12 通过。该小节记录时确认删除和 cookies 文件选择仍未完成；二者已在后续 M9.4 用测试历史记录和合成 `cookies.txt` 补齐。更多失败恢复路径仍需补齐。历史页当前完成记录缩略图仍呈现为卡片占位图，后续若按设计图要求还原历史缩略图，需要单独修复和复测。
 
 ## 2026-07-06 历史页真实缩略图修复
 

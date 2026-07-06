@@ -250,6 +250,39 @@ class YtdlAppUiTest {
     }
 
     @Test
+    fun seedForegroundDeleteRecordWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("seedForegroundDelete") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val now = System.currentTimeMillis()
+        val title = "UITEST_FOREGROUND_DELETE_M9_4_$now"
+        val id = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                title,
+                8,
+                "https",
+                "test-host",
+                "video",
+                "app-private://outputs/task-uitest-foreground-delete/merged-test.mp4",
+                "视频+音频 · 前台删除测试",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+
+        assertTrue("必须插入前台删除测试记录", historyContains(id))
+    }
+
+    @Test
     fun historyCardLoadsThumbnailForInsertedTestRecord() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val historyDao = YtdlDatabaseProvider.get(context).historyDao()
