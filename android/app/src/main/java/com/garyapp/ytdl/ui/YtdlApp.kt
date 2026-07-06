@@ -19,6 +19,11 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -567,7 +572,7 @@ fun YtdlApp() {
 
     fun openHistoryItem(item: HistoryUiItem) {
         val output = outputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = error.message.orEmpty().ifBlank { "历史记录没有可打开的本地输出。" })
+            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
             return
         }
         val uri = fileProviderUri(output)
@@ -583,7 +588,7 @@ fun YtdlApp() {
 
     fun shareHistoryItem(item: HistoryUiItem) {
         val output = outputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = error.message.orEmpty().ifBlank { "历史记录没有可分享的本地输出。" })
+            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
             return
         }
         val uri = fileProviderUri(output)
@@ -600,7 +605,7 @@ fun YtdlApp() {
 
     fun exportHistoryItem(item: HistoryUiItem) {
         val output = outputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = error.message.orEmpty().ifBlank { "历史记录没有可导出的本地输出。" })
+            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
             return
         }
         pendingExportOutput = output
@@ -740,6 +745,7 @@ fun YtdlApp() {
                             historyItems = historyItems,
                             historyQuery = historyQuery,
                             selectedFilterIndex = historyFilterIndex,
+                            userMessage = runtimeState.userMessage,
                             onHistoryQueryChange = { historyQuery = it },
                             onHistoryFilterChange = { historyFilterIndex = it },
                             onOpen = ::openHistoryItem,
@@ -1263,6 +1269,18 @@ private fun shouldShowRuntimeMessage(message: String): Boolean {
     return trimmed.isNotEmpty() &&
         trimmed != DefaultRuntimeMessage &&
         trimmed != AnalysisCompleteRuntimeMessage
+}
+
+internal fun historyMissingLocalOutputMessageForUiTest(error: Throwable?): String = historyMissingLocalOutputMessage(error)
+
+private fun historyMissingLocalOutputMessage(error: Throwable?): String {
+    val fallback = "历史记录对应的本地文件不存在或为空，请重新下载或删除该记录。"
+    val message = error?.message.orEmpty()
+    return if (message.contains("不存在") || message.contains("为空") || message.contains("本地输出")) {
+        fallback
+    } else {
+        message.ifBlank { fallback }
+    }
 }
 
 internal fun shouldShowQueueRuntimeMessageForUiTest(message: String): Boolean = shouldShowQueueRuntimeMessage(message)
@@ -1931,6 +1949,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
     historyItems: List<HistoryUiItem>,
     historyQuery: String,
     selectedFilterIndex: Int,
+    userMessage: String,
     onHistoryQueryChange: (String) -> Unit,
     onHistoryFilterChange: (Int) -> Unit,
     onOpen: (HistoryUiItem) -> Unit,
@@ -1960,6 +1979,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
             testTagPrefix = "ytdl-history-filter",
             onSelected = onHistoryFilterChange,
         )
+    }
+    if (shouldShowRuntimeMessage(userMessage)) {
+        item {
+            RuntimeMessageCard(userMessage)
+        }
     }
     if (visibleItems.isEmpty()) {
         item {
@@ -2393,8 +2417,11 @@ private fun YtdlQueueProgressBar(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalYtdlAppPalette.current
-    val fraction = progress.fraction?.coerceIn(0f, 1f)
-        ?: if (progress.isIndeterminate) 0.08f else 0f
+    val fraction = when {
+        progress.fraction != null -> progress.fraction.coerceIn(0f, 1f)
+        progress.isIndeterminate -> animatedQueueIndeterminateFraction()
+        else -> 0f
+    }
     Box(
         modifier = modifier
             .height(6.dp)
@@ -2409,6 +2436,21 @@ private fun YtdlQueueProgressBar(
                 .background(accent),
         )
     }
+}
+
+@Composable
+private fun animatedQueueIndeterminateFraction(): Float {
+    val transition = rememberInfiniteTransition(label = "queue-indeterminate-progress")
+    val indeterminateFraction by transition.animateFloat(
+        initialValue = 0.08f,
+        targetValue = 0.62f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "queue-indeterminate-progress-width",
+    )
+    return indeterminateFraction
 }
 
 @Composable

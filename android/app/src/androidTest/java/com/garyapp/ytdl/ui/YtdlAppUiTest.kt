@@ -250,6 +250,51 @@ class YtdlAppUiTest {
     }
 
     @Test
+    fun historyMissingOutputActionsShowVisibleRecovery() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val title = "UITEST_MISSING_OUTPUT_${System.currentTimeMillis()}"
+        val now = System.currentTimeMillis()
+        val id = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                title,
+                8,
+                "https",
+                "test-host",
+                "video",
+                "app-private://outputs/task-missing-output/merged-test.mp4",
+                "视频+音频 · 缺失输出测试",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+
+        try {
+            tapTag("ytdl-tab-history")
+            assertTextContains(title, timeoutMs = 5_000)
+
+            tapTag("ytdl-history-action-$id-打开")
+            assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
+            assertTextContains("重新下载", timeoutMs = 1_000)
+
+            tapTag("ytdl-history-action-$id-分享")
+            assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
+
+            tapTag("ytdl-history-action-$id-导出")
+            assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
+            saveScreen("12-history-missing-output-recovery.png")
+        } finally {
+            historyDao.deleteById(id)
+        }
+    }
+
+    @Test
     fun seedForegroundDeleteRecordWhenExplicitlyRequested() {
         val args = InstrumentationRegistry.getArguments()
         if (args.getString("seedForegroundDelete") != "true") {
@@ -280,6 +325,58 @@ class YtdlAppUiTest {
         )
 
         assertTrue("必须插入前台删除测试记录", historyContains(id))
+    }
+
+    @Test
+    fun seedForegroundMissingOutputRecordWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("seedForegroundMissingOutput") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val now = System.currentTimeMillis()
+        val title = "UITEST_MISSING_OUTPUT_M9_5_$now"
+        val id = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                title,
+                8,
+                "https",
+                "test-host",
+                "video",
+                "app-private://outputs/task-missing-output-m9-5/merged-test.mp4",
+                "视频+音频 · 缺失输出前台测试",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+
+        assertTrue("必须插入前台缺失输出测试记录", historyContains(id))
+    }
+
+    @Test
+    fun cleanupForegroundMissingOutputRecordsWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("cleanupForegroundMissingOutput") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val rows = historyDao.listRecent(100)
+            .filter { it.title.orEmpty().startsWith("UITEST_MISSING_OUTPUT_M9_5_") }
+        rows.forEach { row ->
+            historyDao.deleteById(row.id)
+        }
+
+        val remaining = historyDao.listRecent(100)
+            .filter { it.title.orEmpty().startsWith("UITEST_MISSING_OUTPUT_M9_5_") }
+        assertTrue("前台缺失输出测试记录必须被精确清理", remaining.isEmpty())
     }
 
     @Test

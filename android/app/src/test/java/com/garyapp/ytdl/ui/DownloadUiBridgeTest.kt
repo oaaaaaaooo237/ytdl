@@ -74,6 +74,31 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun historyPageRendersRuntimeRecoveryMessage() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("userMessage = runtimeState.userMessage"))
+        assertTrue(source.contains("userMessage: String,\n    onHistoryQueryChange"))
+        assertTrue(source.contains("if (shouldShowRuntimeMessage(userMessage))"))
+    }
+
+    @Test
+    fun missingHistoryOutputMessageIsActionNeutralAndPathFree() {
+        val message = historyMissingLocalOutputMessageForUiTest(
+            IllegalStateException("输出文件不存在或为空，不能导出。 D:/private/cookies.txt"),
+        )
+
+        assertTrue(message.contains("本地文件不存在或为空"))
+        assertTrue(message.contains("重新下载"))
+        assertFalse(message.contains("不能导出"))
+        assertFalse(message.contains("D:/private"))
+        assertFalse(message.contains("cookies.txt"))
+    }
+
+    @Test
     fun connectedUiTestDoesNotClearAllHistoryRowsBeforeLaunch() {
         val source = sourceFile(
             "app/src/androidTest/java/com/garyapp/ytdl/ui/YtdlAppUiTest.kt",
@@ -295,6 +320,21 @@ class DownloadUiBridgeTest {
         assertEquals(null, progress.fraction)
         assertTrue(progress.isIndeterminate)
         assertEquals("33%", queueCardStatusForUiTest(state))
+    }
+
+    @Test
+    fun indeterminateQueueProgressUsesAnimatedInProgressBar() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("rememberInfiniteTransition"))
+        assertTrue(source.contains("private fun animatedQueueIndeterminateFraction()"))
+        assertTrue(source.contains("progress.isIndeterminate -> animatedQueueIndeterminateFraction()"))
+        assertTrue(source.contains("queue-indeterminate-progress-width"))
+        assertTrue(source.contains("RepeatMode.Reverse"))
+        assertFalse(source.contains("?: if (progress.isIndeterminate) 0.08f else 0f"))
     }
 
     @Test

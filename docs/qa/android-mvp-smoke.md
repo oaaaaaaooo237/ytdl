@@ -6,7 +6,7 @@
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认；M9.3 已沿用该软键盘输入验收口径继续到真实 1080p 视频+音频下载，保存了视频阶段进度、最终完成态、历史落库和设置边界证据。M9.4 已用前台 Computer Use 完成历史测试记录删除确认路径，并用合成 `cookies.txt` 完成系统文件选择器和“仅保存引用”设置页复核。更多失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
+截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认；M9.3 已沿用该软键盘输入验收口径继续到真实 1080p 视频+音频下载，保存了视频阶段进度、最终完成态、历史落库和设置边界证据。M9.4 已用前台 Computer Use 完成历史测试记录删除确认路径，并用合成 `cookies.txt` 完成系统文件选择器和“仅保存引用”设置页复核。M9.5 已完成缺失本地输出时历史页 `打开` / `分享` / `导出` 的可见恢复提示，并把未知百分比的当前下载阶段改为动态进行中条。更多失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
@@ -286,6 +286,39 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroi
 结果：三项均 `BUILD SUCCESSFUL`。connected 检查以无参数方式运行种子夹具，确认默认不会插入测试历史记录，同时覆盖 androidTest 编译运行。
 
 边界：cookies 文件为本轮合成测试文件，仅用于验证系统文件选择器和“只保存引用”的 UI 行为；未读取、显示、记录或持久化 cookies 内容。M9.4 补齐历史确认删除和 cookies 选择前台路径，但最终 T12 仍需更多失败恢复路径和一次完整全量前台回归。
+
+## 2026-07-06 M9.5 缺失输出恢复和未知进度反馈
+
+本轮没有重复下载或导出 339M/355M 大文件；只覆盖一个非破坏性失败恢复路径，并修正队列未知百分比阶段的视觉反馈。
+
+修复内容：
+
+- 历史页现在会渲染运行提示卡。历史记录的 app-private 输出文件缺失时，点击 `打开`、`分享`、`导出` 都会在历史页可见显示：`历史记录对应的本地文件不存在或为空，请重新下载或删除该记录。`
+- 缺失输出提示改为动作无关，不再在 `打开` 或 `分享` 时显示“不能导出”，也不暴露本地路径或 cookies 文件名。
+- 队列页当前阶段没有可靠百分比时，进度条改为动态进行中条；右侧百分比仍表示整个下载大项的估算进度。
+
+前台可见验证：
+
+- 设备：`Android Emulator - ytdl_api37_play_x86_64:5554`。
+- 数据：只插入一条合成历史记录 `UITEST_MISSING_OUTPUT_M9_5_*`，指向不存在的 app-private 输出文件。
+- 操作：用 Computer Use 在前台可见历史页依次点击 `打开`、`分享`、`导出`。
+- 结果：三次操作均停留在历史页，并显示上述中文恢复提示；没有打开空白窗口、系统分享器或保存器，也没有崩溃。
+- 清理：前台验证后用精确前缀清理 `UITEST_MISSING_OUTPUT_M9_5_*` 测试历史记录，未触碰真实下载历史。
+
+证据：
+
+- `docs/qa/android-computer-use-20260706-m9-missing-output/01-history-missing-output-recovery.png`
+- `docs/qa/android-computer-use-20260706-m9-missing-output/01-history-missing-output-recovery.xml`
+
+新鲜验证：
+
+```powershell
+cd android
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyPageRendersRuntimeRecoveryMessage --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.missingHistoryOutputMessageIsActionNeutralAndPathFree --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.indeterminateQueueProgressUsesAnimatedInProgressBar --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.activeQueueStageWithoutReliablePercentUsesIndeterminateProgress
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#historyMissingOutputActionsShowVisibleRecovery"
+```
+
+结果：两项均 `BUILD SUCCESSFUL`。另外，前台 seed 和 cleanup 夹具均已通过。该小节仍是失败恢复和 UI 反馈修复，不等于最终 T12。
 
 ## 2026-06-21 继续修复：UI 审计问题收敛
 
