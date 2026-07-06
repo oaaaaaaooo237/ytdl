@@ -550,6 +550,8 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 **M9.9 correction, 2026-07-07:** 用户再次明确：MVP1 不强制下载字幕；只有当前视频分析结果确实提供字幕文件时，用户才能选择下载独立字幕文件。无字幕或未选择字幕时，不下载字幕文件，也不显示 `字幕文件` 进度小项。代码已补 `subtitleSelectionUiState`：无分析显示“先分析”，无字幕显示“无可选”且不可点击，有字幕才显示“选择/取消”。相关 UI/下载测试、全量 `testDebugUnitTest`、`assembleDebug` 和最新 APK 安装启动检查已通过。轻量字幕探针仍返回 YouTube `HTTP Error 429: Too Many Requests`，但该结果只影响可选字幕专项，不阻塞默认无字幕主路径。
 
+**M9.10 temporary test boundary, 2026-07-07:** 用户要求暂时不测试下载字幕文件，防止再次触发 YouTube 429。后续下载测试默认不选择字幕，不运行真实字幕下载、轻量字幕探针或前台字幕下载流程；T12 主路径只覆盖真实分析、视频/音频分离下载、原生合并、队列、历史、导出、通知、设置和失败恢复。字幕相关只保留“无字幕不可选、有字幕才可选但默认不选”的 UI/请求校验，以及既有历史能力证据。恢复字幕下载测试必须等用户明确同意。
+
 ### Continuation Task M10: Xiaomi 14 Real-Device Validation
 
 **Status:** 未开始；当前 ADB 只显示 API37 模拟器，用户确认暂时不会连接小米 14。该任务等 M9/T12 模拟器前台验收之后、推进到后续第 7 项时再执行。
@@ -567,7 +569,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 - [ ] Launch the app and verify the five pages render without cutouts, clipping, bottom-nav overlap, or unreadable status/navigation bars.
 - [ ] Run the required URL `https://www.youtube.com/watch?v=tkxzMEfp49Q` through real GUI analysis, 1080p-or-best-supported video+audio format selection, real download, native merge, queue completion, and history landing.
 - [ ] Verify device-specific behavior that the emulator cannot prove: notification visibility/permission behavior, background download survival, app-private output open/export, share sheet appearance without sending data, and storage permission denial recovery.
-- [ ] If a supported subtitle is selected and exists, verify MVP1 output remains "merged video+audio file plus separate subtitle file"; do not claim subtitle embed/burn.
+- [ ] 字幕下载测试当前暂停；不要选择字幕或触发字幕文件下载。只在用户明确恢复后，再验证 "merged video+audio file plus separate subtitle file"。
 - [ ] Record device model, Android version, ABI, build fingerprint if available, screenshots, output file sizes, and observed gaps in `docs/qa/android-mvp-smoke.md`.
 - [ ] Run `cd android; .\gradlew.bat :app:testDebugUnitTest` and `cd android; .\gradlew.bat :app:assembleDebug` after any code fix.
 - [ ] Commit and push only after the real-device evidence or any fix is recorded.
