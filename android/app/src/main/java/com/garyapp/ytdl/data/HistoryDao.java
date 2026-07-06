@@ -20,6 +20,9 @@ public abstract class HistoryDao {
     @Query("DELETE FROM history_items WHERE id = :id")
     public abstract int deleteById(long id);
 
+    @Query("DELETE FROM history_items WHERE title LIKE :titlePrefix || '%'")
+    public abstract int deleteByTitlePrefix(String titlePrefix);
+
     public long insert(HistoryItemEntity item) {
         return insertRaw(item.sanitizedCopy());
     }

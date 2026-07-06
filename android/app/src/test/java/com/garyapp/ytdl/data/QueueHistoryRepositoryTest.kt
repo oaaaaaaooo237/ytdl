@@ -161,6 +161,40 @@ class QueueHistoryRepositoryTest {
     }
 
     @Test
+    fun historyDeleteByTitlePrefixOnlyRemovesMatchingTestRecords() {
+        historyDao.insert(
+            sampleHistoryItem(
+                title = "UITEST_EXPORT_CANCEL_M9_6_1",
+                status = HistoryItemEntity.STATUS_COMPLETED,
+                createdAt = 1_000,
+                completedAt = 1_000,
+            ),
+        )
+        historyDao.insert(
+            sampleHistoryItem(
+                title = "UITEST_EXPORT_CANCEL_M9_6_2",
+                status = HistoryItemEntity.STATUS_COMPLETED,
+                createdAt = 2_000,
+                completedAt = 2_000,
+            ),
+        )
+        val realId = historyDao.insert(
+            sampleHistoryItem(
+                title = "真实历史记录",
+                status = HistoryItemEntity.STATUS_COMPLETED,
+                createdAt = 3_000,
+                completedAt = 3_000,
+            ),
+        )
+
+        assertEquals(2, historyDao.deleteByTitlePrefix("UITEST_EXPORT_CANCEL_M9_6_"))
+
+        val rows = historyDao.listRecent(10)
+        assertEquals(listOf("真实历史记录"), rows.map { it.title })
+        assertEquals(realId, rows.single().id)
+    }
+
+    @Test
     fun queueEntitySanitizesFreeTextBeforePersistence() {
         val id = queueDao.insert(
             QueueItemEntity(

@@ -12,6 +12,8 @@ import androidx.test.uiautomator.Until
 import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
+import com.garyapp.ytdl.storage.ExportController
+import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -368,15 +370,67 @@ class YtdlAppUiTest {
         }
         val context = ApplicationProvider.getApplicationContext<Context>()
         val historyDao = YtdlDatabaseProvider.get(context).historyDao()
-        val rows = historyDao.listRecent(100)
-            .filter { it.title.orEmpty().startsWith("UITEST_MISSING_OUTPUT_M9_5_") }
-        rows.forEach { row ->
-            historyDao.deleteById(row.id)
-        }
+        historyDao.deleteByTitlePrefix("UITEST_MISSING_OUTPUT_M9_5_")
 
         val remaining = historyDao.listRecent(100)
             .filter { it.title.orEmpty().startsWith("UITEST_MISSING_OUTPUT_M9_5_") }
         assertTrue("前台缺失输出测试记录必须被精确清理", remaining.isEmpty())
+    }
+
+    @Test
+    fun seedForegroundExportCancelRecordWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("seedForegroundExportCancel") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val root = File(context.filesDir, "gui-downloads")
+        val taskDir = File(root, "task-export-cancel-m9-6").apply { mkdirs() }
+        val output = File(taskDir, "export-cancel-test.mp4").apply {
+            writeBytes(ByteArray(4096) { index -> (index % 251).toByte() })
+        }
+        val now = System.currentTimeMillis()
+        val title = "UITEST_EXPORT_CANCEL_M9_6_$now"
+        val id = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                title,
+                8,
+                "https",
+                "test-host",
+                "video",
+                ExportController.appPrivateOutputUri(output.absolutePath, root.absolutePath),
+                "视频+音频 · 导出取消前台测试",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+
+        assertTrue("必须插入前台导出取消测试记录", historyContains(id))
+        assertTrue("必须创建小型 app-private 测试输出", output.isFile && output.length() == 4096L)
+    }
+
+    @Test
+    fun cleanupForegroundExportCancelRecordsWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("cleanupForegroundExportCancel") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        historyDao.deleteByTitlePrefix("UITEST_EXPORT_CANCEL_M9_6_")
+        File(context.filesDir, "gui-downloads/task-export-cancel-m9-6").deleteRecursively()
+
+        val remaining = historyDao.listRecent(100)
+            .filter { it.title.orEmpty().startsWith("UITEST_EXPORT_CANCEL_M9_6_") }
+        assertTrue("前台导出取消测试记录必须被精确清理", remaining.isEmpty())
+        assertTrue("前台导出取消测试文件夹必须被清理", !File(context.filesDir, "gui-downloads/task-export-cancel-m9-6").exists())
     }
 
     @Test
