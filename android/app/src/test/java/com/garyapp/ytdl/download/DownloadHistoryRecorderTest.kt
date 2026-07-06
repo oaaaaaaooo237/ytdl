@@ -3,6 +3,8 @@ package com.garyapp.ytdl.download
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.data.HistoryItemEntity
@@ -120,6 +122,36 @@ class DownloadHistoryRecorderTest {
     }
 
     @Test
+    fun recordsSubtitleOutputUrisAlongsideCompletedMediaHistory() {
+        val outputRoot = temp.newFolder("gui-downloads")
+        val taskDir = File(outputRoot, "task-subtitle").apply { mkdirs() }
+        val media = File(taskDir, "merged-299-140.mp4").apply { writeText("media") }
+        val subtitle = File(taskDir, "captions.en.vtt").apply {
+            writeText("WEBVTT\n\n00:00.000 --> 00:01.000\nsecret subtitle text")
+        }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 47_000L },
+        )
+        val completed = DownloadTaskState.waiting(requestWithSubtitle(title = "带字幕视频")).completeWith(
+            listOf(
+                DownloadOutputFile(DownloadOutputKind.Media, media.absolutePath, media.length(), outputRoot.absolutePath),
+                DownloadOutputFile(DownloadOutputKind.Subtitle, subtitle.absolutePath, subtitle.length(), outputRoot.absolutePath),
+            ),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "视频 299 + 音频 140 + 字幕 en.vtt").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals("app-private://outputs/task-subtitle/merged-299-140.mp4", row.outputUri)
+        assertEquals("app-private://outputs/task-subtitle/captions.en.vtt", subtitleOutputUris(row))
+        val stored = row.toString()
+        assertTrue(!stored.contains(outputRoot.absolutePath))
+        assertTrue(!stored.contains("WEBVTT"))
+        assertTrue(!stored.contains("secret subtitle text"))
+    }
+
+    @Test
     fun rejectsSensitiveThumbnailUrlPartsBeforeHistoryPersistence() {
         val output = temp.newFile("completed-with-sensitive-thumb.mp4").apply { writeText("media") }
         val recorder = DownloadHistoryRecorder(
@@ -214,5 +246,43 @@ class DownloadHistoryRecorderTest {
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()
+    }
+
+    private fun requestWithSubtitle(title: String): DownloadRequest {
+        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+        return DownloadRequest.fromAnalysis(
+            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            analysis = VideoAnalysis(
+                title = title,
+                durationSeconds = 60,
+                thumbnailUrl = null,
+                formats = listOf(
+                    VideoFormat(
+                        id = "18",
+                        ext = "mp4",
+                        height = 360,
+                        label = "360p",
+                        hasVideo = true,
+                        hasAudio = true,
+                        mergeRequired = false,
+                        isSupported = true,
+                        videoCodec = "avc1",
+                        audioCodec = "mp4a",
+                    ),
+                ),
+                subtitles = listOf(subtitle),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+    }
+
+    private fun subtitleOutputUris(row: HistoryItemEntity): String? {
+        val field = HistoryItemEntity::class.java.getDeclaredField("subtitleOutputUris")
+        field.isAccessible = true
+        return field.get(row) as String?
     }
 }

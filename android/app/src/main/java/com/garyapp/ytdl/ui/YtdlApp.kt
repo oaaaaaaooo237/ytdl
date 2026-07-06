@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -215,9 +217,16 @@ internal data class RuntimeDownloadState(
     val downloadStatus: String = "",
     val outputPath: String = "",
     val outputBytes: Long = 0L,
+    val subtitleOutputCount: Int = 0,
+    val subtitleOutputBytes: Long = 0L,
 ) {
     val hasRealTask: Boolean
-        get() = downloadStatus.isNotBlank() || progressPercent != null || outputPath.isNotBlank() || outputBytes > 0L || isDownloading
+        get() = downloadStatus.isNotBlank() ||
+            progressPercent != null ||
+            outputPath.isNotBlank() ||
+            outputBytes > 0L ||
+            subtitleOutputCount > 0 ||
+            isDownloading
 }
 
 internal enum class QueueStageStatus {
@@ -554,12 +563,22 @@ fun YtdlApp() {
         )
     }
 
-    fun outputForHistoryItem(item: HistoryUiItem): Result<ExportController.AppPrivateOutput> {
+    fun outputForAppPrivateUri(appPrivateUri: String?): Result<ExportController.AppPrivateOutput> {
         return ExportController.discoverAppPrivateOutputUri(
-            appPrivateUri = item.outputUri,
+            appPrivateUri = appPrivateUri,
             appPrivateRoot = File(context.filesDir, "gui-downloads"),
             legacyRoots = listOf(File(context.cacheDir, "gui-downloads")),
         )
+    }
+
+    fun outputForHistoryItem(item: HistoryUiItem): Result<ExportController.AppPrivateOutput> {
+        return outputForAppPrivateUri(item.outputUri)
+    }
+
+    fun subtitleOutputForHistoryItem(item: HistoryUiItem): Result<ExportController.AppPrivateOutput> {
+        return item.primarySubtitleOutputUri
+            ?.let(::outputForAppPrivateUri)
+            ?: Result.failure(IllegalStateException("该历史记录没有独立字幕文件。"))
     }
 
     fun fileProviderUri(output: ExportController.AppPrivateOutput): Uri {
@@ -603,9 +622,40 @@ fun YtdlApp() {
         }
     }
 
+    fun shareSubtitleHistoryItem(item: HistoryUiItem) {
+        val output = subtitleOutputForHistoryItem(item).getOrElse { error ->
+            runtimeState = runtimeState.copy(userMessage = historyMissingSubtitleOutputMessage(error))
+            return
+        }
+        val uri = fileProviderUri(output)
+        val intent = Intent(Intent.ACTION_SEND)
+            .setType(output.mimeType)
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        runCatching {
+            context.startActivity(Intent.createChooser(intent, "分享字幕文件"))
+        }.onFailure {
+            runtimeState = runtimeState.copy(userMessage = "没有可用应用分享字幕文件。")
+        }
+    }
+
     fun exportHistoryItem(item: HistoryUiItem) {
         val output = outputForHistoryItem(item).getOrElse { error ->
             runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
+            return
+        }
+        pendingExportOutput = output
+        exportLauncher.launch(
+            ExportController.createDocumentIntent(
+                output = output,
+                suggestedDisplayName = suggestedExportDisplayName(item, output.displayName),
+            ),
+        )
+    }
+
+    fun exportSubtitleHistoryItem(item: HistoryUiItem) {
+        val output = subtitleOutputForHistoryItem(item).getOrElse { error ->
+            runtimeState = runtimeState.copy(userMessage = historyMissingSubtitleOutputMessage(error))
             return
         }
         pendingExportOutput = output
@@ -751,6 +801,8 @@ fun YtdlApp() {
                             onOpen = ::openHistoryItem,
                             onShare = ::shareHistoryItem,
                             onExport = ::exportHistoryItem,
+                            onShareSubtitle = ::shareSubtitleHistoryItem,
+                            onExportSubtitle = ::exportSubtitleHistoryItem,
                             onDelete = ::requestDeleteHistoryItem,
                         )
                         "settings" -> settingsPageItems(
@@ -861,6 +913,7 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
     val statusText = userVisibleDownloadStatus(state.stage)
     val progress = state.progress
     val mediaOutput = state.outputs.firstOrNull { it.kind == DownloadOutputKind.Media }
+    val subtitleOutputs = state.outputs.filter { it.kind == DownloadOutputKind.Subtitle }
     if (state.stage == DownloadStage.Completed && mediaOutput == null) {
         return copy(
             isDownloading = false,
@@ -874,6 +927,8 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             activeStage = DownloadStage.Failed,
             outputPath = "",
             outputBytes = 0L,
+            subtitleOutputCount = 0,
+            subtitleOutputBytes = 0L,
         )
     }
     if (state.stage == DownloadStage.Idle || (state.request == null && state.outputs.isEmpty() && state.stage == DownloadStage.Failed)) {
@@ -889,6 +944,8 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             activeStage = DownloadStage.Idle,
             outputPath = "",
             outputBytes = 0L,
+            subtitleOutputCount = 0,
+            subtitleOutputBytes = 0L,
         )
     }
     return copy(
@@ -896,7 +953,11 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
         userMessage = when (state.stage) {
             DownloadStage.Failed -> "下载失败：${state.errorMessage.orEmpty().ifBlank { "请检查网络或授权状态。" }}"
             DownloadStage.Canceled -> "下载已取消。"
-            DownloadStage.Completed -> "下载完成：${mediaOutput?.path?.let { File(it).name }.orEmpty().ifBlank { "输出文件" }}"
+            DownloadStage.Completed -> if (subtitleOutputs.isNotEmpty()) {
+                "下载完成：媒体文件 + 独立字幕文件已保存，可在历史中查看。"
+            } else {
+                "下载完成：媒体文件已保存，可在历史中打开或导出。"
+            }
             else -> "正在$statusText..."
         },
         downloadStatus = statusText,
@@ -911,6 +972,8 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
         totalBytes = progress?.totalBytes ?: mediaOutput?.bytesWritten,
         outputPath = mediaOutput?.path.orEmpty(),
         outputBytes = mediaOutput?.bytesWritten ?: 0L,
+        subtitleOutputCount = subtitleOutputs.size,
+        subtitleOutputBytes = subtitleOutputs.sumOf { it.bytesWritten },
     )
 }
 
@@ -1275,6 +1338,16 @@ internal fun historyMissingLocalOutputMessageForUiTest(error: Throwable?): Strin
 
 private fun historyMissingLocalOutputMessage(error: Throwable?): String {
     val fallback = "历史记录对应的本地文件不存在或为空，请重新下载或删除该记录。"
+    val message = error?.message.orEmpty()
+    return if (message.contains("不存在") || message.contains("为空") || message.contains("本地输出")) {
+        fallback
+    } else {
+        message.ifBlank { fallback }
+    }
+}
+
+private fun historyMissingSubtitleOutputMessage(error: Throwable?): String {
+    val fallback = "历史记录对应的字幕文件不存在或为空，请重新下载或删除该记录。"
     val message = error?.message.orEmpty()
     return if (message.contains("不存在") || message.contains("为空") || message.contains("本地输出")) {
         fallback
@@ -1831,12 +1904,17 @@ internal fun queueCardStatusForUiTest(state: RuntimeDownloadState): String = que
 private fun queueCardMeta(state: RuntimeDownloadState): String {
     val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
     val total = state.totalBytes?.let(::formatBytes) ?: "未知大小"
+    val outputSummary = when {
+        state.subtitleOutputCount > 0 -> " · 媒体文件 + 独立字幕文件"
+        state.outputPath.isNotBlank() -> " · 媒体文件"
+        else -> ""
+    }
     val outputPolicy = if (state.outputPath.isNotBlank()) {
         " · App 私有目录 · 导出名：标题-时间，重名加序号"
     } else {
         ""
     }
-    return "$downloaded / $total$outputPolicy"
+    return "$downloaded / $total$outputSummary$outputPolicy"
 }
 
 internal fun queueCardMetaForUiTest(state: RuntimeDownloadState): String = queueCardMeta(state)
@@ -1955,6 +2033,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
     onOpen: (HistoryUiItem) -> Unit,
     onShare: (HistoryUiItem) -> Unit,
     onExport: (HistoryUiItem) -> Unit,
+    onShareSubtitle: (HistoryUiItem) -> Unit,
+    onExportSubtitle: (HistoryUiItem) -> Unit,
     onDelete: (HistoryUiItem) -> Unit,
 ) {
     val visibleItems = filterHistoryItems(historyItems, historyQuery, selectedFilterIndex)
@@ -2001,6 +2081,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
                 onOpen = { onOpen(item) },
                 onShare = { onShare(item) },
                 onExport = { onExport(item) },
+                onShareSubtitle = { onShareSubtitle(item) },
+                onExportSubtitle = { onExportSubtitle(item) },
                 onDelete = { onDelete(item) },
                 modifier = Modifier.testTag("ytdl-history-real-card"),
             )
@@ -2454,11 +2536,14 @@ private fun animatedQueueIndeterminateFraction(): Float {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun HistoryCard(
     item: HistoryUiItem,
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onExport: () -> Unit,
+    onShareSubtitle: () -> Unit,
+    onExportSubtitle: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2503,12 +2588,17 @@ private fun HistoryCard(
                     }
                 }
                 Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     historyActionLabels(item).forEach { action ->
                         val callback = when (action) {
                             "打开" -> onOpen
                             "分享" -> onShare
                             "导出" -> onExport
+                            "分享字幕" -> onShareSubtitle
+                            "导出字幕" -> onExportSubtitle
                             else -> onDelete
                         }
                         Text(

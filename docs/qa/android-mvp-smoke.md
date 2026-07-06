@@ -1049,3 +1049,41 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroi
 - `docs/qa/android-history-thumbnail-20260706/thumbnail-connected-result.xml`
 
 边界：这是历史缩略图链路的辅助验证，不等于最终 T12 全功能前台验收通过。Computer Use 已确认当前只保留一个 API37 模拟器窗口；模拟器宿主窗口已恢复竖屏并移动到主屏幕可见区域。最终可视验收仍必须以可见窗口真实操作为准，不能用后台 connected 测试替代。
+
+## 2026-07-06 M9.8 独立字幕文件用户可见闭环
+
+本轮按 MVP1 边界补齐“合并后的视频音频文件 + 独立字幕文件”的历史/导出闭环，不涉及 FFmpeg、字幕嵌入、字幕烧录或三合一输出。
+
+代码与模型变化：
+
+- Room 数据库升到 v3，`history_items` 新增 `subtitleOutputUris` 字段；`MIGRATION_2_3` 只追加列，旧历史保留。
+- 完成任务写入历史时，媒体输出仍保存到 `outputUri`；字幕输出只保存为 `app-private://outputs/...` 安全引用列表，不保存本机绝对路径、cookies、敏感 URL query 或字幕文件内容。
+- 历史页有字幕输出时，元信息显示“媒体文件 + 独立字幕文件”，并新增“分享字幕”“导出字幕”入口；无字幕记录仍只显示媒体动作，不出现字幕操作。
+- 队列完成态有字幕输出时显示“媒体文件 + 独立字幕文件”，不把内部合并文件名或字幕文件名作为主要完成文案。
+
+TDD 与验证：
+
+```powershell
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadHistoryRecorderTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.data.YtdlDatabaseMigrationTest"
+```
+
+RED 结果：新增测试先失败于缺少 `subtitleOutputUris` / `MIGRATION_2_3`，以及队列完成态没有“媒体文件 + 独立字幕文件”元信息。GREEN 后上述两条命令均为 `BUILD SUCCESSFUL`；迁移测试在 API37 connected 环境覆盖 v1 -> v3 与 v2 -> v3。
+
+前台可视复核：
+
+```powershell
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+adb install -r android\app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+adb shell am instrument -w -e class com.garyapp.ytdl.ui.YtdlAppUiTest#seedForegroundSubtitleOutputRecordWhenExplicitlyRequested -e seedForegroundSubtitleOutput true com.garyapp.ytdl.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+结果：在前台可见 API37 模拟器窗口中，用 Computer Use 打开历史页后，合成小型 app-private 历史记录显示“媒体文件 + 独立字幕文件”，并显示“分享字幕”“导出字幕”。点击“分享字幕”打开 Android 系统分享面板，只显示安全文件名 `subtitle-output.zh-Hans.vtt`，未显示 app 私有路径、cookies、Authorization、Bearer、URL query 或字幕内容。点击“导出字幕”打开 Android 系统保存器，底部显示安全建议文件名和 `SAVE` 按钮；取消后回到历史页并显示“未获得保存位置授权，导出已取消。请重新选择保存位置。”恢复提示。复核结束后已运行 `cleanupForegroundSubtitleOutputRecordsWhenExplicitlyRequested` 清理测试历史和私有测试文件夹。
+
+截图证据：
+
+- `docs/qa/android-computer-use-20260706-m9-8-subtitle-output/m9-8-subtitle-history-card.png`
+- `docs/qa/android-computer-use-20260706-m9-8-subtitle-output/m9-8-subtitle-export-picker.png`
+
+剩余边界：本节仍不是最终 T12。前台复核使用的是合成小型历史记录，证明历史页字幕入口、分享面板和保存器链路；真实带字幕下载从格式页选择字幕后观察队列、历史和字幕动作仍留到 T12 或后续真实字幕专项。最终仍需一次 coherent 全量主路径复核。

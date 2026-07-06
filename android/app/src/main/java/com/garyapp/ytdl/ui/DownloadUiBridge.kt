@@ -51,9 +51,14 @@ data class HistoryUiItem(
     val status: String,
     val completedAt: Long,
     val thumbnailUrl: String? = null,
+    val subtitleOutputUris: List<String> = emptyList(),
 ) {
     val hasOutput: Boolean
         get() = outputUri.startsWith("app-private://outputs/") && status == HistoryItemEntity.STATUS_COMPLETED
+    val hasSubtitleOutput: Boolean
+        get() = status == HistoryItemEntity.STATUS_COMPLETED && subtitleOutputUris.isNotEmpty()
+    val primarySubtitleOutputUri: String?
+        get() = subtitleOutputUris.firstOrNull()
 }
 
 fun historyUiItemsFromRows(rows: List<HistoryItemEntity>): List<HistoryUiItem> {
@@ -67,6 +72,7 @@ fun historyUiItemsFromRows(rows: List<HistoryItemEntity>): List<HistoryUiItem> {
             status = row.status.orEmpty(),
             completedAt = row.completedAt,
             thumbnailUrl = row.thumbnailUrl?.takeIf { it.isNotBlank() },
+            subtitleOutputUris = historySubtitleOutputUris(row.subtitleOutputUris),
         )
     }
 }
@@ -102,14 +108,26 @@ fun prepareTemporaryCookiesForDownload(
 }
 
 private fun historyMeta(row: HistoryItemEntity): String {
+    val hasSubtitleOutputs = historySubtitleOutputUris(row.subtitleOutputUris).isNotEmpty()
     val parts = listOfNotNull(
         row.formatSummary?.takeIf { it.isNotBlank() },
         row.sourceCategory?.takeIf { it.isNotBlank() },
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
-        row.outputUri?.takeIf { it.isNotBlank() }?.let(::historyOutputLabel),
+        row.outputUri?.takeIf { it.isNotBlank() }?.let {
+            if (hasSubtitleOutputs) "媒体文件 + 独立字幕文件" else historyOutputLabel(it)
+        },
         row.errorSummary?.takeIf { it.isNotBlank() },
     )
     return redactHistoryUiText(parts.joinToString(" · ")).ifBlank { "本地记录" }
+}
+
+private fun historySubtitleOutputUris(value: String?): List<String> {
+    return value.orEmpty()
+        .lineSequence()
+        .map { redactHistoryUiText(it.substringBefore('?').trim()) }
+        .filter { it.startsWith("app-private://outputs/") }
+        .distinct()
+        .toList()
 }
 
 private fun historyOutputLabel(outputUri: String): String {
@@ -125,7 +143,16 @@ private fun formatHistoryTime(timestampMillis: Long): String {
 
 fun historyActionLabels(item: HistoryUiItem): List<String> {
     return if (item.hasOutput) {
-        listOf("打开", "分享", "导出", "删除")
+        buildList {
+            add("打开")
+            add("分享")
+            add("导出")
+            if (item.hasSubtitleOutput) {
+                add("分享字幕")
+                add("导出字幕")
+            }
+            add("删除")
+        }
     } else {
         listOf("删除")
     }

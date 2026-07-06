@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase;
                 QueueItemEntity.class,
                 HistoryItemEntity.class
         },
-        version = 2,
+        version = 3,
         exportSchema = false
 )
 public abstract class YtdlDatabase extends RoomDatabase {

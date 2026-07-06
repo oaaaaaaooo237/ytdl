@@ -434,6 +434,71 @@ class YtdlAppUiTest {
     }
 
     @Test
+    fun seedForegroundSubtitleOutputRecordWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("seedForegroundSubtitleOutput") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val root = File(context.filesDir, "gui-downloads")
+        val taskDir = File(root, "task-subtitle-output-m9-8").apply { mkdirs() }
+        val mediaOutput = File(taskDir, "subtitle-output-media.mp4").apply {
+            writeBytes(ByteArray(4096) { index -> (index % 251).toByte() })
+        }
+        val subtitleOutput = File(taskDir, "subtitle-output.zh-Hans.vtt").apply {
+            writeText(
+                "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nM9.8 subtitle output foreground smoke\n",
+                Charsets.UTF_8,
+            )
+        }
+        val now = System.currentTimeMillis()
+        val title = "UITEST_SUBTITLE_OUTPUT_M9_8_$now"
+        val id = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                title,
+                8,
+                "https",
+                "test-host",
+                "video",
+                ExportController.appPrivateOutputUri(mediaOutput.absolutePath, root.absolutePath),
+                ExportController.appPrivateOutputUri(subtitleOutput.absolutePath, root.absolutePath),
+                "720p MP4 · 独立字幕前台测试",
+                null,
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+
+        assertTrue("必须插入前台独立字幕测试记录", historyContains(id))
+        assertTrue("必须创建小型 app-private 媒体测试输出", mediaOutput.isFile && mediaOutput.length() == 4096L)
+        assertTrue("必须创建小型 app-private 字幕测试输出", subtitleOutput.isFile && subtitleOutput.length() > 0L)
+    }
+
+    @Test
+    fun cleanupForegroundSubtitleOutputRecordsWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("cleanupForegroundSubtitleOutput") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        historyDao.deleteByTitlePrefix("UITEST_SUBTITLE_OUTPUT_M9_8_")
+        File(context.filesDir, "gui-downloads/task-subtitle-output-m9-8").deleteRecursively()
+
+        val remaining = historyDao.listRecent(100)
+            .filter { it.title.orEmpty().startsWith("UITEST_SUBTITLE_OUTPUT_M9_8_") }
+        assertTrue("前台独立字幕测试记录必须被精确清理", remaining.isEmpty())
+        assertTrue("前台独立字幕测试文件夹必须被清理", !File(context.filesDir, "gui-downloads/task-subtitle-output-m9-8").exists())
+    }
+
+    @Test
     fun historyCardLoadsThumbnailForInsertedTestRecord() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val historyDao = YtdlDatabaseProvider.get(context).historyDao()

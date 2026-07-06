@@ -35,6 +35,7 @@ public class HistoryItemEntity {
     public String sourceHostHash;
     public String sourceCategory;
     public String outputUri;
+    public String subtitleOutputUris;
     public String formatSummary;
     public String thumbnailUrl;
     public String status;
@@ -76,6 +77,7 @@ public class HistoryItemEntity {
                 sourceHostHash,
                 sourceCategory,
                 outputUri,
+                null,
                 formatSummary,
                 null,
                 status,
@@ -109,6 +111,49 @@ public class HistoryItemEntity {
             long updatedAt,
             long completedAt
     ) {
+        this(
+                id,
+                title,
+                durationSeconds,
+                sourceScheme,
+                sourceHostHash,
+                sourceCategory,
+                outputUri,
+                null,
+                formatSummary,
+                thumbnailUrl,
+                status,
+                progress,
+                speed,
+                eta,
+                errorSummary,
+                createdAt,
+                updatedAt,
+                completedAt
+        );
+    }
+
+    @Ignore
+    public HistoryItemEntity(
+            long id,
+            String title,
+            long durationSeconds,
+            String sourceScheme,
+            String sourceHostHash,
+            String sourceCategory,
+            String outputUri,
+            String subtitleOutputUris,
+            String formatSummary,
+            String thumbnailUrl,
+            String status,
+            int progress,
+            String speed,
+            String eta,
+            String errorSummary,
+            long createdAt,
+            long updatedAt,
+            long completedAt
+    ) {
         this.id = id;
         this.title = title;
         this.durationSeconds = durationSeconds;
@@ -116,6 +161,7 @@ public class HistoryItemEntity {
         this.sourceHostHash = sourceHostHash;
         this.sourceCategory = sourceCategory;
         this.outputUri = outputUri;
+        this.subtitleOutputUris = subtitleOutputUris;
         this.formatSummary = formatSummary;
         this.thumbnailUrl = thumbnailUrl;
         this.status = status;
@@ -152,6 +198,7 @@ public class HistoryItemEntity {
                 sourceHostHash,
                 sourceCategory,
                 outputUri,
+                null,
                 formatSummary,
                 null,
                 status,
@@ -183,6 +230,46 @@ public class HistoryItemEntity {
             long updatedAt,
             long completedAt
     ) {
+        return createSafe(
+                title,
+                durationSeconds,
+                sourceScheme,
+                sourceHostHash,
+                sourceCategory,
+                outputUri,
+                null,
+                formatSummary,
+                thumbnailUrl,
+                status,
+                progress,
+                speed,
+                eta,
+                errorSummary,
+                createdAt,
+                updatedAt,
+                completedAt
+        );
+    }
+
+    public static HistoryItemEntity createSafe(
+            String title,
+            long durationSeconds,
+            String sourceScheme,
+            String sourceHostHash,
+            String sourceCategory,
+            String outputUri,
+            String subtitleOutputUris,
+            String formatSummary,
+            String thumbnailUrl,
+            String status,
+            int progress,
+            String speed,
+            String eta,
+            String errorSummary,
+            long createdAt,
+            long updatedAt,
+            long completedAt
+    ) {
         return new HistoryItemEntity(
                 0,
                 PersistenceSanitizer.clean(title),
@@ -191,6 +278,7 @@ public class HistoryItemEntity {
                 sourceHostHash,
                 PersistenceSanitizer.clean(sourceCategory),
                 PersistenceSanitizer.clean(outputUri),
+                PersistenceSanitizer.clean(subtitleOutputUris),
                 PersistenceSanitizer.clean(formatSummary),
                 safeThumbnailUrl(thumbnailUrl),
                 status,
@@ -225,6 +313,7 @@ public class HistoryItemEntity {
             throw new IllegalArgumentException("缺少有效媒体输出，不能生成完成历史记录。");
         }
         String outputUri = safeOutputUri(state.getOutputs());
+        String subtitleOutputUris = safeSubtitleOutputUris(state.getOutputs());
         String errorSummary = terminalErrorSummary(stage, state.getErrorMessage());
         int progress = terminalProgress(stage, state);
 
@@ -235,6 +324,7 @@ public class HistoryItemEntity {
                 sourceHostHash,
                 sourceCategory,
                 outputUri,
+                subtitleOutputUris,
                 formatSummary,
                 request.getThumbnailUrl(),
                 status,
@@ -257,6 +347,7 @@ public class HistoryItemEntity {
                 PersistenceSanitizer.clean(sourceHostHash),
                 PersistenceSanitizer.clean(sourceCategory),
                 PersistenceSanitizer.clean(outputUri),
+                PersistenceSanitizer.clean(subtitleOutputUris),
                 PersistenceSanitizer.clean(formatSummary),
                 safeThumbnailUrl(thumbnailUrl),
                 status,
@@ -280,6 +371,7 @@ public class HistoryItemEntity {
                 ", sourceHostHash='" + sourceHostHash + '\'' +
                 ", sourceCategory='" + sourceCategory + '\'' +
                 ", outputUri='" + outputUri + '\'' +
+                ", subtitleOutputUris='" + subtitleOutputUris + '\'' +
                 ", formatSummary='" + formatSummary + '\'' +
                 ", thumbnailUrl='" + thumbnailUrl + '\'' +
                 ", status='" + status + '\'' +
@@ -334,6 +426,22 @@ public class HistoryItemEntity {
             }
         }
         return "";
+    }
+
+    private static String safeSubtitleOutputUris(List<DownloadOutputFile> outputs) {
+        StringBuilder builder = new StringBuilder();
+        for (DownloadOutputFile output : outputs) {
+            if (output.getKind() == DownloadOutputKind.Subtitle) {
+                String uri = ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath());
+                if (uri != null && !uri.isEmpty()) {
+                    if (builder.length() > 0) {
+                        builder.append('\n');
+                    }
+                    builder.append(uri);
+                }
+            }
+        }
+        return builder.length() > 0 ? builder.toString() : null;
     }
 
     private static boolean hasValidMediaOutput(List<DownloadOutputFile> outputs) {
@@ -414,6 +522,13 @@ public class HistoryItemEntity {
         @Override
         public void migrate(SupportSQLiteDatabase database) {
             database.execSQL("ALTER TABLE history_items ADD COLUMN thumbnailUrl TEXT");
+        }
+    };
+
+    public static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE history_items ADD COLUMN subtitleOutputUris TEXT");
         }
     };
 }

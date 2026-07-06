@@ -617,6 +617,86 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun historyMetaAndActionsExposeIndependentSubtitleOnlyWhenPresent() {
+        val withSubtitle = HistoryItemEntity.createSafe(
+            "带字幕视频",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "app-private://outputs/task-subtitle/merged-299-140.mp4",
+            "视频 299 + 音频 140 + 字幕 en.vtt",
+            HistoryItemEntity.STATUS_COMPLETED,
+            100,
+            "",
+            "",
+            null,
+            1_000,
+            1_000,
+            1_000,
+        ).also {
+            setSubtitleOutputUris(it, "app-private://outputs/task-subtitle/captions.en.vtt")
+        }
+        val mediaOnly = HistoryItemEntity.createSafe(
+            "无字幕视频",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "app-private://outputs/task-media/video.mp4",
+            "360p",
+            HistoryItemEntity.STATUS_COMPLETED,
+            100,
+            "",
+            "",
+            null,
+            2_000,
+            2_000,
+            2_000,
+        )
+
+        val items = historyUiItemsFromRows(listOf(withSubtitle, mediaOnly))
+
+        assertTrue(items[0].meta.contains("媒体文件 + 独立字幕文件"))
+        assertFalse(items[0].meta.contains("merged-299-140.mp4"))
+        assertFalse(items[0].meta.contains("captions.en.vtt"))
+        assertEquals(listOf("打开", "分享", "导出", "分享字幕", "导出字幕", "删除"), historyActionLabelsForUiTest(items[0]))
+        assertFalse(items[1].meta.contains("独立字幕文件"))
+        assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(items[1]))
+    }
+
+    @Test
+    fun completedQueueMetaShowsMediaAndSubtitleOutputsWithoutRawFileNames() {
+        val state = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Completed,
+                request = request(),
+                outputs = listOf(
+                    DownloadOutputFile(
+                        DownloadOutputKind.Media,
+                        "/data/user/0/com.garyapp.ytdl/files/gui-downloads/task-1/merged-299-140.mp4",
+                        4096L,
+                    ),
+                    DownloadOutputFile(
+                        DownloadOutputKind.Subtitle,
+                        "/data/user/0/com.garyapp.ytdl/files/gui-downloads/task-1/captions.en.vtt",
+                        512L,
+                    ),
+                ),
+            ),
+        )
+
+        val meta = queueCardMetaForUiTest(state)
+
+        assertTrue(meta.contains("媒体文件 + 独立字幕文件"))
+        assertFalse(meta.contains("merged-299-140.mp4"))
+        assertFalse(meta.contains("captions.en.vtt"))
+        assertTrue(state.userMessage.contains("媒体文件 + 独立字幕文件"))
+        assertFalse(state.userMessage.contains("merged-299-140.mp4"))
+        assertFalse(state.userMessage.contains("captions.en.vtt"))
+    }
+
+    @Test
     fun historyExportSuggestionUsesTitleAndTimestampToAvoidRepeatedMergedNames() {
         val item = HistoryUiItem(
             id = 1,
@@ -682,5 +762,11 @@ class DownloadUiBridgeTest {
             .map(::File)
             .firstOrNull { it.isFile }
             ?: error("source file not found: ${candidates.joinToString()}")
+    }
+
+    private fun setSubtitleOutputUris(row: HistoryItemEntity, value: String) {
+        val field = HistoryItemEntity::class.java.getDeclaredField("subtitleOutputUris")
+        field.isAccessible = true
+        field.set(row, value)
     }
 }
