@@ -337,7 +337,8 @@ class DownloadGuiBindingTest {
         assertTrue(serialized.contains("app-private://outputs/%E6%B5%8B%E8%AF%95%20video.mp4"))
         assertFalse(cards.first().meta.contains("app-private://"))
         assertFalse(cards.first().meta.contains("%20"))
-        assertTrue(cards.first().meta.contains("测试 video.mp4"))
+        assertTrue(cards.first().meta.contains("媒体文件"))
+        assertFalse(cards.first().meta.contains("测试 video.mp4"))
         assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(cards.first()))
         assertEquals(listOf("删除"), historyActionLabelsForUiTest(cards.last()))
         listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {
@@ -510,6 +511,28 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun subtitleToggleIsAvailableOnlyWhenCurrentAnalysisProvidesSubtitles() {
+        val noAnalysis = subtitleSelectionUiStateForUiTest(null, emptyList())
+        assertFalse(noAnalysis.canToggle)
+
+        val noSubtitleAnalysis = analysisWith(progressiveFormat(id = "18", height = 360))
+        val unavailable = subtitleSelectionUiStateForUiTest(noSubtitleAnalysis, emptyList())
+        assertFalse(unavailable.canToggle)
+        assertEquals("无可选", unavailable.trailing)
+        assertEquals("当前视频未提供字幕", unavailable.label)
+
+        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+        val subtitleAnalysis = noSubtitleAnalysis.copy(subtitles = listOf(subtitle))
+        val available = subtitleSelectionUiStateForUiTest(subtitleAnalysis, emptyList())
+        assertTrue(available.canToggle)
+        assertEquals("选择", available.trailing)
+
+        val selected = subtitleSelectionUiStateForUiTest(subtitleAnalysis, listOf(subtitle))
+        assertTrue(selected.canToggle)
+        assertEquals("取消", selected.trailing)
+    }
+
+    @Test
     fun selectedSubtitleIsCarriedIntoDownloadRequestAsSeparateFile() {
         val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
         val analysis = analysisWith(progressiveFormat(id = "18", height = 360)).copy(subtitles = listOf(subtitle))
@@ -525,6 +548,22 @@ class DownloadGuiBindingTest {
         assertEquals(listOf(subtitle), request.selectedSubtitles)
         assertEquals("已选择 en vtt 自动字幕 · 独立字幕文件", subtitleSelectionLabelForUiTest(analysis, listOf(subtitle)))
         assertEquals("有 1 个字幕可选 · 当前不下载", subtitleSelectionLabelForUiTest(analysis, emptyList()))
+    }
+
+    @Test
+    fun downloadPreviewSummaryMentionsIndependentSubtitleWhenSelected() {
+        val subtitle = SubtitleInfo(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Automatic)
+        val analysis = analysisWith(progressiveFormat(id = "18", height = 360)).copy(subtitles = listOf(subtitle))
+        val state = RuntimeDownloadState(
+            analysis = analysis,
+            appliedFormatSelection = defaultFormatSelection(analysis),
+            selectedSubtitles = listOf(subtitle),
+        )
+
+        val summary = downloadPreviewFormatSummaryForUiTest(state)
+
+        assertTrue(summary.contains("360p"))
+        assertTrue(summary.contains("独立字幕文件"))
     }
 
     @Test

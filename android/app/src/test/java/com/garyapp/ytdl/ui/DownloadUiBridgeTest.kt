@@ -1,6 +1,7 @@
 package com.garyapp.ytdl.ui
 
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.DownloadProgress
@@ -196,6 +197,38 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun recommendedSubtitlePrefersEnglishVttOverFirstJson3AutomaticSubtitle() {
+        val json3Automatic = subtitle(language = "ab", ext = "json3", source = SubtitleSource.Automatic)
+        val englishVttAutomatic = subtitle(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+
+        val recommended = recommendedSubtitleForUiTest(listOf(json3Automatic, englishVttAutomatic))
+
+        assertEquals(englishVttAutomatic, recommended)
+    }
+
+    @Test
+    fun recommendedSubtitleUsesLanguagePriorityAndManualTieBreakWithinVtt() {
+        val englishManual = subtitle(language = "en", ext = "vtt", source = SubtitleSource.Manual)
+        val simplifiedChineseAutomatic = subtitle(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Automatic)
+        val simplifiedChineseManual = subtitle(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Manual)
+
+        val recommended = recommendedSubtitleForUiTest(
+            listOf(englishManual, simplifiedChineseAutomatic, simplifiedChineseManual),
+        )
+
+        assertEquals(simplifiedChineseManual, recommended)
+    }
+
+    @Test
+    fun recommendedSubtitleFallsBackToPreferredLanguageWhenVttIsUnavailableThenFirstSubtitle() {
+        val firstUnknown = subtitle(language = "ab", ext = "json3", source = SubtitleSource.Automatic)
+        val englishSrv = subtitle(language = "en", ext = "srv3", source = SubtitleSource.Manual)
+
+        assertEquals(englishSrv, recommendedSubtitleForUiTest(listOf(firstUnknown, englishSrv)))
+        assertEquals(firstUnknown, recommendedSubtitleForUiTest(listOf(firstUnknown)))
+    }
+
+    @Test
     fun buildAppliedDownloadRequestUsesAppliedSelectionForProgressiveMedia() {
         val result = buildAppliedDownloadRequest(
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
@@ -368,6 +401,7 @@ class DownloadUiBridgeTest {
             ),
             queueStageItemsForUiTest(state),
         )
+        assertFalse(queueStageItemsForUiTest(state).any { it.label == "字幕文件" })
     }
 
     @Test
@@ -388,6 +422,28 @@ class DownloadUiBridgeTest {
             queueStageItemsForUiTest(state),
         )
         assertEquals("66%", queueCardStatusForUiTest(state))
+    }
+
+    @Test
+    fun mergeQueueStateAddsSubtitleStageOnlyWhenSubtitleSelected() {
+        val request = mergeRequest().copy(
+            selectedSubtitles = listOf(subtitle(language = "zh-Hans", ext = "vtt")),
+        )
+        val state = RuntimeDownloadState()
+            .withPipelineStateForUiTest(
+                DownloadTaskState.waiting(request)
+                    .atStage(DownloadStage.DownloadingSubtitles),
+            )
+
+        assertEquals(
+            listOf(
+                QueueStageItem("下载视频", QueueStageStatus.Completed),
+                QueueStageItem("下载音频", QueueStageStatus.Completed),
+                QueueStageItem("原生合并", QueueStageStatus.Completed),
+                QueueStageItem("字幕文件", QueueStageStatus.Current),
+            ),
+            queueStageItemsForUiTest(state),
+        )
     }
 
     @Test
@@ -428,7 +484,7 @@ class DownloadUiBridgeTest {
 
         assertTrue(meta.contains("4.0 KB / 4.0 KB"))
         assertTrue(meta.contains("App 私有目录"))
-        assertTrue(meta.contains("导出名：标题-时间，重名加序号"))
+        assertTrue(meta.contains("导出名：标题+时间；重名加序号"))
         assertFalse(meta.contains("merged-136-140.mp4"))
     }
 
@@ -666,6 +722,33 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun failedSubtitleRecordWithMediaOutputKeepsMediaActionsOnly() {
+        val mediaSavedSubtitleFailed = HistoryItemEntity.createSafe(
+            "媒体已保存字幕失败",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "app-private://outputs/task-subtitle/merged-299-140.mp4",
+            "视频 299 + 音频 140 + 字幕 zh-Hans.vtt",
+            HistoryItemEntity.STATUS_FAILED,
+            0,
+            "",
+            "",
+            "所选字幕 zh-Hans 不可用，请取消字幕或重新分析后再试。",
+            1_000,
+            1_000,
+            1_000,
+        )
+
+        val item = historyUiItemsFromRows(listOf(mediaSavedSubtitleFailed)).single()
+
+        assertTrue(item.meta.contains("媒体文件"))
+        assertTrue(item.meta.contains("所选字幕 zh-Hans 不可用"))
+        assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(item))
+    }
+
+    @Test
     fun completedQueueMetaShowsMediaAndSubtitleOutputsWithoutRawFileNames() {
         val state = RuntimeDownloadState().withPipelineStateForUiTest(
             DownloadTaskState(
@@ -712,7 +795,7 @@ class DownloadUiBridgeTest {
 
         assertTrue(name.startsWith("Jalen_Brunson_ Captain_"))
         assertTrue(name.endsWith(".mp4"))
-        assertTrue(Regex(""".*-\d{8}-\d{6}\.mp4""").matches(name))
+        assertTrue(Regex("""Jalen_Brunson_ Captain_-\d{8}-\d{6}\.mp4""").matches(name))
         listOf("/", ":", "?").forEach { forbidden ->
             assertFalse(name.contains(forbidden))
         }
@@ -738,6 +821,16 @@ class DownloadUiBridgeTest {
         isSupported = true,
         videoCodec = "avc1",
         audioCodec = "mp4a",
+    )
+
+    private fun subtitle(
+        language: String,
+        ext: String,
+        source: SubtitleSource = SubtitleSource.Manual,
+    ) = SubtitleInfo(
+        language = language,
+        ext = ext,
+        source = source,
     )
 
     private fun request(): DownloadRequest {

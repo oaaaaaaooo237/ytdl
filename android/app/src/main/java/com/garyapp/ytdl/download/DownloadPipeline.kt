@@ -103,6 +103,7 @@ class DownloadPipeline(
         val taskOutputDirectory = createTaskOutputDirectory(appPrivateRoot)
         var state = DownloadTaskState.waiting(request)
         var currentStage = state.stage
+        var currentSubtitleLanguage: String? = null
         val finalOutputs = mutableListOf<DownloadOutputFile>()
 
         fun emit(nextState: DownloadTaskState) {
@@ -210,6 +211,7 @@ class DownloadPipeline(
 
             request.selectedSubtitles.forEach { subtitle ->
                 ensureActive()
+                currentSubtitleLanguage = subtitle.language
                 transition(DownloadStage.DownloadingSubtitles)
                 val download = engine.downloadSubtitle(
                     url = request.url,
@@ -222,6 +224,7 @@ class DownloadPipeline(
                 ).getOrThrow()
                 finalOutputs += download.toOutputFile(appPrivateRoot)
             }
+            currentSubtitleLanguage = null
 
             ensureActive()
             val completed = state.completeWith(finalOutputs).getOrThrow()
@@ -234,7 +237,12 @@ class DownloadPipeline(
             if (exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Canceled) {
                 emit(state.canceled())
             } else {
-                emit(state.failed(DownloadFailureMessages.fromException(exc)))
+                val message = if (currentSubtitleLanguage != null) {
+                    DownloadFailureMessages.missingSubtitle(currentSubtitleLanguage)
+                } else {
+                    DownloadFailureMessages.fromException(exc)
+                }
+                emit(state.failed(message, finalOutputs.toList()))
             }
             DownloadPipelineResult(state = state, outputs = finalOutputs)
         }

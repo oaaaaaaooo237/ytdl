@@ -303,6 +303,65 @@ class DownloadRequestRoutingTest {
     }
 
     @Test
+    fun subtitleDownloadFailurePreservesCompletedMediaOutputAndNamesSubtitleProblem() {
+        val subtitle = SubtitleInfo(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Automatic)
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+                subtitles = listOf(subtitle),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            subtitleFailure = YtdlpDownloadException(
+                AnalysisErrorCategory.Unsupported,
+                "Unable to download video subtitles for 'zh-Hans': HTTP Error 429: Too Many Requests",
+            )
+        }
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertEquals(1, result.state.outputs.count { it.kind == DownloadOutputKind.Media })
+        assertEquals(0, result.state.outputs.count { it.kind == DownloadOutputKind.Subtitle })
+        assertTrue(result.state.errorMessage.orEmpty().contains("所选字幕 zh-Hans 不可用"))
+    }
+
+    @Test
+    fun finalValidationFailureAfterSubtitleSuccessDoesNotBlameSubtitle() {
+        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+                subtitles = listOf(subtitle),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            afterSubtitleDownload = {
+                File(lastMediaOutputPath.orEmpty()).delete()
+            }
+        }
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertFalse(result.state.errorMessage.orEmpty().contains("字幕"))
+    }
+
+    @Test
     fun emptySubtitleSelectionCompletesWithOnlyMediaOutputAndNoSubtitleStage() {
         val request = DownloadRequest.fromAnalysis(
             url = TestUrl,
@@ -560,6 +619,9 @@ class DownloadRequestRoutingTest {
         var returnedFormatId: String? = null
         var returnedRole: DownloadFormatRole? = null
         var downloadFailure: YtdlpDownloadException? = null
+        var subtitleFailure: YtdlpDownloadException? = null
+        var afterSubtitleDownload: (() -> Unit)? = null
+        var lastMediaOutputPath: String? = null
         val failOnceByRole = mutableMapOf<DownloadFormatRole, YtdlpDownloadException>()
         val returnedRoleByRequestRole = mutableMapOf<DownloadFormatRole, DownloadFormatRole>()
 
@@ -595,6 +657,9 @@ class DownloadRequestRoutingTest {
             if (role == DownloadFormatRole.Video) {
                 onVideoDownload()
             }
+            if (role == DownloadFormatRole.Media) {
+                lastMediaOutputPath = file.absolutePath
+            }
             return Result.success(
                 DownloadResult(
                     outputPath = file.absolutePath,
@@ -616,7 +681,9 @@ class DownloadRequestRoutingTest {
             listener: DownloadProgressListener?,
         ): Result<SubtitleDownloadResult> {
             calls += "subtitle:${source.pythonValue}:$language:$ext"
+            subtitleFailure?.let { return Result.failure(it) }
             val file = writeFile(outputDirectory, "subtitle-${source.pythonValue}.$language.$ext")
+            afterSubtitleDownload?.invoke()
             return Result.success(
                 SubtitleDownloadResult(
                     outputPath = file.absolutePath,

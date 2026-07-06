@@ -774,7 +774,11 @@ fun YtdlApp() {
                                 runtimeState = runtimeState.copy(selectedSubtitles = subtitles)
                             },
                             onApplySelection = {
-                                val summary = formatSelectionSummary(runtimeState.analysis, runtimeState.formatSelection)
+                                val summary = formatSelectionSummaryWithSubtitles(
+                                    runtimeState.analysis,
+                                    runtimeState.formatSelection,
+                                    runtimeState.selectedSubtitles,
+                                )
                                 mainHandler.post {
                                     runtimeState = runtimeState.copy(
                                         appliedFormatSelection = runtimeState.formatSelection,
@@ -951,7 +955,11 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
     return copy(
         isDownloading = state.stage !in TerminalDownloadStages,
         userMessage = when (state.stage) {
-            DownloadStage.Failed -> "下载失败：${state.errorMessage.orEmpty().ifBlank { "请检查网络或授权状态。" }}"
+            DownloadStage.Failed -> if (mediaOutput != null) {
+                "媒体文件已保存，但${state.errorMessage.orEmpty().ifBlank { "附加文件处理失败。" }}"
+            } else {
+                "下载失败：${state.errorMessage.orEmpty().ifBlank { "请检查网络或授权状态。" }}"
+            }
             DownloadStage.Canceled -> "下载已取消。"
             DownloadStage.Completed -> if (subtitleOutputs.isNotEmpty()) {
                 "下载完成：媒体文件 + 独立字幕文件已保存，可在历史中查看。"
@@ -1256,7 +1264,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
             RuntimeMessageCard(state.userMessage)
         }
     }
-    item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录 · 导出名：标题-时间，重名加序号", leading = "□", trailing = "›") }
+    item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录 · 导出名：标题+时间；重名加序号", leading = "□", trailing = "›") }
     item {
         SectionTitle("下载模式")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1556,7 +1564,21 @@ private fun RuntimeMessageCard(message: String) {
 internal fun downloadPreviewFormatSummaryForUiTest(state: RuntimeDownloadState): String = downloadPreviewFormatSummary(state)
 
 private fun downloadPreviewFormatSummary(state: RuntimeDownloadState): String {
-    return formatSelectionSummary(state.analysis, state.appliedFormatSelection)
+    return formatSelectionSummaryWithSubtitles(
+        state.analysis,
+        state.appliedFormatSelection,
+        state.selectedSubtitles,
+    )
+}
+
+private fun formatSelectionSummaryWithSubtitles(
+    analysis: VideoAnalysis?,
+    selection: FormatSelection,
+    selectedSubtitles: List<SubtitleInfo>,
+): String {
+    val mediaSummary = formatSelectionSummary(analysis, selection)
+    if (selectedSubtitles.isEmpty()) return mediaSummary
+    return "$mediaSummary · 独立字幕文件"
 }
 
 private fun formatDuration(totalSeconds: Long): String {
@@ -1630,18 +1652,20 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     item {
         val subtitles = analysis.subtitles
         val hasSubtitles = subtitles.isNotEmpty()
+        val subtitleUi = subtitleSelectionUiState(analysis, selectedSubtitles)
         val newSelection = if (selectedSubtitles.isEmpty() && hasSubtitles) {
-            listOf(subtitles.first())
+            listOfNotNull(recommendedSubtitle(subtitles))
         } else {
             emptyList()
         }
         SettingLineCard(
             "字幕",
-            subtitleSelectionLabel(analysis, selectedSubtitles),
+            subtitleUi.label,
             "▾",
-            if (hasSubtitles) "切换" else "无",
+            subtitleUi.trailing,
+            enabled = subtitleUi.canToggle,
             modifier = Modifier
-                .clickable(enabled = hasSubtitles) { onSubtitleSelectionChange(newSelection) }
+                .clickable(enabled = subtitleUi.canToggle) { onSubtitleSelectionChange(newSelection) }
                 .testTag("ytdl-format-subtitle-toggle"),
         )
     }
@@ -1654,7 +1678,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             border = androidx.compose.foundation.BorderStroke(1.dp, palette.formatAccent.copy(alpha = 0.35f)),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("实际下载：${formatSelectionSummary(analysis, selection)}", color = palette.formatAccent, fontWeight = FontWeight.Bold)
+                Text("实际下载：${formatSelectionSummaryWithSubtitles(analysis, selection, selectedSubtitles)}", color = palette.formatAccent, fontWeight = FontWeight.Bold)
                 Text("开始下载会按当前格式选择进入真实任务队列。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -1910,7 +1934,7 @@ private fun queueCardMeta(state: RuntimeDownloadState): String {
         else -> ""
     }
     val outputPolicy = if (state.outputPath.isNotBlank()) {
-        " · App 私有目录 · 导出名：标题-时间，重名加序号"
+        " · App 私有目录 · 导出名：标题+时间；重名加序号"
     } else {
         ""
     }
@@ -2099,7 +2123,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     onThemeModeChange: (String) -> Unit,
     onColorPresetChange: (String) -> Unit,
 ) {
-    item { SettingLineCard("默认保存位置", "App 私有目录 · 导出名：标题-时间，重名加序号", "▣", "›", LocalYtdlAppPalette.current.settingsAccent) }
+    item { SettingLineCard("默认保存位置", "App 私有目录 · 导出名：标题+时间；重名加序号", "▣", "›", LocalYtdlAppPalette.current.settingsAccent) }
     item {
         SettingLineCard(
             "Cookies 文件",
@@ -2335,10 +2359,15 @@ private fun SettingLineCard(
     trailing: String,
     accent: Color? = null,
     inCard: Boolean = true,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalYtdlAppPalette.current
     val resolvedAccent = accent ?: palette.formatAccent
+    val titleColor = if (enabled) palette.titleText else palette.softText.copy(alpha = 0.58f)
+    val subtitleColor = if (enabled) palette.softText else palette.softText.copy(alpha = 0.46f)
+    val leadingBackground = resolvedAccent.copy(alpha = if (enabled) 0.15f else 0.06f)
+    val leadingColor = if (enabled) resolvedAccent else palette.softText.copy(alpha = 0.5f)
     val content: @Composable ColumnScope.() -> Unit = {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2349,16 +2378,16 @@ private fun SettingLineCard(
                 modifier = Modifier
                     .size(34.dp)
                     .clip(RoundedCornerShape(9.dp))
-                    .background(resolvedAccent.copy(alpha = 0.15f)),
+                    .background(leadingBackground),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(leading, color = resolvedAccent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text(leading, color = leadingColor, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(title, color = titleColor, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = subtitleColor, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Text(trailing, color = palette.softText, style = MaterialTheme.typography.titleSmall)
+            Text(trailing, color = subtitleColor, style = MaterialTheme.typography.titleSmall)
         }
     }
 

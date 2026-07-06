@@ -104,8 +104,8 @@ cd android
 
 ## 2026-07-06 队列进度修正
 
-- 当前 Android 下载编排仍是串行：视频流 -> 音频流 -> 原生合并；不是并行下载。
-- 每个真实下载任务写入 App 私有 `gui-downloads/task-时间戳-序号` 子目录，App 私有输出不会互相覆盖；导出到系统下载目录时建议文件名为“清理后的标题-年月日时分秒.扩展名”，如果目标位置已有同名文件，由系统保存器追加序号，覆盖必须由用户明确选择。
+- 当前 Android 下载编排仍是串行：视频流 -> 音频流 -> 原生合并；不是并行下载。只有本任务确实选择了字幕文件时，队列才追加“字幕文件”阶段；无字幕任务不显示这一项。
+- 每个真实下载任务写入 App 私有 `gui-downloads/task-时间戳-序号` 子目录，App 私有输出不会互相覆盖。导出建议文件名规则为：`清理后的标题-yyyyMMdd-HHmmss.ext`；其中标题会替换 `\ / : * ? " < > |` 和换行制表符、截断到 72 个字符，时间使用设备本地完成时间，扩展名沿用实际输出文件。使用系统保存器导出时，App 不默认覆盖已有文件；同名冲突由系统保存器提示用户或追加序号。
 - 队列卡片已区分“当前阶段真实百分比”和“当前阶段进行中但百分比未知”：有真实百分比时显示确定进度；没有可靠百分比时显示进行中进度条，避免卡在 `0%` 造成误解。右侧百分比继续显示整个下载大项的估算进度。
 
 本轮新鲜验证：
@@ -750,7 +750,7 @@ cd android
 
 ## 2026-07-05 阶段化进度和导出命名收敛
 
-根据前台观察反馈，本轮确认当前 MVP1 下载链路不是并行下载视频流和音频流：`DownloadPipeline` 对视频+音频合并任务按“下载视频 -> 下载音频 -> 原生合并”串行执行。队列页已改为显示分阶段状态，避免用户看到进度条从 `0%` 直接跳到 `100%` 或误把视频阶段进度理解为全任务进度。
+根据前台观察反馈，本轮确认当前 MVP1 下载链路不是并行下载视频流和音频流：`DownloadPipeline` 对视频+音频合并任务按“下载视频 -> 下载音频 -> 原生合并”串行执行。队列页已改为显示分阶段状态，避免用户看到进度条从 `0%` 直接跳到 `100%` 或误把视频阶段进度理解为全任务进度；“字幕文件”只在该任务已选择字幕输出时追加显示。
 
 本轮 UI 规则：
 
@@ -759,7 +759,7 @@ cd android
 - 阶段进度条对应当前阶段。
 - 右侧百分比对应整个下载大项的估算进度。
 
-同名输出处理也已收敛：App 私有下载目录继续使用每任务唯一目录避免内部串档；历史页导出时，系统保存对话框默认文件名改为“视频标题 + 完成时间 + 扩展名”，避免多个导出任务都显示 `merged-299-140.mp4`。外部覆盖仍不作为默认行为；覆盖应由用户在系统保存器或后续明确选项中确认。
+同名输出处理也已收敛：App 私有下载目录继续使用每任务唯一目录避免内部串档；历史页导出时，系统保存对话框默认文件名改为 `清理后的标题-yyyyMMdd-HHmmss.ext`，避免多个导出任务都显示 `merged-299-140.mp4`。外部覆盖仍不作为默认行为；覆盖应由用户在系统保存器或后续明确选项中确认。
 
 Computer Use 边界：本轮重新连接后可以枚举窗口并被动截图模拟器，但对窗口点击/按键仍报 `failed to activate captured window`，所以本节不是最终前台可视验收通过记录。进一步跨窗口 smoke 显示，不只是 Android Emulator，多个普通 Windows 窗口的 `activate_window` 也返回同一错误；当时阻断位于 Computer Use/Windows 窗口激活链路，而不是 App 代码或模拟器内页面。按 2026-07-06 最新口径，后续可视 URL 输入必须先由 Computer Use 正常聚焦输入框，并通过系统软键盘拟真输入；剪贴板、硬件键或可访问性写入只能作为环境诊断证据，不能替代最终验收。若 Computer Use 仍不能激活窗口，必须先修测试环境。
 
@@ -779,7 +779,7 @@ cd android
 - 通过系统权限命令拒绝 `POST_NOTIFICATIONS` 后重启前台页面。
 - 设置页显示 `未授权 · 下载仍在应用内显示进度` 和 `请求`。
 - 启动真实 1080p 视频+音频下载后，队列页显示真实任务卡与阶段条。
-- 阶段条包含 `下载视频`、`下载音频`、`原生合并`。
+- 阶段条包含 `下载视频`、`下载音频`、`原生合并`；未选择字幕时不显示 `字幕文件` 阶段。
 - 从 app 内队列点击 `取消` 后，Room 最新历史进入 `canceled`，不允许写成 completed。
 - 测试结束恢复通知权限，避免污染后续通知栏测试。
 
@@ -822,7 +822,7 @@ Computer Use 边界：本轮 Computer Use 可以连接并被动截图 `Android E
 
 ## 2026-07-06 API35 前台可视短视频 smoke
 
-本轮按用户反馈继续收敛队列页：视频+音频高分辨率下载当前不是并行链路，而是“下载视频 -> 下载音频 -> 原生合并”串行执行；队列页必须把这几个阶段直接展示出来，右侧百分比表达整个任务估算进度，下面进度条表达当前阶段进度。队列卡片不再显示内部 `merged-xxx.mp4` 文件名，改为说明“App 私有目录 · 导出名：标题-时间，重名加序号”。
+本轮按用户反馈继续收敛队列页：视频+音频高分辨率下载当前不是并行链路，而是“下载视频 -> 下载音频 -> 原生合并”串行执行；队列页必须把基础阶段直接展示出来，若本任务选择了字幕文件，则追加显示“字幕文件”阶段。右侧百分比表达整个任务估算进度，下面进度条表达当前阶段进度。队列卡片不再显示内部 `merged-xxx.mp4` 文件名，改为说明 App 私有目录和导出建议名规则。
 
 验证范围：
 
@@ -835,7 +835,7 @@ Computer Use 边界：本轮 Computer Use 可以连接并被动截图 `Android E
 
 - 分析后显示标题 `Luka and Jalen 🤝`、时长 `00:14`，格式显示 `自动（推荐） · 1280p MP4 需原生合并`。
 - 队列页下载中可见阶段条：`下载视频 ✓`、`下载音频`、`原生合并`；完成后三个阶段均显示绿色完成状态。
-- 完成卡片显示 `4.1 MB / 4.1 MB · App 私有目录 · 导出名：标题-时间，重名加序号`，没有暴露内部 `merged-...` 文件名。
+- 完成卡片显示文件大小、App 私有目录和导出建议名规则，没有暴露内部 `merged-...` 文件名。
 - 同轮日志未发现 `AndroidRuntime`、`FATAL EXCEPTION`、`ComposeInternal`、`LayoutNode should be attached`、`Force finishing` 或进程退出。
 
 辅助验证：
@@ -1002,7 +1002,7 @@ adb -s emulator-5554 install -r app\build\outputs\apk\debug\app-debug.apk
 - 当前高分辨率 `视频+音频` 不是并行下载，而是串行执行：`下载视频 -> 下载音频 -> 原生合并`。
 - 队列页真实进度不是从 `0%` 直接跳到 `100%`：前台截图记录了视频阶段约 `18.0 MB / 331.5 MB`、`156.7 MB / 331.5 MB`、`293.0 MB / 331.5 MB` 的推进。
 - 保存下来的 M9.3 截图/XML 未单独覆盖音频下载中或原生合并进行中的瞬间；它们覆盖视频阶段推进和最终完成态。完成态显示 `下载视频✓ / 下载音频✓ / 原生合并✓`、`100%`。
-- 完成卡片显示 `339.2 MB / 339.2 MB · App 私有目录 · 导出名：标题-时间，重名加序号`。App 私有目录内最新合并文件为 `files/gui-downloads/task-1783294386576-1/merged-299-140.mp4`，大小约 `339M`。
+- 完成卡片显示文件大小、App 私有目录和导出建议名规则。App 私有目录内最新合并文件为 `files/gui-downloads/task-1783294386576-1/merged-299-140.mp4`，大小约 `339M`。
 - 历史页出现最新完成记录，包含 `打开 / 分享 / 导出 / 删除` 操作；设置页继续显示 cookies 只保存引用、媒体处理边界、通知权限和隐私说明。
 
 截图和文本树证据：
@@ -1052,7 +1052,7 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:connectedDebugAndroidTest "-Pandroi
 
 ## 2026-07-06 M9.8 独立字幕文件用户可见闭环
 
-本轮按 MVP1 边界补齐“合并后的视频音频文件 + 独立字幕文件”的历史/导出闭环，不涉及 FFmpeg、字幕嵌入、字幕烧录或三合一输出。
+本轮按 MVP1 边界补齐“合并后的视频音频文件 + 可选独立字幕文件”的历史/导出闭环，不涉及 FFmpeg、字幕嵌入、字幕烧录或三合一输出。默认主路径不下载字幕；只有当前视频分析结果确实提供字幕文件，且用户选择字幕时，才下载独立字幕文件。
 
 代码与模型变化：
 
@@ -1086,4 +1086,66 @@ adb shell am instrument -w -e class com.garyapp.ytdl.ui.YtdlAppUiTest#seedForegr
 - `docs/qa/android-computer-use-20260706-m9-8-subtitle-output/m9-8-subtitle-history-card.png`
 - `docs/qa/android-computer-use-20260706-m9-8-subtitle-output/m9-8-subtitle-export-picker.png`
 
-剩余边界：本节仍不是最终 T12。前台复核使用的是合成小型历史记录，证明历史页字幕入口、分享面板和保存器链路；真实带字幕下载从格式页选择字幕后观察队列、历史和字幕动作仍留到 T12 或后续真实字幕专项。最终仍需一次 coherent 全量主路径复核。
+剩余边界：本节仍不是最终 T12。前台复核使用的是合成小型历史记录，证明历史页字幕入口、分享面板和保存器链路；真实带字幕下载从格式页选择字幕后观察队列、历史和字幕动作属于后续可选字幕专项，不是默认无字幕主路径的 T12 前置条件。最终仍需一次 coherent 全量主路径复核。
+
+## 2026-07-06 M9.9 可选真实字幕链路限流与恢复策略修正
+
+本轮用 API37 前台可见模拟器继续可选真实字幕链路复核。测试地址仍为 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。前台操作已完成真实分析、格式页选择字幕、启动真实 `1080p` 视频+音频任务，并在队列页观察到真实视频阶段字节进度推进。任务实际生成了 app-private 媒体输出：
+
+- 大小：`355645249` bytes
+
+失败根因不是媒体下载或原生合并，而是最后下载 `zh-Hans` 自动字幕时，yt-dlp 收到 `HTTP Error 429: Too Many Requests`。这说明本轮真实字幕专项被 YouTube 字幕接口限流；不应继续反复下载 355MB 大文件来证明同一个问题。
+
+本轮修正：
+
+- 队列阶段规则明确为：基础阶段按实际下载路线显示；只有当前任务选择了字幕输出时才追加 `字幕文件` 阶段，未选择字幕的任务不显示这一项。
+- 字幕选择规则明确为：只有当前分析结果提供字幕文件时，格式页字幕行才可选择；无分析或当前视频未提供字幕时显示不可选状态。
+- 字幕下载失败时，失败态保留已经成功生成的媒体输出，不再让用户误以为整个媒体文件丢失。
+- 字幕阶段失败文案改为 `所选字幕 zh-Hans 不可用，请取消字幕或重新分析后再试。`，不再笼统显示“当前地址或格式暂不支持”。
+- 历史页对“失败但已有安全 app-private 媒体输出”的记录开放 `打开 / 分享 / 导出 / 删除`，但仍显示失败状态和字幕失败原因。
+- 历史/队列元信息继续显示 `媒体文件`，不外显内部 `merged-299-140.mp4` 这类实现文件名。
+
+新鲜验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadRequestRoutingTest.subtitleDownloadFailurePreservesCompletedMediaOutputAndNamesSubtitleProblem --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.failedSubtitleRecordWithMediaOutputKeepsMediaActionsOnly
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadRequestRoutingTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+```
+
+结果：以上 JVM 测试、全量单测、debug 打包和 APK 安装均已通过。旧的 355MB 测试输出已按用户授权清理，避免污染后续安装空间。
+
+截图证据：
+
+- `docs/qa/android-computer-use-20260706-m9-9-real-subtitle/m9-9-real-subtitle-video-stage.png`
+- `docs/qa/android-computer-use-20260706-m9-9-real-subtitle/m9-9-real-subtitle-audio-stage.png`
+- `docs/qa/android-computer-use-20260706-m9-9-real-subtitle/m9-9-real-subtitle-subtitle-stage.png`
+- `docs/qa/android-computer-use-20260706-m9-9-real-subtitle/m9-9-real-subtitle-failure.png`
+
+边界：本节不是最终 T12，也不是“真实字幕下载成功”结论。它证明了真实媒体下载和合并已经完成、字幕失败根因为外部 429 限流，并完成了字幕失败后的媒体保留与用户提示修复。429 只影响可选字幕专项，不阻塞 MVP1 默认无字幕主路径；等限流消退后，可再用 Computer Use 在前台可见窗口复核真实字幕成功链路，确认历史页出现“媒体文件 + 独立字幕文件”和字幕导出/分享入口。
+
+### 2026-07-07 字幕选择口径补充
+
+用户补充澄清：MVP1 不强制下载字幕；只有当前视频本身提供字幕文件时，用户才应该能选择下载独立字幕文件。无字幕或未选择字幕时，不下载字幕文件，也不显示 `字幕文件` 进度小项。
+
+本轮修正：
+
+- 新增 `subtitleSelectionUiState`，把字幕行拆成明确 UI 状态：无分析为“先分析”、无字幕为“无可选”且不可点击、有字幕才显示“选择/取消”。
+- 格式页字幕行接入该状态，无字幕时视觉上置灰且 `clickable` 禁用。
+- 请求层原有校验继续保留：`selectedSubtitles` 必须来自当前分析结果。
+
+新鲜验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.subtitleToggleIsAvailableOnlyWhenCurrentAnalysisProvidesSubtitles
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest --tests com.garyapp.ytdl.download.DownloadRequestRoutingTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+```
+
+结果：以上相关测试、全量单测、debug 打包和最新 APK 安装均通过。Computer Use 已激活前台可见 API37 模拟器窗口并确认最新 APK 启动到下载页；该检查只证明安装启动状态，不等于最终 T12 全量验收。
+
+429 复核：用 `--skip-download --write-auto-subs --sub-langs zh-Hans` 做轻量字幕探针，未下载视频，仍返回 `HTTP Error 429: Too Many Requests`；探针目录为空，没有留下字幕文件。该 429 只影响可选字幕专项，不阻塞默认无字幕主路径。

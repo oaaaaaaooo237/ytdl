@@ -44,8 +44,11 @@ data class DownloadTaskState(
         return copy(progress = progress)
     }
 
-    fun failed(message: String): DownloadTaskState {
-        return copy(stage = DownloadStage.Failed, progress = null, errorMessage = message)
+    fun failed(
+        message: String,
+        outputs: List<DownloadOutputFile> = this.outputs,
+    ): DownloadTaskState {
+        return copy(stage = DownloadStage.Failed, outputs = outputs, progress = null, errorMessage = message)
     }
 
     fun canceled(): DownloadTaskState {

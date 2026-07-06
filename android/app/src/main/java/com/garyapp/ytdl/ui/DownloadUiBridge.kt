@@ -54,9 +54,10 @@ data class HistoryUiItem(
     val subtitleOutputUris: List<String> = emptyList(),
 ) {
     val hasOutput: Boolean
-        get() = outputUri.startsWith("app-private://outputs/") && status == HistoryItemEntity.STATUS_COMPLETED
+        get() = outputUri.startsWith("app-private://outputs/") &&
+            status in setOf(HistoryItemEntity.STATUS_COMPLETED, HistoryItemEntity.STATUS_FAILED)
     val hasSubtitleOutput: Boolean
-        get() = status == HistoryItemEntity.STATUS_COMPLETED && subtitleOutputUris.isNotEmpty()
+        get() = hasOutput && subtitleOutputUris.isNotEmpty()
     val primarySubtitleOutputUri: String?
         get() = subtitleOutputUris.firstOrNull()
 }
@@ -114,7 +115,13 @@ private fun historyMeta(row: HistoryItemEntity): String {
         row.sourceCategory?.takeIf { it.isNotBlank() },
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
         row.outputUri?.takeIf { it.isNotBlank() }?.let {
-            if (hasSubtitleOutputs) "媒体文件 + 独立字幕文件" else historyOutputLabel(it)
+            if (hasSubtitleOutputs) {
+                "媒体文件 + 独立字幕文件"
+            } else if (it.startsWith("app-private://outputs/")) {
+                "媒体文件"
+            } else {
+                historyOutputLabel(it)
+            }
         },
         row.errorSummary?.takeIf { it.isNotBlank() },
     )
@@ -210,6 +217,33 @@ fun settingsParserVersionLabel(): String = "yt-dlp ${YtdlpBridge.PINNED_YTDLP_VE
 
 fun settingsMediaProcessorLabel(): String = "原生合并 · 字幕独立文件 · 字幕嵌入/烧录属 MVP2"
 
+data class SubtitleSelectionUiState(
+    val label: String,
+    val canToggle: Boolean,
+    val trailing: String,
+)
+
+fun subtitleSelectionUiState(
+    analysis: VideoAnalysis?,
+    selectedSubtitles: List<SubtitleInfo>,
+): SubtitleSelectionUiState {
+    val label = subtitleSelectionLabel(analysis, selectedSubtitles)
+    val subtitles = analysis?.subtitles.orEmpty()
+    if (subtitles.isEmpty()) {
+        return SubtitleSelectionUiState(
+            label = label,
+            canToggle = false,
+            trailing = if (analysis == null) "先分析" else "无可选",
+        )
+    }
+
+    return SubtitleSelectionUiState(
+        label = label,
+        canToggle = true,
+        trailing = if (selectedSubtitles.isEmpty()) "选择" else "取消",
+    )
+}
+
 fun settingsPrivacyLegalLines(): List<String> = listOf(
     "仅处理用户粘贴的公开 http/https 页面地址。",
     "Cookies 只保存文件引用，不保存内容；任务运行时临时读取并清理。",
@@ -261,6 +295,36 @@ fun subtitleSelectionLabel(
     return "已选择 ${selected.language} ${selected.ext} $source · 独立字幕文件"
 }
 
+fun recommendedSubtitle(subtitles: List<SubtitleInfo>): SubtitleInfo? {
+    if (subtitles.isEmpty()) return null
+
+    fun languageRank(language: String): Int {
+        val normalized = language.trim().lowercase(Locale.ROOT)
+        return listOf("zh-hans", "zh-hant", "zh", "en").indexOf(normalized)
+            .takeIf { it >= 0 }
+            ?: Int.MAX_VALUE
+    }
+
+    fun sourceRank(subtitle: SubtitleInfo): Int {
+        return if (subtitle.source == SubtitleSource.Manual) 0 else 1
+    }
+
+    fun best(candidates: List<IndexedValue<SubtitleInfo>>): SubtitleInfo? {
+        return candidates
+            .minWithOrNull(
+                compareBy<IndexedValue<SubtitleInfo>> { languageRank(it.value.language) }
+                    .thenBy { sourceRank(it.value) }
+                    .thenBy { it.index },
+            )
+            ?.value
+    }
+
+    val indexed = subtitles.withIndex().toList()
+    best(indexed.filter { it.value.ext.equals("vtt", ignoreCase = true) })?.let { return it }
+    best(indexed.filter { languageRank(it.value.language) != Int.MAX_VALUE })?.let { return it }
+    return subtitles.first()
+}
+
 internal fun settingsParserVersionLabelForUiTest(): String = settingsParserVersionLabel()
 
 internal fun settingsMediaProcessorLabelForUiTest(): String = settingsMediaProcessorLabel()
@@ -287,6 +351,13 @@ internal fun subtitleSelectionLabelForUiTest(
     analysis: VideoAnalysis?,
     selectedSubtitles: List<SubtitleInfo>,
 ): String = subtitleSelectionLabel(analysis, selectedSubtitles)
+
+internal fun subtitleSelectionUiStateForUiTest(
+    analysis: VideoAnalysis?,
+    selectedSubtitles: List<SubtitleInfo>,
+): SubtitleSelectionUiState = subtitleSelectionUiState(analysis, selectedSubtitles)
+
+internal fun recommendedSubtitleForUiTest(subtitles: List<SubtitleInfo>): SubtitleInfo? = recommendedSubtitle(subtitles)
 
 internal fun historyActionLabelsForUiTest(item: HistoryUiItem): List<String> = historyActionLabels(item)
 
