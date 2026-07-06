@@ -1193,7 +1193,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
             RuntimeMessageCard(state.userMessage)
         }
     }
-    item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录 · 导出默认自动改名", leading = "□", trailing = "›") }
+    item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录 · 导出名：标题-时间，重名加序号", leading = "□", trailing = "›") }
     item {
         SectionTitle("下载模式")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1832,7 +1832,7 @@ private fun queueCardMeta(state: RuntimeDownloadState): String {
     val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
     val total = state.totalBytes?.let(::formatBytes) ?: "未知大小"
     val outputPolicy = if (state.outputPath.isNotBlank()) {
-        " · App 私有目录 · 导出默认自动改名"
+        " · App 私有目录 · 导出名：标题-时间，重名加序号"
     } else {
         ""
     }
@@ -2017,7 +2017,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     onThemeModeChange: (String) -> Unit,
     onColorPresetChange: (String) -> Unit,
 ) {
-    item { SettingLineCard("默认保存位置", "App 私有目录 · 导出默认自动改名", "▣", "›", LocalYtdlAppPalette.current.settingsAccent) }
+    item { SettingLineCard("默认保存位置", "App 私有目录 · 导出名：标题-时间，重名加序号", "▣", "›", LocalYtdlAppPalette.current.settingsAccent) }
     item {
         SettingLineCard(
             "Cookies 文件",

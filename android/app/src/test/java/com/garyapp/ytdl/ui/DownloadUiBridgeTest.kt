@@ -409,7 +409,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun queueMetaExplainsPrivateOutputUsesAutoRenameInsteadOfInternalMergedName() {
+    fun queueMetaExplainsPrivateOutputUsesTitleTimeExportRuleInsteadOfInternalMergedName() {
         val state = RuntimeDownloadState().withPipelineStateForUiTest(
             DownloadTaskState(
                 stage = DownloadStage.Completed,
@@ -428,7 +428,7 @@ class DownloadUiBridgeTest {
 
         assertTrue(meta.contains("4.0 KB / 4.0 KB"))
         assertTrue(meta.contains("App 私有目录"))
-        assertTrue(meta.contains("导出默认自动改名"))
+        assertTrue(meta.contains("导出名：标题-时间，重名加序号"))
         assertFalse(meta.contains("merged-136-140.mp4"))
     }
 
