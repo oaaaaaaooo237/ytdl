@@ -628,7 +628,9 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("\"ytdl-history-status-badge\""))
         assertTrue(source.contains("\"ytdl-history-format-badge\""))
         assertTrue(source.contains("verticalArrangement = Arrangement.SpaceBetween"))
-        assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 26.dp)"))
+        assertTrue(source.contains("defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)"))
+        assertTrue(source.contains("private val CardPillBadgeMinWidth = 64.dp"))
+        assertTrue(source.contains("private val CardPillBadgeMinHeight = 30.dp"))
         assertTrue(source.contains("HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty())"))
     }
 
@@ -846,7 +848,12 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("\"ytdl-queue-status-badge\""))
         assertTrue(source.contains("\"ytdl-queue-format-badge\""))
         assertTrue(source.contains("verticalArrangement = Arrangement.SpaceBetween"))
-        assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 26.dp)"))
+        assertTrue(source.contains("defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)"))
+        assertTrue(source.contains("private val CardPillBadgeMinWidth = 64.dp"))
+        assertTrue(source.contains("private val CardPillBadgeMinHeight = 30.dp"))
+        assertTrue(source.contains("style = MaterialTheme.typography.labelMedium"))
+        assertFalse(source.contains("\"下载失败\", \"已取消\" -> palette.downloadAccent"))
+        assertTrue(source.contains("\"下载失败\" -> HistoryFailureRed"))
     }
 
     @Test

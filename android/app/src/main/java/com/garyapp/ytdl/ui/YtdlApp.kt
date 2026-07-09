@@ -148,6 +148,8 @@ private const val HistoryThumbnailPlaceholderTag = "ytdl-history-thumbnail-place
 private const val HistoryThumbnailTargetPx = 160
 private const val HistoryThumbnailCacheMaxItems = 64
 private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
+private val CardPillBadgeMinWidth = 64.dp
+private val CardPillBadgeMinHeight = 30.dp
 private val BottomBarGestureBuffer = 32.dp
 private val SettingsAppearanceBottomBuffer = 96.dp
 
@@ -2089,7 +2091,8 @@ private fun queueCardAccent(
 ): Color {
     return when (state.downloadStatus) {
         "下载完成" -> palette.successGreen
-        "下载失败", "已取消" -> palette.downloadAccent
+        "下载失败" -> HistoryFailureRed
+        "已取消" -> palette.downloadAccent
         else -> palette.queueAccent
     }
 }
@@ -2847,14 +2850,14 @@ private fun CardPillBadge(
     ) {
         Box(
             modifier = Modifier
-                .defaultMinSize(minWidth = 56.dp, minHeight = 26.dp)
-                .padding(horizontal = 7.dp, vertical = 4.dp),
+                .defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)
+                .padding(horizontal = 9.dp, vertical = 5.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text,
                 color = accent,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
             )
         }

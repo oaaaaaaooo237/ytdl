@@ -99,11 +99,14 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - `26-history-reference-after-nav-fix.png`
 - `27-settings-reference-after-nav-fix.png`
 - `28-settings-reference-appearance-buffer-after-nav-fix.png`
+- `29-queue-badge-size-fix.png`
+- `30-history-badge-size-fix.png`
 
 观察：
 
 - 五页底部导航已显示 vector 图标；选中态不再只是小字符背景。
 - 设置页滚动后，外观配色卡、`基准图配色`、`Codex 风格` 和 `颜色方案` 行均能完整露出在底部导航上方，前台点击更稳定。
+- 用户复核后再次微调历史/队列右侧徽标：状态徽标和分辨率徽标统一为 `64dp x 30dp` 最小尺寸并使用 `labelMedium`；历史页前台截图显示 `完成` 在右上角为绿色、`失败` 在右上角为红色，分辨率在右下角且与状态徽标尺寸一致。队列空态前台截图确认未误伤空态；真实进行中队列徽标仍待后续真实下载窗口截图。
 - 当前仍未满足 M11：还缺真实下载进行中队列截图，队列页仍偏空态，格式页空态过稀，历史页动作仍偏文字工具条，部分历史缩略图在修复后截图中仍短暂显示占位渐变，需后续复核。
 
 ## 边界

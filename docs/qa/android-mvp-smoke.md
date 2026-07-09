@@ -1413,6 +1413,21 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - `02-history-status-resolution-badges.png`
 - `02-history-status-resolution-badges.xml`
 
+用户随后复核指出状态徽标不能因新增分辨率徽标而缩小；右侧应形成上方状态、下方分辨率的对角信息组。代码已统一历史/队列右侧 `CardPillBadge` 最小尺寸为 `64dp x 30dp` 并使用 `labelMedium`，失败状态统一使用固定红色而不是 Codex/主题下载强调色。新鲜验证为：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.queueCardSourceRendersDedicatedFormatBadge
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+```
+
+结果均为 `BUILD SUCCESSFUL`。当前 APK 已重新安装，Computer Use 前台复核历史页：`完成`/`失败` 状态徽标保持右上角且不再缩小，`完成` 为绿色、`失败` 为红色，分辨率徽标在右下角并与状态徽标同尺寸。未触发新的 YouTube 网络请求；队列页当前无真实运行任务，右侧徽标的真实进行中前台截图仍留到后续 M11 下载窗口补齐。截图追加保存于 `docs/qa/android-visual-fidelity-20260709-m11/`：
+
+- `29-queue-badge-size-fix.png`
+- `30-history-badge-size-fix.png`
+
 ### 2026-07-09 M11 视觉一致性审计与首轮修复
 
 本轮开始执行 Continuation Task M11，不触发新的 YouTube 网络请求。已基于 `docs/android-gui-reference-v3.png` 创建截图审计目录：
