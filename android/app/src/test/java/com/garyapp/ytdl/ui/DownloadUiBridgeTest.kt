@@ -12,6 +12,9 @@ import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
+import com.garyapp.ytdl.core.settings.AppearanceSettings
+import com.garyapp.ytdl.ui.theme.ytdlAppPaletteForPreset
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -620,7 +623,12 @@ class DownloadUiBridgeTest {
 
         assertTrue(historyEntityFields.contains("thumbnailUrl"))
         assertTrue(historyUiFields.contains("thumbnailUrl"))
+        assertTrue(historyUiFields.contains("formatBadge"))
         assertTrue(source.contains("ytdl-history-thumbnail-image"))
+        assertTrue(source.contains("\"ytdl-history-status-badge\""))
+        assertTrue(source.contains("\"ytdl-history-format-badge\""))
+        assertTrue(source.contains("verticalArrangement = Arrangement.SpaceBetween"))
+        assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 26.dp)"))
         assertTrue(source.contains("HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty())"))
     }
 
@@ -719,6 +727,126 @@ class DownloadUiBridgeTest {
         assertEquals(listOf("打开", "分享", "导出", "分享字幕", "导出字幕", "删除"), historyActionLabelsForUiTest(items[0]))
         assertFalse(items[1].meta.contains("独立字幕文件"))
         assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(items[1]))
+    }
+
+    @Test
+    fun historyMetaHidesLegacyInternalFormatIds() {
+        val legacyMerge = HistoryItemEntity.createSafe(
+            "旧合并记录",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "app-private://outputs/task-media/merged-137-140.mp4",
+            "视频 137 + 音频 140",
+            HistoryItemEntity.STATUS_COMPLETED,
+            100,
+            "",
+            "",
+            null,
+            1_000,
+            1_000,
+            1_000,
+        )
+        val legacyShorts = HistoryItemEntity.createSafe(
+            "旧 Shorts 记录",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "app-private://outputs/task-media/merged-136-140.mp4",
+            "视频 136 + 音频 140",
+            HistoryItemEntity.STATUS_COMPLETED,
+            100,
+            "",
+            "",
+            null,
+            2_000,
+            2_000,
+            2_000,
+        )
+        val legacyMultiSubtitle = HistoryItemEntity.createSafe(
+            "旧多字幕记录",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "app-private://outputs/task-media/merged-299-140.mp4",
+            "视频 299 + 音频 140 + 字幕 en.vtt, zh-Hans.vtt",
+            HistoryItemEntity.STATUS_COMPLETED,
+            100,
+            "",
+            "",
+            null,
+            3_000,
+            3_000,
+            3_000,
+        )
+
+        val items = historyUiItemsFromRows(listOf(legacyMerge, legacyShorts, legacyMultiSubtitle))
+        val item = items[0]
+        val shorts = items[1]
+        val multiSubtitle = items[2]
+
+        assertEquals("1080p", item.formatBadge)
+        assertFalse(item.meta.contains("1080p"))
+        assertTrue(item.meta.contains("视频+音频"))
+        assertTrue(item.meta.contains("原生合并"))
+        assertFalse(item.meta.contains("137"))
+        assertFalse(item.meta.contains("140"))
+        assertEquals("720p", shorts.formatBadge)
+        assertFalse(shorts.meta.contains("720p"))
+        assertFalse(shorts.meta.contains("136"))
+        assertFalse(shorts.meta.contains("140"))
+        assertEquals("1080p", multiSubtitle.formatBadge)
+        assertTrue(multiSubtitle.meta.contains("视频+音频"))
+        assertTrue(multiSubtitle.meta.contains("原生合并"))
+        assertFalse(multiSubtitle.meta.contains("299"))
+        assertFalse(multiSubtitle.meta.contains("140"))
+    }
+
+    @Test
+    fun historyFailureBadgeUsesRedAcrossColorPresets() {
+        val codexLight = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetCodex, darkTheme = false)
+        val codexDark = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetCodex, darkTheme = true)
+
+        assertEquals(Color(0xFFFF5B63), historyStatusBadgeAccentForUiTest("失败", codexLight))
+        assertEquals(Color(0xFFFF5B63), historyStatusBadgeAccentForUiTest("失败", codexDark))
+        assertFalse(historyStatusBadgeAccentForUiTest("失败", codexLight) == codexLight.downloadAccent)
+        assertFalse(historyStatusBadgeAccentForUiTest("失败", codexDark) == codexDark.downloadAccent)
+    }
+
+    @Test
+    fun queueFormatBadgeUsesActiveRequestResolutionInsteadOfHardcodedValue() {
+        val shortsRequest = DownloadRequest(
+            url = "https://youtube.com/shorts/QBwpO9f0oAw",
+            title = "短视频",
+            route = DownloadRoute.MergeRequired(videoFormatId = "136", audioFormatId = "140"),
+            formatSummary = "720p MP4 需原生合并",
+        )
+        val audioRequest = DownloadRequest(
+            url = "https://youtu.be/audio",
+            title = "音频",
+            route = DownloadRoute.AudioOnly(audioFormatId = "140"),
+            formatSummary = "音频 M4A 单文件",
+        )
+
+        assertEquals("720p", queueCardFormatBadgeForUiTest(RuntimeDownloadState(activeRequest = shortsRequest)))
+        assertEquals("", queueCardFormatBadgeForUiTest(RuntimeDownloadState(activeRequest = audioRequest)))
+    }
+
+    @Test
+    fun queueCardSourceRendersDedicatedFormatBadge() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("formatBadge = queueCardFormatBadge(state)"))
+        assertTrue(source.contains("\"ytdl-queue-status-badge\""))
+        assertTrue(source.contains("\"ytdl-queue-format-badge\""))
+        assertTrue(source.contains("verticalArrangement = Arrangement.SpaceBetween"))
+        assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 26.dp)"))
     }
 
     @Test

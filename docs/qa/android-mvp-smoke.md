@@ -1377,3 +1377,38 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 - `10-primary-open-player.png` / `10-primary-open-player.xml`
 
 Release gate 结论：当前 API37 模拟器前台 M9/T12 验收已补齐新主地址完整默认无字幕路径、当前 Shorts 样本、通知拒权可见状态、Gboard 直接弹出输入环境、格式兼容修复证据、队列/历史/打开链路，以及本轮新鲜单元测试、debug 打包和环境脚本验证。真实字幕下载仍按用户要求暂停；M10 真机验收、Play 签名、隐私政策 URL、Data safety 和商店素材仍是后续阶段，不属于本轮模拟器前台通过结论。
+
+### 2026-07-09 历史页隐藏内部格式编号
+
+用户复核指出：历史页 `视频 137 + 音频 140` 里的数字是 YouTube/yt-dlp 内部格式编号，只对调试和 QA 有意义，不应作为普通用户默认可见文案。
+用户进一步确认：下载队列和历史卡片应在每行下载框右下角显示分辨率；历史卡片右上角保留状态徽标，`完成` 为绿色、`失败` 为红色，状态徽标和分辨率徽标大小一致并上下对齐。
+
+本轮修正：
+
+- 新建下载请求会保存用户可读的格式摘要，例如 `1080p MP4 需原生合并`；历史落库默认使用该摘要，不再直接拼接内部 format id。
+- 已经写入数据库的旧历史记录在 UI 层兼容清洗：`视频 137 + 音频 140`、`视频 137 + 音频 251` 等旧摘要在历史页正文显示为 `视频+音频 · 原生合并`，内部编号仍保留在下载路线、输出文件名、测试断言和 QA 排障证据里。
+- 审计补丁覆盖旧多字幕摘要：`视频 299 + 音频 140 + 字幕 en.vtt, zh-Hans.vtt` 也会清洗为用户可读正文并推断 `1080p`，不会把 `299/140` 泄露到历史卡片正文。
+- 历史卡片新增独立 `formatBadge`：分辨率不再混在正文元信息里，而是显示在每张历史卡片右下角。旧 format id 仅作兼容推断，例如 `137/299` 映射为 `1080p`，`136` 映射为 `720p`；因此不是写死 `1080p`。
+- 历史卡片状态徽标与分辨率徽标同尺寸上下对齐：`完成` 在右上角显示绿色，`失败` 在右上角显示固定红色，分辨率在右下角显示；失败红色不再依赖 `downloadAccent`，避免 Codex 配色下变成蓝灰/浅蓝。
+- 队列真实任务卡也接入 `formatBadge`，从当前 `activeRequest.formatSummary` 或路线 format id 推断分辨率；音频-only 不显示分辨率。队列卡片右侧同样采用上状态、下分辨率的同尺寸徽标结构。当前没有新真实下载进行中，本轮不额外触发 YouTube 下载请求，队列右下角徽标以单元/源码测试覆盖，后续真实下载前台验收继续补截图。
+- 该修正不触发新的 YouTube 网络请求，不改变原生合并路线，也不修改历史输出文件。
+
+新鲜验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadHistoryRecorderTest.defaultHistoryFormatSummaryUsesUserReadableFormatDetails
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.download.DownloadHistoryRecorderTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyMetaHidesLegacyInternalFormatIds --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyFailureBadgeUsesRedAcrossColorPresets --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyModelAndCardSupportRealThumbnails --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.queueCardSourceRendersDedicatedFormatBadge --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.queueFormatBadgeUsesActiveRequestResolutionInsteadOfHardcodedValue
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+```
+
+结果：以上 focused 测试、相关测试组、全量 debug 单测和 debug 打包均 `BUILD SUCCESSFUL`。已重新安装当前 `app-debug.apk`，并按项目要求先完成 `node_repl` 最小 smoke 与 `sky.list_apps()` bootstrap，再用 Computer Use 在可见 API37 模拟器窗口打开历史页复核。前台历史页显示三条旧记录正文均为 `视频+音频 · 原生合并 · youtube · ...`，未再显示 `137`、`140` 或 `251`；每张历史卡片右上角显示状态徽标，右下角显示 `1080p` 分辨率徽标，其中失败记录的状态徽标为红色。测试另覆盖旧 Shorts `视频 136 + 音频 140` 会显示 `720p`，防止回退为写死 `1080p`。
+
+证据保存于 `docs/qa/android-computer-use-20260709-format-id-label/`：
+
+- `01-history-format-summary.png`
+- `01-history-format-summary.xml`
+- `02-history-status-resolution-badges.png`
+- `02-history-status-resolution-badges.xml`

@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -131,6 +132,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
+private val HistoryFailureRed = Color(0xFFFF5B63)
 
 private const val DefaultRuntimeMessage = "等待输入公开视频页面地址。"
 private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始下载。"
@@ -1783,6 +1785,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                     progress = progress,
                     status = queueCardStatus(state),
                     meta = queueCardMeta(state),
+                    formatBadge = queueCardFormatBadge(state),
                     stageItems = queueStageItems(state),
                     accent = queueCardAccent(state, palette),
                     actions = queueCardActions(state),
@@ -1801,6 +1804,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                 progress = QueueProgressPresentation(fraction = null, isIndeterminate = false),
                 status = "待开始",
                 meta = "这里不会显示假进度",
+                formatBadge = "",
                 stageItems = emptyList(),
                 accent = palette.queueAccent,
                 actions = emptyList(),
@@ -1943,6 +1947,10 @@ private fun queueCardMeta(state: RuntimeDownloadState): String {
 
 internal fun queueCardMetaForUiTest(state: RuntimeDownloadState): String = queueCardMeta(state)
 
+private fun queueCardFormatBadge(state: RuntimeDownloadState): String = formatResolutionBadgeForRequest(state.activeRequest)
+
+internal fun queueCardFormatBadgeForUiTest(state: RuntimeDownloadState): String = queueCardFormatBadge(state)
+
 private fun queueCardAccent(
     state: RuntimeDownloadState,
     palette: YtdlAppPalette = DefaultPalette,
@@ -2031,7 +2039,7 @@ private fun filterHistoryItems(
 ): List<HistoryUiItem> {
     val normalizedQuery = query.trim().lowercase(Locale.ROOT)
     return historyItems.filter { item ->
-        val searchable = listOf(item.title, item.meta, item.badge).joinToString(" ").lowercase(Locale.ROOT)
+        val searchable = listOf(item.title, item.meta, item.badge, item.formatBadge).joinToString(" ").lowercase(Locale.ROOT)
         val matchesQuery = normalizedQuery.isBlank() || searchable.contains(normalizedQuery)
         val matchesType = when (selectedFilterIndex) {
             1 -> !isAudioOnlyHistory(item)
@@ -2446,6 +2454,7 @@ private fun QueueCard(
     progress: QueueProgressPresentation,
     status: String,
     meta: String,
+    formatBadge: String,
     stageItems: List<QueueStageItem>,
     accent: Color,
     actions: List<String>,
@@ -2455,7 +2464,11 @@ private fun QueueCard(
 ) {
     val palette = LocalYtdlAppPalette.current
     AppCard(modifier = modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
             if (thumbnailBitmap != null) {
                 Image(
                     bitmap = thumbnailBitmap.asImageBitmap(),
@@ -2522,8 +2535,23 @@ private fun QueueCard(
                     }
                 }
             }
-            Surface(color = accent.copy(alpha = 0.12f), shape = CircleShape) {
-                Text(status, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), color = accent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                CardPillBadge(
+                    text = status,
+                    accent = accent,
+                    tag = "ytdl-queue-status-badge",
+                )
+                if (formatBadge.isNotBlank()) {
+                    CardPillBadge(
+                        text = formatBadge,
+                        accent = palette.formatAccent,
+                        tag = "ytdl-queue-format-badge",
+                    )
+                }
             }
         }
     }
@@ -2597,7 +2625,11 @@ private fun HistoryCard(
         onDispose { closeable.close() }
     }
     AppCard(modifier = modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
             if (thumbnailBitmap != null) {
                 Image(
                     bitmap = thumbnailBitmap!!.asImageBitmap(),
@@ -2618,12 +2650,7 @@ private fun HistoryCard(
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(item.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Surface(color = palette.successGreen.copy(alpha = 0.14f), shape = RoundedCornerShape(9.dp)) {
-                        Text(item.badge, color = palette.successGreen, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall)
-                    }
-                }
+                Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2652,6 +2679,72 @@ private fun HistoryCard(
                     }
                 }
             }
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                CardPillBadge(
+                    text = item.badge,
+                    accent = historyStatusBadgeAccent(item, palette),
+                    tag = "ytdl-history-status-badge",
+                )
+                if (item.formatBadge.isNotBlank()) {
+                    CardPillBadge(
+                        text = item.formatBadge,
+                        accent = palette.formatAccent,
+                        tag = "ytdl-history-format-badge",
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun CardPillBadge(
+    text: String,
+    accent: Color,
+    tag: String,
+) {
+    Surface(
+        color = accent.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.testTag(tag),
+    ) {
+        Box(
+            modifier = Modifier
+                .defaultMinSize(minWidth = 56.dp, minHeight = 26.dp)
+                .padding(horizontal = 7.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text,
+                color = accent,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+private fun historyStatusBadgeAccent(
+    item: HistoryUiItem,
+    palette: YtdlAppPalette,
+): Color = historyStatusBadgeAccent(item.badge, palette)
+
+internal fun historyStatusBadgeAccentForUiTest(
+    badge: String,
+    palette: YtdlAppPalette,
+): Color = historyStatusBadgeAccent(badge, palette)
+
+private fun historyStatusBadgeAccent(
+    badge: String,
+    palette: YtdlAppPalette,
+): Color {
+    return when (badge) {
+        "完成" -> palette.successGreen
+        "失败", "取消" -> HistoryFailureRed
+        else -> palette.neutralText
     }
 }

@@ -152,6 +152,25 @@ class DownloadHistoryRecorderTest {
     }
 
     @Test
+    fun defaultHistoryFormatSummaryUsesUserReadableFormatDetails() {
+        val output = temp.newFile("merged-137-140.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 48_000L },
+        )
+        val completed = DownloadTaskState.waiting(mergeRequest(title = "合并视频")).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed).isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals("1080p MP4 需原生合并", row.formatSummary)
+        assertTrue("history summary should not expose video format id", !row.formatSummary.orEmpty().contains("137"))
+        assertTrue("history summary should not expose audio format id", !row.formatSummary.orEmpty().contains("140"))
+    }
+
+    @Test
     fun rejectsSensitiveThumbnailUrlPartsBeforeHistoryPersistence() {
         val output = temp.newFile("completed-with-sensitive-thumb.mp4").apply { writeText("media") }
         val recorder = DownloadHistoryRecorder(
@@ -277,6 +296,51 @@ class DownloadHistoryRecorderTest {
                 selectedVideoFormatId = "18",
             ),
             selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+    }
+
+    private fun mergeRequest(title: String): DownloadRequest {
+        return DownloadRequest.fromAnalysis(
+            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            analysis = VideoAnalysis(
+                title = title,
+                durationSeconds = 60,
+                thumbnailUrl = null,
+                formats = listOf(
+                    VideoFormat(
+                        id = "137",
+                        ext = "mp4",
+                        height = 1080,
+                        label = "1080p",
+                        hasVideo = true,
+                        hasAudio = false,
+                        mergeRequired = true,
+                        isSupported = true,
+                        videoCodec = "avc1",
+                        audioCodec = "none",
+                    ),
+                    VideoFormat(
+                        id = "140",
+                        ext = "m4a",
+                        height = null,
+                        label = "音频",
+                        hasVideo = false,
+                        hasAudio = true,
+                        mergeRequired = false,
+                        isSupported = true,
+                        videoCodec = "none",
+                        audioCodec = "mp4a",
+                    ),
+                ),
+                subtitles = emptyList(),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
         ).getOrThrow()
     }
 

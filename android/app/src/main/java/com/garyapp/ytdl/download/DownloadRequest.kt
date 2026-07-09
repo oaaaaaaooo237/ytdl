@@ -5,6 +5,7 @@ import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.ui.FormatMode
 import com.garyapp.ytdl.ui.FormatSelection
+import com.garyapp.ytdl.ui.formatSelectionSummary
 
 data class DownloadRequest(
     val url: String,
@@ -13,6 +14,7 @@ data class DownloadRequest(
     val thumbnailUrl: String? = null,
     val selectedSubtitles: List<SubtitleInfo> = emptyList(),
     val cookiesPath: String? = null,
+    val formatSummary: String = "",
 ) {
     companion object {
         fun fromAnalysis(
@@ -33,6 +35,11 @@ data class DownloadRequest(
                     url = url.trim(),
                     title = analysis.title,
                     route = route,
+                    formatSummary = historyFormatSummary(
+                        analysis = analysis,
+                        selection = selection,
+                        selectedSubtitles = selectedSubtitles,
+                    ),
                     thumbnailUrl = analysis.thumbnailUrl,
                     selectedSubtitles = selectedSubtitles,
                     cookiesPath = cookiesPath,
@@ -94,6 +101,16 @@ data class DownloadRequest(
                     throw DownloadRequestException("所选字幕必须来自当前分析结果。")
                 }
             }
+        }
+
+        private fun historyFormatSummary(
+            analysis: VideoAnalysis,
+            selection: FormatSelection,
+            selectedSubtitles: List<SubtitleInfo>,
+        ): String {
+            val mediaSummary = formatSelectionSummary(analysis, selection)
+            if (selectedSubtitles.isEmpty()) return mediaSummary
+            return "$mediaSummary · 独立字幕文件"
         }
 
         private fun VideoAnalysis.requireFormat(formatId: String?, label: String): VideoFormat {

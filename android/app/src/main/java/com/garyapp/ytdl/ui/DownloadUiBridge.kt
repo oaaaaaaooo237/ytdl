@@ -10,6 +10,7 @@ import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
+import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import java.io.File
 import java.net.URLDecoder
@@ -52,6 +53,7 @@ data class HistoryUiItem(
     val completedAt: Long,
     val thumbnailUrl: String? = null,
     val subtitleOutputUris: List<String> = emptyList(),
+    val formatBadge: String = "",
 ) {
     val hasOutput: Boolean
         get() = outputUri.startsWith("app-private://outputs/") &&
@@ -74,6 +76,7 @@ fun historyUiItemsFromRows(rows: List<HistoryItemEntity>): List<HistoryUiItem> {
             completedAt = row.completedAt,
             thumbnailUrl = row.thumbnailUrl?.takeIf { it.isNotBlank() },
             subtitleOutputUris = historySubtitleOutputUris(row.subtitleOutputUris),
+            formatBadge = formatResolutionBadgeForSummary(row.formatSummary.orEmpty()),
         )
     }
 }
@@ -111,7 +114,10 @@ fun prepareTemporaryCookiesForDownload(
 private fun historyMeta(row: HistoryItemEntity): String {
     val hasSubtitleOutputs = historySubtitleOutputUris(row.subtitleOutputUris).isNotEmpty()
     val parts = listOfNotNull(
-        row.formatSummary?.takeIf { it.isNotBlank() },
+        row.formatSummary
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::userVisibleFormatSummaryLabel)
+            ?.takeIf { it.isNotBlank() },
         row.sourceCategory?.takeIf { it.isNotBlank() },
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
         row.outputUri?.takeIf { it.isNotBlank() }?.let {
@@ -126,6 +132,87 @@ private fun historyMeta(row: HistoryItemEntity): String {
         row.errorSummary?.takeIf { it.isNotBlank() },
     )
     return redactHistoryUiText(parts.joinToString(" · ")).ifBlank { "本地记录" }
+}
+
+internal fun userVisibleFormatSummaryLabel(formatSummary: String): String {
+    val normalized = formatSummary.trim()
+    Regex("""^视频\s*(\S+)\s*(?:\+\s*)?音频\s*\S+(?:\s*\+\s*字幕\s+.+)?$""")
+        .matchEntire(normalized)
+        ?.let { return "视频+音频 · 原生合并" }
+
+    return when {
+        Regex("""^格式\s+(\S+)$""").matchEntire(normalized) != null -> {
+            "单文件格式"
+        }
+        Regex("""^仅视频\s+(\S+)$""").matchEntire(normalized) != null -> {
+            "仅视频"
+        }
+        Regex("""^仅音频\s+\S+$""").matches(normalized) -> "仅音频"
+        else -> removeResolutionFromFormatMeta(normalized)
+    }
+}
+
+private fun removeResolutionFromFormatMeta(value: String): String {
+    return value
+        .replace(Regex("""(?i)(^| · )\d{3,4}p(?:\d{2})?\s*"""), "$1")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+        .trim('·')
+        .trim()
+}
+
+internal fun formatResolutionBadgeForRequest(request: DownloadRequest?): String {
+    if (request == null) return ""
+    formatResolutionBadgeForSummary(request.formatSummary).takeIf { it.isNotBlank() }?.let { return it }
+    return when (val route = request.route) {
+        is DownloadRoute.DirectSingleFile -> legacyVideoResolutionLabel(route.formatId)
+        is DownloadRoute.VideoOnly -> legacyVideoResolutionLabel(route.videoFormatId)
+        is DownloadRoute.MergeRequired -> legacyVideoResolutionLabel(route.videoFormatId)
+        is DownloadRoute.AudioOnly -> null
+    }.orEmpty()
+}
+
+private fun formatResolutionBadgeForSummary(formatSummary: String): String {
+    val normalized = formatSummary.trim()
+    formatResolutionLabelFromSummary(normalized)?.let { return it }
+    Regex("""^视频\s*(\S+)\s*(?:\+\s*)?音频\s*\S+(?:\s*\+\s*字幕\s+.+)?$""")
+        .matchEntire(normalized)
+        ?.groupValues
+        ?.get(1)
+        ?.let(::legacyVideoResolutionLabel)
+        ?.let { return it }
+    Regex("""^格式\s+(\S+)$""")
+        .matchEntire(normalized)
+        ?.groupValues
+        ?.get(1)
+        ?.let(::legacyVideoResolutionLabel)
+        ?.let { return it }
+    Regex("""^仅视频\s+(\S+)$""")
+        .matchEntire(normalized)
+        ?.groupValues
+        ?.get(1)
+        ?.let(::legacyVideoResolutionLabel)
+        ?.let { return it }
+    return ""
+}
+
+private fun formatResolutionLabelFromSummary(formatSummary: String): String? {
+    val match = Regex("""(?i)\b(\d{3,4})p(?:\d{2})?\b""").find(formatSummary) ?: return null
+    return match.value.lowercase(Locale.ROOT)
+}
+
+private fun legacyVideoResolutionLabel(formatId: String): String? {
+    return when (formatId.trim()) {
+        "313", "401" -> "2160p"
+        "271", "400" -> "1440p"
+        "137", "248", "299", "303", "399" -> "1080p"
+        "136", "247", "298", "302", "398", "22" -> "720p"
+        "135", "244", "397" -> "480p"
+        "134", "243", "396", "18" -> "360p"
+        "133", "242", "395" -> "240p"
+        "160", "278", "394" -> "144p"
+        else -> null
+    }
 }
 
 private fun historySubtitleOutputUris(value: String?): List<String> {

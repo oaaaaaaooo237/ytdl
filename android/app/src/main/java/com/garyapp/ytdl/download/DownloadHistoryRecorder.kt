@@ -8,7 +8,7 @@ class DownloadHistoryRecorder(
 ) {
     fun recordTerminal(
         state: DownloadTaskState,
-        formatSummary: String = state.request?.historyFormatSummary().orEmpty(),
+        formatSummary: String = state.request?.userVisibleHistoryFormatSummary().orEmpty(),
     ): Result<Long> {
         return runCatching {
             when (state.stage) {
@@ -36,7 +36,9 @@ fun applyHistoryRecordingResult(
     return state.failed(DownloadFailureMessages.historyWriteFailed())
 }
 
-private fun DownloadRequest.historyFormatSummary(): String {
+private fun DownloadRequest.userVisibleHistoryFormatSummary(): String {
+    formatSummary.takeIf { it.isNotBlank() }?.let { return it }
+
     val routeSummary = when (val currentRoute = route) {
         is DownloadRoute.DirectSingleFile -> "格式 ${currentRoute.formatId}"
         is DownloadRoute.VideoOnly -> "仅视频 ${currentRoute.videoFormatId}"
