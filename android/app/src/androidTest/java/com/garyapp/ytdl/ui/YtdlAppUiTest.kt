@@ -12,6 +12,8 @@ import androidx.test.uiautomator.Until
 import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
+import com.garyapp.ytdl.RealYoutubeTestGate
+import com.garyapp.ytdl.RealYoutubeTestUrls
 import com.garyapp.ytdl.storage.ExportController
 import java.io.File
 import org.junit.After
@@ -112,19 +114,21 @@ class YtdlAppUiTest {
 
     @Test
     fun downloadPageRunsRealAnalyzeAndDownloadFlow() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         runRealAnalyzePreviewAndDownloadFlow(
-            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            url = RealYoutubeTestUrls.PRIMARY_VIDEO,
             screenshotPrefix = "",
-            expectedTitleText = "Jalen Brunson",
+            expectedTitleText = null,
             completeDownloadAndHistory = true,
         )
     }
 
     @Test
     fun downloadPageCanCancelRunningForegroundTask() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         startRealDownloadFromDownloadPage(
-            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
-            expectedTitleText = "Jalen Brunson",
+            url = RealYoutubeTestUrls.PRIMARY_VIDEO,
+            expectedTitleText = null,
         )
 
         tapTag("ytdl-tab-queue")
@@ -141,10 +145,11 @@ class YtdlAppUiTest {
 
     @Test
     fun notificationActionCanCancelRunningForegroundTask() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         grantNotificationPermissionIfRuntimeRequired()
         startRealDownloadFromDownloadPage(
-            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
-            expectedTitleText = "Jalen Brunson",
+            url = RealYoutubeTestUrls.PRIMARY_VIDEO,
+            expectedTitleText = null,
         )
 
         val cancelRequestedAt = System.currentTimeMillis()
@@ -155,6 +160,7 @@ class YtdlAppUiTest {
 
     @Test
     fun notificationPermissionDeniedStillShowsInAppProgress() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         revokeNotificationPermissionIfRuntimeRequired()
         openAppToDownloadPage()
 
@@ -165,8 +171,8 @@ class YtdlAppUiTest {
 
             tapTag("ytdl-tab-download")
             startRealDownloadFromDownloadPage(
-                url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
-                expectedTitleText = "Jalen Brunson",
+                url = RealYoutubeTestUrls.PRIMARY_VIDEO,
+                expectedTitleText = null,
             )
 
             tapTag("ytdl-tab-queue")
@@ -191,10 +197,11 @@ class YtdlAppUiTest {
 
     @Test
     fun shortsUrlRunsRealAnalyzePreviewAndDownloadFlow() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         runRealAnalyzePreviewAndDownloadFlow(
-            url = "https://www.youtube.com/shorts/QBwpO9f0oAw",
+            url = RealYoutubeTestUrls.SHORTS,
             screenshotPrefix = "shorts-",
-            expectedTitleText = "Luka and Jalen",
+            expectedTitleText = null,
             completeDownloadAndHistory = false,
         )
     }
@@ -513,7 +520,7 @@ class YtdlAppUiTest {
                 "video",
                 "",
                 "视频+音频 · 缩略图测试",
-                "https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg?token=secret",
+                "https://i.ytimg.com/vi/${RealYoutubeTestUrls.PRIMARY_VIDEO_ID}/hqdefault.jpg?token=secret",
                 HistoryItemEntity.STATUS_COMPLETED,
                 100,
                 "",

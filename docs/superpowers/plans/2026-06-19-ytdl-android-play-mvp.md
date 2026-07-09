@@ -15,7 +15,13 @@
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1` before starting Android work in each session.
 - Keep `AGENTS.md` and `.qa-android-env/` ignored and uncommitted.
 - Do not edit Windows GUI/source files unless a task explicitly says so.
-- Use test URL for full-flow verification: `https://www.youtube.com/watch?v=tkxzMEfp49Q`.
+- Use current real test URLs for full-flow verification:
+  - primary normal video: `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`
+  - backup normal video: `https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW`
+  - Shorts sample: `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf`
+  - old `tkxzMEfp49Q` / `QBwpO9f0oAw` URLs are historical evidence only.
+- Real YouTube connected tests are skipped by default; run them only as single targeted checks with `-Pandroid.testInstrumentationRunnerArguments.realYoutube=true`. Real subtitle download remains paused unless the user explicitly restores it, and then also requires `-Pandroid.testInstrumentationRunnerArguments.realYoutubeSubtitle=true`.
+- Keep 429-safe spacing for real YouTube requests: at least 10 minutes between analysis/short samples, at least 30 minutes between full downloads, and stop YouTube real requests for the day if 429 appears.
 - Do not mark a task complete until its tests and required real runtime check have fresh output.
 - UI fidelity is a hard requirement, not a loose theme hint: final Android screens must visually match `docs/android-gui-reference-v3.png` as closely as the native Android runtime allows, including the five-page composition, bottom navigation, card density, accent colors, top safe area, queue scrolling, and progress presentation.
 - The Settings page must include an appearance/color section modeled after Codex-style appearance settings: mode selection plus color preset selection. The default preset remains `reference_v3`; a `codex` preset must be available.
@@ -118,7 +124,7 @@
 - [ ] Ensure startup performs no network or parser update check.
 - [ ] Add Kotlin format mapping tests for supported/unsupported resolutions and merge-required labeling.
 - [ ] Verify `.\gradlew.bat :app:testDebugUnitTest` and `.\gradlew.bat :app:assembleDebug`.
-- [ ] Real check: run an instrumentation or debug helper against `https://www.youtube.com/watch?v=tkxzMEfp49Q` on API37 and confirm non-empty title/formats.
+- [ ] Real check: run a targeted instrumentation or debug helper against `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` on API37 with `realYoutube=true` and confirm non-empty title/formats.
 - [ ] Commit with message `android: bridge yt-dlp analysis`.
 
 ### Task 4.5: Five-Page Visible GUI Shell
@@ -240,8 +246,8 @@
 - [ ] Run Python/shared tests if changed: `.\.venv\Scripts\python.exe -m pytest`.
 - [ ] Run Android unit tests: `cd android; .\gradlew.bat :app:testDebugUnitTest`.
 - [ ] Run Android build: `cd android; .\gradlew.bat :app:assembleDebug`.
-- [ ] Run connected tests: `cd android; .\gradlew.bat :app:connectedDebugAndroidTest`.
-- [ ] Use Computer Use or equivalent real emulator control on API37 to complete: launch app, input `https://www.youtube.com/watch?v=tkxzMEfp49Q`, analyze, choose a supported format, start download, observe real queue progress, complete, inspect history, export/open file.
+- [ ] Run connected tests: `cd android; .\gradlew.bat :app:connectedDebugAndroidTest`. This should not trigger real YouTube by default; run real network checks separately and with spacing.
+- [ ] Use Computer Use or equivalent real emulator control on API37 to complete: launch app, input `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`, analyze, choose a supported format, start download, observe real queue progress, complete, inspect history, export/open file.
 - [ ] Save evidence to `docs/qa/android-mvp-smoke.md`, including commands, timestamps, emulator name, app version, output path, and known gaps.
 - [ ] Commit with message `android: document MVP smoke evidence`.
 - [ ] Push `feature/android-play-mvp-1`.
@@ -493,13 +499,13 @@ Checkboxes before this section are historical scope inventory and must not be us
 **Steps:**
 - [ ] Install the current APK on `ytdl_api37_play_x86_64`.
 - [ ] Use Computer Use in the foreground visible emulator window; URL input must mimic a real phone by focusing the field, allowing the Android system keyboard to appear, and entering text through that visible keyboard. Do not rely on candidate replacement, autocomplete, handwriting overlays, Gboard menus, background adb/script writes, or background-only automation.
-- [ ] Input `https://www.youtube.com/watch?v=tkxzMEfp49Q`.
+- [ ] Input `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`.
 - [ ] Analyze and confirm title, duration, thumbnail state, and real supported format rows.
 - [ ] Select a merge-required high-resolution `视频+音频` option.
 - [ ] Start download and observe queue states for video download, audio download, merge, and completion.
 - [ ] Exercise separate subtitle-file output on a short fixture or a URL/subtitle case that the app can legally process; subtitle embed/burn remains MVP2 scope.
 - [ ] Inspect history, output summary, export/open behavior, settings parser/media status, and privacy/cookies boundary text.
-- [ ] Run one Shorts compatibility sample with `https://www.youtube.com/shorts/QBwpO9f0oAw` for analysis and a short download path, without duplicating every normal-video assertion.
+- [ ] Run one Shorts compatibility sample with `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf` for analysis and a short download path, without duplicating every normal-video assertion.
 - [ ] Save screenshots and command/test outputs in `docs/qa/android-mvp-smoke.md`.
 
 **Acceptance:** This is the first point where the Android MVP can be called accepted. Earlier unit, instrumentation, adb, UIAutomator, or screenshot checks are necessary evidence but not final acceptance.
@@ -567,7 +573,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 - [ ] Connect Xiaomi 14 or equivalent `arm64-v8a` phone with USB debugging enabled and verify `adb devices -l` shows a physical device model, not only `emulator-*`.
 - [ ] Install the current `android/app/build/outputs/apk/debug/app-debug.apk` on the physical device.
 - [ ] Launch the app and verify the five pages render without cutouts, clipping, bottom-nav overlap, or unreadable status/navigation bars.
-- [ ] Run the required URL `https://www.youtube.com/watch?v=tkxzMEfp49Q` through real GUI analysis, 1080p-or-best-supported video+audio format selection, real download, native merge, queue completion, and history landing.
+- [ ] Run the current primary normal video URL `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` through real GUI analysis, 1080p-or-best-supported video+audio format selection, real download, native merge, queue completion, and history landing.
 - [ ] Verify device-specific behavior that the emulator cannot prove: notification visibility/permission behavior, background download survival, app-private output open/export, share sheet appearance without sending data, and storage permission denial recovery.
 - [ ] 字幕下载测试当前暂停；不要选择字幕或触发字幕文件下载。只在用户明确恢复后，再验证 "merged video+audio file plus separate subtitle file"。
 - [ ] Record device model, Android version, ABI, build fingerprint if available, screenshots, output file sizes, and observed gaps in `docs/qa/android-mvp-smoke.md`.
@@ -586,4 +592,4 @@ After each task commit:
 
 ## Completion Gate
 
-The Android MVP is not complete until Task 9 passes with fresh evidence. Passing unit tests alone is not enough; the final gate requires real emulator GUI operation with `https://www.youtube.com/watch?v=tkxzMEfp49Q`.
+The Android MVP is not complete until Task 9 passes with fresh evidence. Passing unit tests alone is not enough; the final gate requires real emulator GUI operation with the current primary normal video URL `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`, plus the current Shorts sample when spacing allows.

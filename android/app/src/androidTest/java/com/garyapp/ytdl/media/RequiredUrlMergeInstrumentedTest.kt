@@ -7,6 +7,8 @@ import android.os.Build
 import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.garyapp.ytdl.RealYoutubeTestGate
+import com.garyapp.ytdl.RealYoutubeTestUrls
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.garyapp.ytdl.core.ytdlp.DownloadFormatRole
@@ -22,6 +24,7 @@ import org.junit.runner.RunWith
 class RequiredUrlMergeInstrumentedTest {
     @Test
     fun analyzesDownloadsSplitStreamsAndMergesRequiredUrlIntoMp4() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         assertEquals("T8D must run on API37.", 37, Build.VERSION.SDK_INT)
         startPythonIfNeeded()
 
@@ -32,7 +35,7 @@ class RequiredUrlMergeInstrumentedTest {
         }
         val downloadDir = File(workspace, "downloads").apply { mkdirs() }
         val outputRoot = File(workspace, "outputs").apply { mkdirs() }
-        val outputFile = File(outputRoot, "tkxzMEfp49Q-merged.mp4")
+        val outputFile = File(outputRoot, "${RealYoutubeTestUrls.PRIMARY_VIDEO_ID}-merged.mp4")
 
         val bridge = YtdlpBridge()
         val analysisResult = bridge.analyze(RequiredUrl)
@@ -179,6 +182,6 @@ class RequiredUrlMergeInstrumentedTest {
     )
 
     private companion object {
-        private const val RequiredUrl = "https://www.youtube.com/watch?v=tkxzMEfp49Q"
+        private const val RequiredUrl = RealYoutubeTestUrls.PRIMARY_VIDEO
     }
 }

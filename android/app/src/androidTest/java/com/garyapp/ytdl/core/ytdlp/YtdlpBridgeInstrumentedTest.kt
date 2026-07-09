@@ -6,6 +6,8 @@ import android.util.Log
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import androidx.test.core.app.ApplicationProvider
+import com.garyapp.ytdl.RealYoutubeTestGate
+import com.garyapp.ytdl.RealYoutubeTestUrls
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,11 +16,12 @@ import java.io.File
 class YtdlpBridgeInstrumentedTest {
     @Test
     fun analyzesRequiredYoutubeSmokeUrl() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(androidx.test.core.app.ApplicationProvider.getApplicationContext()))
         }
 
-        val result = YtdlpBridge().analyze("https://www.youtube.com/watch?v=tkxzMEfp49Q")
+        val result = YtdlpBridge().analyze(RealYoutubeTestUrls.PRIMARY_VIDEO)
 
         assertTrue(result.exceptionOrNull()?.message.orEmpty(), result.isSuccess)
         val analysis = result.getOrThrow()
@@ -33,12 +36,13 @@ class YtdlpBridgeInstrumentedTest {
 
     @Test
     fun analyzesRequiredYoutubeShortsSmokeUrl() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(ApplicationProvider.getApplicationContext()))
         }
 
         val startedAt = System.currentTimeMillis()
-        val result = YtdlpBridge().analyze("https://www.youtube.com/shorts/QBwpO9f0oAw")
+        val result = YtdlpBridge().analyze(RealYoutubeTestUrls.SHORTS)
         val elapsedMs = System.currentTimeMillis() - startedAt
 
         assertTrue(result.exceptionOrNull()?.message.orEmpty(), result.isSuccess)
@@ -52,6 +56,7 @@ class YtdlpBridgeInstrumentedTest {
 
     @Test
     fun downloadsRequiredYoutubeSmokeUrlWithRealProgress() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(ApplicationProvider.getApplicationContext()))
         }
@@ -64,7 +69,7 @@ class YtdlpBridgeInstrumentedTest {
         val progressValues = mutableListOf<Double>()
 
         val result = YtdlpBridge().downloadSingleFile(
-            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            url = RealYoutubeTestUrls.PRIMARY_VIDEO,
             outputDirectory = outputDir,
             listener = object : DownloadProgressListener {
                 override fun onProgress(progress: DownloadProgress) {
@@ -91,12 +96,13 @@ class YtdlpBridgeInstrumentedTest {
 
     @Test
     fun downloadsRequiredYoutubeSmokeUrlSplitFormats() {
+        RealYoutubeTestGate.assumeRealYoutubeEnabled()
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(ApplicationProvider.getApplicationContext()))
         }
 
         val bridge = YtdlpBridge()
-        val analysisResult = bridge.analyze("https://www.youtube.com/watch?v=tkxzMEfp49Q")
+        val analysisResult = bridge.analyze(RealYoutubeTestUrls.PRIMARY_VIDEO)
         assertTrue(analysisResult.exceptionOrNull()?.message.orEmpty(), analysisResult.isSuccess)
 
         val analysis = analysisResult.getOrThrow()
@@ -110,7 +116,7 @@ class YtdlpBridgeInstrumentedTest {
         }
 
         val videoResult = bridge.downloadFormat(
-            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            url = RealYoutubeTestUrls.PRIMARY_VIDEO,
             outputDirectory = outputDir,
             formatId = videoFormat.id,
             role = DownloadFormatRole.Video,
@@ -118,7 +124,7 @@ class YtdlpBridgeInstrumentedTest {
         assertTrue(videoResult.exceptionOrNull()?.message.orEmpty(), videoResult.isSuccess)
 
         val audioResult = bridge.downloadFormat(
-            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            url = RealYoutubeTestUrls.PRIMARY_VIDEO,
             outputDirectory = outputDir,
             formatId = audioFormat.id,
             role = DownloadFormatRole.Audio,

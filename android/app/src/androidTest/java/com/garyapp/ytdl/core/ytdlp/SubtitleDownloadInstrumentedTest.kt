@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.garyapp.ytdl.RealYoutubeTestGate
+import com.garyapp.ytdl.RealYoutubeTestUrls
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,14 +16,16 @@ import java.io.File
 class SubtitleDownloadInstrumentedTest {
     @Test
     fun analyzesAndDownloadsOneAvailableSubtitleOrReportsNone() {
+        RealYoutubeTestGate.assumeRealSubtitleDownloadEnabled()
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(ApplicationProvider.getApplicationContext()))
         }
 
         val bridge = YtdlpBridge()
         val candidates = listOf(
-            "https://www.youtube.com/watch?v=tkxzMEfp49Q",
-            "https://www.youtube.com/shorts/oXFad1nt6v0",
+            RealYoutubeTestUrls.PRIMARY_VIDEO,
+            RealYoutubeTestUrls.SECONDARY_VIDEO,
+            RealYoutubeTestUrls.SHORTS,
         )
 
         val analyzed = candidates.map { url ->

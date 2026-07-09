@@ -12,8 +12,10 @@
 - 实现计划：`docs/superpowers/plans/2026-06-19-ytdl-android-play-mvp.md`
 - GUI 基准图：`docs/android-gui-reference-v3.png`
 - 固定真实测试地址：
-  - 普通视频：`https://www.youtube.com/watch?v=tkxzMEfp49Q`
-  - Shorts：`https://www.youtube.com/shorts/QBwpO9f0oAw`
+  - 普通视频主路径：`https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`
+  - 普通视频备用：`https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW`
+  - Shorts 兼容抽样：`https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf`
+  - 旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据，不再作为后续默认测试地址。
 
 ## 硬性验收规则
 
@@ -22,12 +24,13 @@
 3. `pytest`、Gradle unit test、instrumentation test 是前置证据，不等于用户可用性验收。
 4. 下载进度必须来自真实 yt-dlp 下载事件或真实前台服务状态；静态百分比、演示队列、mock 进度不得算通过。
 5. 当前 APK 安装到模拟器并重新操作后才算新鲜证据。代码变更后，受影响功能的旧截图和旧测试结论自动变为待重测。
-6. 对 `tkxzMEfp49Q` 的后续测试顺序必须是：真实分析 -> 分离视频/音频下载能力 -> MediaProcessor 合并能力 -> GUI 绑定 -> 前台可视下载/合并/队列/历史/导出/通知全流程。2026-07-07 起，真实字幕文件下载测试暂停，防止继续触发 YouTube 429；恢复前不得选择字幕或运行字幕下载探针。
-7. 每项测试完成后必须记录命令、设备、时间、输出摘要、截图或文件证据、是否通过、遗留问题。
-8. 前台可视测试输入 URL 必须拟真真机：用 Computer Use 点击输入框后，允许并优先使用 Android 系统软键盘完成输入。不得通过候选词替换、自动补全、手写浮层、Gboard 菜单、后台 adb/脚本直接写入等方式替代用户可见输入；每次必须截图或观察确认完整 URL 已真实进入输入框且未被改写。只有软键盘遮挡关键控件、改写输入或导致流程无法继续时，才记录为测试阻断。剪贴板、硬件键和可访问性写入只能作为非验收辅助或明确标注的环境诊断证据，不能替代最终前台验收。
-9. “通过验收”只用于 T12 全量 MVP 回归通过之后；T0-T11 只能标记为“已测/能力层通过/绑定层通过/待重测”，不能替代最终用户验收。
-10. 最终验收必须是全面但不重复的前台可视测试：一个主路径覆盖五个页面和核心功能矩阵，另用 Shorts 做兼容抽样；不得用多轮相同按钮点击替代未覆盖功能。
-11. 测试报告必须明确区分“能力层通过”“GUI 绑定通过”“全量可视验收通过”。任何一层未通过时，后续层只能记录为未开始或阻断，不能写成通过。
+6. 对当前普通视频主路径的后续测试顺序必须是：真实分析 -> 分离视频/音频下载能力 -> MediaProcessor 合并能力 -> GUI 绑定 -> 前台可视下载/合并/队列/历史/导出/通知全流程。2026-07-07 起，真实字幕文件下载测试暂停，防止继续触发 YouTube 429；恢复前不得选择字幕或运行字幕下载探针。
+7. 真实 YouTube 测试必须节流：connected 真实网络测试默认跳过，只有显式传入 `realYoutube=true` 才能单项运行；真实字幕下载还必须额外传入 `realYoutubeSubtitle=true`。同一会话不要连续跑三条真实下载；分析/短抽样间隔至少 10 分钟，完整下载间隔至少 30 分钟；如出现 429，当天停止 YouTube 真实请求，改做单元/构建/非网络 UI 验证。
+8. 每项测试完成后必须记录命令、设备、时间、输出摘要、截图或文件证据、是否通过、遗留问题。
+9. 前台可视测试输入 URL 必须拟真真机：用 Computer Use 点击输入框后，允许并优先使用 Android 系统软键盘完成输入。不得通过候选词替换、自动补全、手写浮层、Gboard 菜单、后台 adb/脚本直接写入等方式替代用户可见输入；每次必须截图或观察确认完整 URL 已真实进入输入框且未被改写。只有软键盘遮挡关键控件、改写输入或导致流程无法继续时，才记录为测试阻断。剪贴板、硬件键和可访问性写入只能作为非验收辅助或明确标注的环境诊断证据，不能替代最终前台验收。
+10. “通过验收”只用于 T12 全量 MVP 回归通过之后；T0-T11 只能标记为“已测/能力层通过/绑定层通过/待重测”，不能替代最终用户验收。
+11. 最终验收必须是全面但不重复的前台可视测试：一个主路径覆盖五个页面和核心功能矩阵，另用 Shorts 做兼容抽样；不得用多轮相同按钮点击替代未覆盖功能。
+12. 测试报告必须明确区分“能力层通过”“GUI 绑定通过”“全量可视验收通过”。任何一层未通过时，后续层只能记录为未开始或阻断，不能写成通过。
 
 ## 测试分层与去重原则
 
@@ -72,7 +75,7 @@ T12 只跑一条完整主路径，但必须覆盖下表；每个项目只在最�
 | 设置页 | 保存位置、cookies 引用、解析器版本、原生媒体处理能力、MVP2 字幕烧录说明、通知权限、隐私/授权说明、外观配色状态 | 不读取或展示 cookies 内容 |
 | 前台服务/通知 | 下载过程中用户可感知，通知拒绝时 app 内仍显示状态 | 不把系统通知截图作为唯一证据 |
 | 隐私与失败 | 至少覆盖空 URL、非法 URL、网络/处理失败中的一个真实错误展示；日志/界面不泄露敏感内容 | 不在最终可视主路径里故意触发所有错误；当前不主动触发字幕下载失败 |
-| Shorts 兼容 | 用 `https://www.youtube.com/shorts/QBwpO9f0oAw` 做分析和短下载抽样 | 不重复主路径的历史/设置/导出全套断言 |
+| Shorts 兼容 | 用 `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf` 做分析和短下载抽样 | 不重复主路径的历史/设置/导出全套断言 |
 
 通过 T12 前，以下能力必须已经有新鲜证据：T1 构建与单元测试、T2 真实分析、T8C 指定格式分离下载、T8D required URL 核心合并、T6/T7 GUI 绑定、T9/T10/T11 历史/隐私/失败恢复。T8E 独立字幕文件输出已有历史能力证据，但 2026-07-07 起真实字幕下载复测暂停，不作为当前 T12 阻塞项。
 
@@ -125,7 +128,7 @@ cd android
 
 ### T2 真实 URL 分析核心测试
 
-目的：证明 `tkxzMEfp49Q` 能通过 Android APK 内置 Chaquopy + yt-dlp 真实分析，不只是桌面脚本或假数据。
+目的：证明当前普通视频主路径能通过 Android APK 内置 Chaquopy + yt-dlp 真实分析，不只是桌面脚本或假数据。
 
 执行时机：Task 4 及每次改动 `YtdlpBridge`、Python bridge、yt-dlp 版本、URL 策略后。
 
@@ -133,7 +136,7 @@ cd android
 
 ```powershell
 cd android
-.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.YtdlpBridgeInstrumentedTest#analyzesRequiredYoutubeSmokeUrl"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.YtdlpBridgeInstrumentedTest#analyzesRequiredYoutubeSmokeUrl" "-Pandroid.testInstrumentationRunnerArguments.realYoutube=true"
 ```
 
 通过标准：
@@ -150,18 +153,18 @@ cd android
 
 目的：先在 GUI 绑定前证明 Android APK 内部可以真实下载文件，并捕获真实进度事件。
 
-执行时机：Task 5 开始阶段，必须早于 GUI 下载按钮验收。
+执行时机：Task 5 开始阶段，必须早于 GUI 下载按钮验收；真实下载命令必须按 429 节流规则单项运行。
 
 命令：
 
 ```powershell
 cd android
-.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.YtdlpBridgeInstrumentedTest#downloadsRequiredYoutubeSmokeUrlWithRealProgress"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.YtdlpBridgeInstrumentedTest#downloadsRequiredYoutubeSmokeUrlWithRealProgress" "-Pandroid.testInstrumentationRunnerArguments.realYoutube=true"
 ```
 
 通过标准：
 
-- 使用 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。
+- 使用当前普通视频主路径 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`。
 - 输出文件位于 app 私有 cache/files 目录。
 - 文件存在且大小大于 0。
 - 输出 `YTDL_DOWNLOAD_PROGRESS` 多次，至少包含下载中进度和完成进度。
@@ -194,7 +197,7 @@ cd android
 1. 安装当前 debug APK。
 2. 前台打开 `ytdl_api37_play_x86_64` 模拟器窗口。
 3. 用 Computer Use 点击下载页 URL 输入框。
-4. 输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。
+4. 输入 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`。
 5. 点击 `分析`。
 6. 等待真实分析完成。
 7. 截图记录标题、时长、格式摘要、缩略图状态和错误提示状态。
@@ -589,7 +592,7 @@ cd android
 
 1. 启动模拟器。
 2. 安装当前 APK。
-3. 用 Computer Use 在前台可见模拟器窗口点击 URL 输入框，弹出 Android 系统软键盘，并通过软键盘输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`；确认输入未被候选词、自动补全或手写浮层改写。
+3. 用 Computer Use 在前台可见模拟器窗口点击 URL 输入框，弹出 Android 系统软键盘，并通过软键盘输入 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；确认输入未被候选词、自动补全或手写浮层改写。
 4. 分析。
 5. 选择真实支持的高分辨率 `视频+音频` 选项，且该选项需要分离视频流和音频流。
 6. 开始下载。
@@ -598,7 +601,7 @@ cd android
 9. 导出或打开合并后的输出文件。
 10. 检查设置页、cookies 边界、MediaProcessor/MVP2 字幕能力说明、通知权限和隐私说明。
 11. 触发一个可恢复失败场景并确认中文错误可读且不泄露敏感信息。
-12. 用 `https://www.youtube.com/shorts/QBwpO9f0oAw` 做一次 Shorts 分析和短下载抽样。
+12. 用 `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf` 做一次 Shorts 分析和短下载抽样。
 
 通过标准：
 
@@ -614,27 +617,29 @@ cd android
 
 2026-07-06 更新：Computer Use 能激活并操作 `Android Emulator - ytdl_api37_play_x86_64:5554`。五页前台导航截图已落盘到 `docs/qa/android-computer-use-20260706/`；同日真实下载复测已观察到阶段进度、历史完成记录、系统导出文件和播放画面。随后 API35 补做格式选择保持和合并后中间流清理回归；用户确认可删除旧测试视频后，API37 顶层旧 `.mp4` 导出已清理，最新 APK 已重新安装并启动。API37 最新 APK 复测中，修复前音频格式 `140` 曾报 `HTTP Error 403: Forbidden`，修复后已以前台可见窗口完成 `tkxzMEfp49Q` 真实分析、1080p 下载、音频段重试、原生合并、队列完成和历史落库。最新输入口径已补完整主路径阶段证据：系统软键盘输入非法 URL 触发中文错误且无入队；系统软键盘逐键输入完整必测 URL 后真实分析成功，格式页按当前视频真实支持情况灰显 2160p/1440p 并显示 1080p 原生合并选项；随后继续到真实 1080p 视频+音频下载，保存了视频阶段进度、最终完成态、历史落库和设置页边界复核。M9.4 又以前台可见窗口补齐测试历史确认删除和合成 `cookies.txt` 文件选择，证据位于 `docs/qa/android-computer-use-20260706-m9-privacy-actions/`。M9.5 又以前台可见窗口补齐缺失本地输出时历史页动作恢复提示，证据位于 `docs/qa/android-computer-use-20260706-m9-missing-output/`。M9.6 又以前台可见窗口补齐系统导出保存器取消后的恢复提示，证据位于 `docs/qa/android-computer-use-20260706-m9-export-cancel/`。M9.7 又以前台可见窗口补齐通知允许状态下的系统通知可见、展开和通知栏取消路径，证据位于 `docs/qa/android-computer-use-20260706-m9-notification/`。M9.8 已通过 focused JVM 单测、API37 connected 迁移测试，并以前台可见窗口点击合成字幕历史记录的“分享字幕”“导出字幕”；分享面板和系统保存器打开且未显示私有路径或敏感串，证据位于 `docs/qa/android-computer-use-20260706-m9-8-subtitle-output/`。T12 仍不能写成最终通过，因为真实带字幕下载前台串联、更多失败恢复路径和一次 coherent 全量主路径仍未完成。M9.2/M9.3 证据位于 `docs/qa/android-computer-use-20260706-m9-required-url/` 和 `docs/qa/android-computer-use-20260706-m9-download-mainpath/`；其中 M9.3 保存证据不包含独立的音频下载中或原生合并进行中截图/XML。
 
+2026-07-09 更新：按用户要求，真实字幕下载测试继续暂停，不再运行字幕下载或字幕探针。API37 已在左侧完整可见竖屏窗口中用 Computer Use 跑通旧地址默认无字幕主路径：完整 Gboard 软键盘逐键输入 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，真实分析成功，1080p `视频+音频` 进入分离视频流、分离音频流和原生合并；队列页观察到视频阶段真实字节进度逐步推进、音频阶段切换、最终 `下载视频✓ / 下载音频✓ / 原生合并✓` 和 `100%`。历史页出现最新完成记录，打开后系统播放器可播放合并后视频。格式页补充清晰证据：`2160p/1440p` 灰显为当前视频未提供，`1080p` 标记需原生合并，`360p` 标记单文件，字幕行显示有可选字幕但当前不下载。证据位于 `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/`。用户随后将后续真实测试地址替换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`；后续不再用旧地址作为默认验收输入。这补强了默认无字幕主路径，但 T12 最终通过仍需按新地址集和 429 节流规则做 release gate 汇总。
+
 ## 当前总状态
 
 | 测试项 | 状态 | 说明 |
 | --- | --- | --- |
 | T0 环境与设备前置 | 已测 | 本轮已跑 `android_env.ps1` |
 | T1 构建与单元测试 | 已测 | `testDebugUnitTest`、`assembleDebug` 已通过 |
-| T2 真实 URL 分析核心 | 已测 | API37 真实分析 `tkxzMEfp49Q`，formats=27，highest=1080 |
-| T3 真实单文件下载核心 | 已测 | API37 真实下载 `download-tkxzMEfp49Q.mp4`，44,556,988 字节，69 个进度事件 |
+| T2 真实 URL 分析核心 | 旧地址历史已测/新地址待节流复测 | API37 历史证据为 `tkxzMEfp49Q`；后续默认改用 `lcFR2mFSmSs`，真实 connected 网络测试需显式 `realYoutube=true` |
+| T3 真实单文件下载核心 | 旧地址历史已测/新地址待节流复测 | API37 历史证据为 `download-tkxzMEfp49Q.mp4`；后续真实下载按 30 分钟间隔单项运行 |
 | T4 前台 GUI 分析 | Computer Use 软键盘主路径分析已测/视觉密度已修复 | 2026-07-05 已用 Computer Use 在前台可见 API37 模拟器中完成冷启动输入、空 URL 失败提示、必测 URL 分析、Shorts 分析，预览图/标题/时长/格式摘要可见；2026-07-06 M9.2 已用系统软键盘逐键输入完整必测 URL，真实分析后标题、预览图、时长 `08:02` 和 `1080p MP4 需原生合并` 摘要可见；同日已补截图级视觉密度修复 |
-| T5 前台 GUI 下载进度 | Computer Use 软键盘主路径真实下载已测/取消 connected 已测 | 2026-07-05 已观察真实队列进度从 7% 到 99%、进入音频下载、合并并完成；Shorts 也完成真实下载和合并；2026-07-06 最新 API37 APK 复测观察到 1080p 任务约 `4%`、`15%`、`31%`、视频/音频完成后 `66%` 合并、最终 `100%`；M9.3 沿用 M9.2 的系统软键盘输入证据继续到下载，保存证据显示视频阶段约 `18.0 MB`、`156.7 MB`、`293.0 MB` 的真实推进和最终 `100%` 完成态；M9.3 未保存独立的音频下载中或原生合并进行中截图/XML；队列取消、系统通知栏取消和通知拒权后 app 内队列进度均已通过 API37 connected 真实链路进入 canceled；大文件输出已迁到 `filesDir/gui-downloads`，避免 cache 配额清理 |
-| T6 格式真实可选项 | Computer Use 软键盘主路径后已测/视觉密度已修复 | M7 已用单元测试和审计覆盖当前分析结果格式绑定；2026-07-06 M9.2 在系统软键盘输入完整必测 URL 并真实分析后，前台格式页确认 2160p/1440p 灰显并显示不可用原因，1080p 可选并标记 `需原生合并`，下载页摘要同步为 1080p；同日已补空态格式页静态截图审计 |
+| T5 前台 GUI 下载进度 | Computer Use 软键盘主路径真实下载已测/取消 connected 已测 | 2026-07-05 已观察真实队列进度从 7% 到 99%、进入音频下载、合并并完成；Shorts 也完成真实下载和合并；2026-07-06 最新 API37 APK 复测观察到 1080p 任务约 `4%`、`15%`、`31%`、视频/音频完成后 `66%` 合并、最终 `100%`；M9.3 沿用 M9.2 的系统软键盘输入证据继续到下载，保存证据显示视频阶段约 `18.0 MB`、`156.7 MB`、`293.0 MB` 的真实推进和最终 `100%` 完成态；2026-07-09 又在完整可见竖屏 API37 窗口中观察到视频阶段 `33.2 MB`、`111.6 MB`、`215.7 MB` 逐步推进，随后切到音频阶段并完成原生合并；未选择字幕时队列不显示 `字幕文件` 阶段；队列取消、系统通知栏取消和通知拒权后 app 内队列进度均已通过 API37 connected 真实链路进入 canceled；大文件输出已迁到 `filesDir/gui-downloads`，避免 cache 配额清理 |
+| T6 格式真实可选项 | Computer Use 软键盘主路径后已测/视觉密度已修复 | M7 已用单元测试和审计覆盖当前分析结果格式绑定；2026-07-06 M9.2 在系统软键盘输入完整必测 URL 并真实分析后，前台格式页确认 2160p/1440p 灰显并显示不可用原因，1080p 可选并标记 `需原生合并`，下载页摘要同步为 1080p；2026-07-09 复核保存清晰证据，确认 2160p/1440p 当前视频未提供，1080p/720p/480p/240p 需原生合并，360p 为单文件，字幕行有可选字幕但当前不下载；同日已补空态格式页静态截图审计 |
 | T7 前台服务通知 | 通知允许前台已测/拒权 connected 已测 | M6 已完成 foreground service 声明、通知控制器、`DownloadService` 承载 pipeline 和核心状态模型；M9 前置补上队列页真实取消入口和通知取消 action；2026-07-05 队列页取消、系统通知栏展开后取消、通知拒权后 app 内队列阶段条可见均通过 API37 connected 真实链路，早取消 race 已修复；M9.7 已用 Computer Use 前台可见窗口证明通知允许状态下的 `YTDL 下载任务` 可见、可展开、可从通知栏取消；通知拒权仍留到最终 T12 前台统一复核 |
 | T8A MediaProcessor 合同与路线 | 已完成合同层 | 已定义合同、校验边界和原生 muxer 职责；真实合并在 T8B |
 | T8B 原生音视频合并能力 | 已测 | API37 instrumentation 已证明输出 MP4 含 1 条视频轨和 1 条音频轨 |
 | T8C yt-dlp 指定格式分离下载 | 已测 | API37 已真实下载 video-only format 394 与 audio-only format 139 两个文件 |
-| T8D required URL 核心合并 smoke | 已测/能力层通过 | API37 已用 `tkxzMEfp49Q` 完成分析、format 160/139 分离下载、原生合并和 track 检查；非 GUI/MVP 验收 |
+| T8D required URL 核心合并 smoke | 旧地址能力层通过/新地址待节流复测 | API37 已用 `tkxzMEfp49Q` 完成分析、format 160/139 分离下载、原生合并和 track 检查；后续默认改用 `lcFR2mFSmSs` |
 | T8E 独立字幕文件输出 | 能力层通过/历史导出绑定层已补/合成字幕历史前台已测 | API37 已下载 `tkxzMEfp49Q` 自动英文 `vtt` 字幕到 app 私有 cache；M9 前置补上格式页字幕开关和下载请求 `selectedSubtitles` 传递；M9.8 已补历史 `subtitleOutputUris`、Room v3 迁移、队列/历史“媒体文件 + 独立字幕文件”元信息和“分享字幕/导出字幕”动作测试；前台可见窗口已用合成小型字幕历史记录点击“分享字幕”“导出字幕”，系统分享面板和保存器均可打开且未显示私有路径；真实前台字幕下载串联仍待 T12 |
 | T9 历史保存导出 | 前台打开/导出写出/确认删除/合成字幕入口已测 | 2026-07-05 Computer Use 已确认普通视频与 Shorts 完成后历史页出现真实完成卡片；2026-07-06 前台复测已完成系统导出写出和历史打开播放；同日已补历史缩略图字段、Room 1->2 迁移后 DAO 读取验证和历史卡片真实缩略图加载辅助验证，截图见 `docs/qa/android-history-thumbnail-20260706/11-history-thumbnail.png`；M9.8 已补独立字幕文件历史保存和字幕分享/导出入口，并用合成小文件前台复核分享面板/保存器；分享面板仅打开未发送；M9.4 已用测试历史记录完成删除弹窗、取消保留和确认删除 |
 | T10 cookies 隐私边界 | 前台边界和文件选择已测 | cookies 只保存引用、临时文件终态删除、复制失败清理、拒绝原始 cookies 路径、设置/历史/日志/错误脱敏已覆盖；2026-07-05 设置页隐私边界和 cookies 文件选择器入口可见；M9.4 已用合成 `cookies.txt` 通过系统文件选择器完成前台选择，设置页仅显示安全文件名和“仅保存引用” |
 | T11 失败恢复 | 空 URL前台已测/软键盘非法 URL 已测/缺失输出前台已测/导出取消前台已测/通知栏取消前台已测/通知拒权 connected 已测/网络段重试已测/其余待测 | 失败文案和脱敏已覆盖；2026-07-05 冷启动流已验证空 URL 前台提示；2026-07-06 最新 APK 已用 Computer Use 前台点击系统软键盘输入非法文本 `avx`，显示中文错误且队列无真实任务；M9.5 已用合成缺失输出历史记录验证 `打开` / `分享` / `导出` 的历史页可见恢复提示；M9.6 已用合成小文件验证系统导出保存器取消后的历史页可见恢复提示；M9.7 已用真实任务验证通知栏取消后通知和 app 内状态均进入取消；通知拒权后 app 内进度可见已通过 connected 真实链路；2026-07-06 已覆盖音频段 `HTTP Error 403` 网络失败后只重试失败段并最终成功；仍需最终 coherent 主路径统一复核 |
-| T12 全量 MVP 回归 | 未完成 | `testDebugUnitTest`、`assembleDebug`、API37 connected `YtdlAppUiTest` 8/8 已覆盖普通下载、Shorts、队列取消、通知栏取消和通知拒权 app 内进度；Computer Use 已完成冷启动真实前台流程、五页导航截图、真实下载、阶段进度、历史、系统导出写出和打开播放；API35 已补做最新 APK 的格式选择保持和中间流清理回归；API37 最新 APK 已重新安装并完成真实 1080p 视频+音频下载、音频段重试、原生合并和历史落库；M9.1 已补系统软键盘非法 URL 失败恢复抽样；M9.2 已补系统软键盘完整必测 URL 输入后的真实分析和格式页确认；M9.3 已沿用该输入验收口径继续到真实下载、队列最终完成、历史和设置主路径阶段 smoke；M9.4 已补历史确认删除和 cookies 文件选择；M9.5 已补缺失输出恢复和未知百分比动态进度反馈；M9.6 已补导出取消恢复提示；M9.7 已补通知允许状态下的系统通知可见、展开和通知栏取消前台路径；M9.8 已补独立字幕文件用户可见闭环的单元/迁移证据和合成历史前台入口复核；但真实带字幕下载前台串联、更多失败恢复路径和一次 coherent 全量主路径仍未完成 |
+| T12 全量 MVP 回归 | 未完成 | `testDebugUnitTest`、`assembleDebug`、API37 connected `YtdlAppUiTest` 8/8 已覆盖普通下载、Shorts、队列取消、通知栏取消和通知拒权 app 内进度；Computer Use 已完成冷启动真实前台流程、五页导航截图、真实下载、阶段进度、历史、系统导出写出和打开播放；API35 已补做最新 APK 的格式选择保持和合并后中间流清理回归；API37 最新 APK 已重新安装并完成真实 1080p 视频+音频下载、音频段重试、原生合并和历史落库；M9.1 已补系统软键盘非法 URL 失败恢复抽样；M9.2 已补系统软键盘完整必测 URL 输入后的真实分析和格式页确认；M9.3 已沿用该输入验收口径继续到真实下载、队列最终完成、历史和设置主路径阶段 smoke；M9.4 已补历史确认删除和 cookies 文件选择；M9.5 已补缺失输出恢复和未知百分比动态进度反馈；M9.6 已补导出取消恢复提示；M9.7 已补通知允许状态下的系统通知可见、展开和通知栏取消前台路径；M9.8 已补独立字幕文件用户可见闭环的单元/迁移证据和合成历史前台入口复核；2026-07-09 已补默认无字幕 coherent 主路径的格式、队列完成、历史和设置证据；但最终 release gate 仍需汇总 Shorts 抽样、通知拒权前台复核、失败恢复覆盖和新鲜构建测试后才能写成通过 |
 
 ## 下一步推进顺序
 
@@ -644,6 +649,6 @@ cd android
 4. M7：绑定层通过/待前台重测；测试口径为 `DownloadGuiBindingTest` 覆盖当前 `VideoAnalysis` 格式选择、下载摘要防旧值、队列阶段文案、设置页 parser/media 标签、开始下载即时状态、模式卡真实选中态、格式详情真实摘要和无输出完成态防误报，并已通过审计。该状态不代表前台可见模拟器全流程通过。
 5. M8：已完成单元层实现并通过 2026-06-21 全量 `testDebugUnitTest` / `assembleDebug` 复核，APK 已在 API37 上安装并启动到 `MainActivity`；前台可见历史、导出、cookies 和失败恢复留到 M9/T12。
 6. M9 前置：已补外观配色设置持久化与即时应用、队列/通知取消、历史打开/分享/导出/删除、字幕独立文件选择绑定、重复下载唯一输出和历史相对 URI；全量单测、构建、connected 已通过。2026-07-05 Computer Use 已恢复并完成普通视频与 Shorts 的部分真实前台流程；同日队列页取消补强了早取消 race 和 Room `canceled` 历史写入，系统通知栏展开后取消也已有 connected 辅助证据。2026-07-06 已补前台真实下载、导出写出、打开播放、音频 403 重试和历史落库证据；剪贴板粘贴仍是 API37 测试摩擦点。
-7. M9/T12：继续完成 Computer Use 前台可见全真全量验收，重点补齐更多可恢复失败场景，并在最终 T12 做一次 coherent 全量主路径。2026-07-06 已证明系统软键盘可以完整输入必测 URL，并继续完成真实分析、格式页确认、真实下载、队列最终完成、历史和设置主路径阶段 smoke；M9.4 已补历史确认删除和 cookies 文件选择；M9.5 已补缺失本地输出的历史页恢复提示和未知百分比动态进度反馈；M9.6 已补系统导出保存器取消恢复提示；M9.7 已补通知允许状态下的系统通知可见、展开和通知栏取消前台路径；M9.8 已补独立字幕历史保存与字幕导出/分享绑定层，后续需在前台可见模拟器中实际点击字幕入口；后续不得回退到后台写入、硬件键或剪贴板输入。
+7. M9/T12：继续完成 Computer Use 前台可见全真全量验收，重点补齐更多可恢复失败场景，并在最终 T12 做一次 release gate 汇总。后续默认真实测试地址已替换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`，必须按 429 节流规则推进，不再密集重跑旧 `tkxzMEfp49Q`。2026-07-06 已证明系统软键盘可以完整输入旧必测 URL，并继续完成真实分析、格式页确认、真实下载、队列最终完成、历史和设置主路径阶段 smoke；M9.4 已补历史确认删除和 cookies 文件选择；M9.5 已补缺失本地输出的历史页恢复提示和未知百分比动态进度反馈；M9.6 已补系统导出保存器取消恢复提示；M9.7 已补通知允许状态下的系统通知可见、展开和通知栏取消前台路径；M9.8 已补独立字幕历史保存与字幕导出/分享绑定层；2026-07-09 已补默认无字幕主路径前台复核。真实字幕下载按用户要求暂停，后续不得回退到后台写入、硬件键、剪贴板输入或字幕探针。
 8. M10：等推进到后续第 7 项且真机已连接时，在小米14或同级 `arm64-v8a` 真机上验证通知、后台下载、打开/导出/分享、存储拒权恢复和真实 UI 适配；该阶段只做真机验收，不做正式 Google Play 商店交付。
 9. Google Play 商店交付：发布签名、商店列表、最终 Data safety 提交、隐私政策 URL 和商店截图不作为当前阶段任务。

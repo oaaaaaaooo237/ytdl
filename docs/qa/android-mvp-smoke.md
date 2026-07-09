@@ -10,6 +10,8 @@ Android Play MVP 尚未通过最终验收。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
+2026-07-09 测试地址替换：后续真实测试视频改为三条新地址，旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新默认集为普通视频主路径 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`、普通视频备用 `https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW`、Shorts 抽样 `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf`。为降低 429 风险，真实 connected 网络测试默认跳过，只有显式 `realYoutube=true` 才单项运行；真实字幕下载继续暂停，除非用户恢复并显式 `realYoutubeSubtitle=true`。真实分析/Shorts 抽样间隔至少 10 分钟，完整下载间隔至少 30 分钟；一旦出现 429，当天停止 YouTube 真实请求，改做单元、构建或非网络 UI 验证。
+
 ## 本轮已确认
 
 - 当前分支：`feature/android-play-mvp-1`
@@ -55,6 +57,17 @@ cd android
 - 五个底部页面导航和关键页面节点。
 - `https://www.youtube.com/watch?v=tkxzMEfp49Q` 的真实分析、1080p 格式选择、开始下载、队列完成、历史记录写入和 app-private 合并媒体 URI 检查。
 - `https://www.youtube.com/shorts/QBwpO9f0oAw` 的真实分析预览和格式应用抽样。
+
+上述 2026-06-21 connected 真实 URL 覆盖是历史证据。2026-07-09 起，后续 connected 真实网络用例已改为默认跳过，必须按新地址集和 429 节流规则显式单项运行。
+
+2026-07-09 测试地址替换验证：
+
+- 已运行 `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`，确认 API37 `emulator-5554` 在线、Gboard 软键盘环境可用。
+- 已运行 `cd android; .\gradlew.bat :app:compileDebugAndroidTestKotlin`，通过。
+- 已运行 `cd android; .\gradlew.bat :app:testDebugUnitTest`，通过。
+- 已运行 `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.YtdlpBridgeInstrumentedTest"`，在未传 `realYoutube=true` 时 4 个真实 YouTube 用例全部 `SKIPPED`，没有触发真实网络请求。
+- 已运行 `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.SubtitleDownloadInstrumentedTest"`，在未传 `realYoutubeSubtitle=true` 时字幕下载专项 `SKIPPED`，没有触发真实字幕下载。
+- 本次未对三条新地址做真实分析或真实下载，原因是用户要求注意测试间隔、防止 429；后续真实测试按新地址集、显式开关和节流规则单项推进。
 
 ## 已完成的能力/绑定层重点
 
@@ -1160,3 +1173,38 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 - T12 主路径继续覆盖真实分析、视频/音频分离下载、原生合并、队列、历史、导出、通知、设置和失败恢复。
 - 字幕相关只保留 UI/请求校验：无字幕时不可选择；有字幕时才可选择，但当前默认不选择。
 - 恢复字幕下载测试必须等用户明确同意。
+
+### 2026-07-09 API37 无字幕主路径前台复核
+
+本轮在左侧完整可见的 `Android Emulator - ytdl_api37_play_x86_64:5554` 中继续使用 Computer Use 前台操作当前 APK。模拟器状态为 `1080x2400 ROTATION_0`，URL 输入使用完整 Gboard 软键盘逐键输入，未使用 adb/剪贴板/硬件键写入。
+
+测试地址：`https://www.youtube.com/watch?v=tkxzMEfp49Q`。
+
+已观察到：
+
+- 完整软键盘输入后，辅助 UI 树确认输入框真实内容为完整 URL。
+- 真实分析成功，显示真实缩略图、标题 `Jalen Brunson 'Captain Clutch' Moments in Knicks Championship Season`、时长 `08:02` 和 `1080p MP4 需原生合并`。
+- 点击开始下载后，队列页真实进度从视频阶段逐步推进：`33.2 MB / 331.5 MB`、`111.6 MB / 331.5 MB`、`215.7 MB / 331.5 MB`，不是 0 直接跳 100。
+- 视频阶段完成后切到 `下载音频`；最终队列页显示 `下载视频✓ / 下载音频✓ / 原生合并✓`、`100%`、约 `339.2 MB / 339.2 MB`。
+- 本轮未选择字幕；队列页未显示 `字幕文件` 阶段，符合“只有选择字幕时才显示字幕阶段”的当前口径。
+- 历史页出现最新完成记录，显示真实缩略图、`视频299 + 音频140`、约 `339.2 MB`，并提供 `打开 / 分享 / 导出 / 删除`。
+- 点击历史页 `打开` 后，系统播放器可播放合并后视频。
+- 设置页可见默认保存位置、cookies 只保存引用、解析器版本、原生媒体处理能力、通知权限、隐私与授权说明、地址校验提示和外观颜色设置。
+- 格式页复核显示 `2160p/1440p` 为“当前视频未提供”，`1080p/720p/480p/240p` 标记“需原生合并”，`360p` 标记“单文件”；字幕行显示“有 1099 个字幕可选；当前不下载”，未进入字幕选择。
+
+证据目录：
+
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/01-format-supported-options.png`
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/01-format-supported-options.xml`
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/02-queue-complete-nosubtitle.png`
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/02-queue-complete-nosubtitle.xml`
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/03-history-completed-record.png`
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/03-history-completed-record.xml`
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/04-settings-boundaries.png`
+- `docs/qa/android-computer-use-20260709-mainpath-nosubtitle/04-settings-boundaries.xml`
+
+边界：
+
+- 本节证明当前 APK 的默认无字幕主路径已经用 Computer Use 前台可见方式跑通并补齐格式页、队列完成态、历史和设置证据。
+- 真实字幕下载仍按用户要求暂停，不作为本轮阻塞项；恢复必须等用户明确同意。
+- T12 仍需在最终 release gate 前汇总一次完整清单，确认 Shorts 兼容抽样、通知拒权前台复核、失败恢复覆盖和构建测试均为新鲜证据后，才能写成最终通过。
