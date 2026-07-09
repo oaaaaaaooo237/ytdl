@@ -9,6 +9,7 @@ param(
   [switch]$RunRealRequiredMerge,
   [switch]$RunRealShortsAnalyze,
   [switch]$RunRealSubtitleDownload,
+  [switch]$AllowRealSubtitleDownload,
   [switch]$ForceRealYoutube,
   [int]$AnalysisIntervalMinutes = 10,
   [int]$DownloadIntervalMinutes = 30
@@ -225,6 +226,9 @@ if ($RunRealRequiredMerge) {
 }
 
 if ($RunRealSubtitleDownload) {
+  if (!$AllowRealSubtitleDownload) {
+    throw "Real subtitle download is paused. Re-run with -AllowRealSubtitleDownload only after the user explicitly restores subtitle download testing."
+  }
   Assert-RealYoutubeInterval -State $state -PropertyName "lastSubtitleUtc" -MinimumMinutes $DownloadIntervalMinutes -Force:$ForceRealYoutube
   Mark-RealYoutubeRun -State $state -PropertyName "lastSubtitleUtc"
   Save-State -Path $StatePath -State $state

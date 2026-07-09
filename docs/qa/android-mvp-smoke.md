@@ -1,12 +1,12 @@
 # Android MVP Smoke 证据账本
 
-日期：2026-07-06
+日期：2026-07-09
 
 ## 当前结论
 
 Android Play MVP 尚未通过最终验收。
 
-截至 2026-07-06，Computer Use 已恢复，并已在 API37 前台可见模拟器窗口完成普通 YouTube 链接、Shorts 链接和一次冷启动串联流程的真实运行验证；截图级视觉密度审计也已完成一轮修复。队列页取消、系统通知栏取消和通知权限拒绝时 app 内进度仍可见均已补强到 API37 connected 真实链路。外部导出写出和历史打开播放已在 2026-07-06 前台复测通过。用户确认可删除旧测试视频后，API37 已重新安装最新 APK，并用前台可见窗口完成 `tkxzMEfp49Q` 的真实分析、1080p 视频+音频下载、音频 403 重试、原生合并、队列完成和历史落库复测。M9.1 已用系统软键盘完成非法 URL 的非破坏性失败恢复路径；M9.2 已用系统软键盘逐键输入完整 `https://www.youtube.com/watch?v=tkxzMEfp49Q`，并完成真实分析和格式页可选项确认；M9.3 已沿用该软键盘输入验收口径继续到真实 1080p 视频+音频下载，保存了视频阶段进度、最终完成态、历史落库和设置边界证据。M9.4 已用前台 Computer Use 完成历史测试记录删除确认路径，并用合成 `cookies.txt` 完成系统文件选择器和“仅保存引用”设置页复核。M9.5 已完成缺失本地输出时历史页 `打开` / `分享` / `导出` 的可见恢复提示，并把未知百分比的当前下载阶段改为动态进行中条。M9.6 已用 4 KB app-private 测试输出完成系统导出保存器取消后的前台恢复提示。M9.7 已补通知允许状态下的系统通知可见、展开和通知栏取消前台路径。更多失败恢复前台路径仍未完成；后续真机验收阶段也尚未开始。
+截至 2026-07-09，默认无字幕主路径已在旧地址上完成过前台可见阶段 smoke；真实测试地址已切换为新三条链接。新主地址 `lcFR2mFSmSs` 已完成一次受控 API37 connected 真实分析，证明 yt-dlp 当前可解析该地址；完整 GUI 下载、Shorts 抽样、通知拒权前台复核和最终 release gate 汇总仍未完成。真实字幕下载按用户要求暂停，不再作为默认 T12 阻塞项；后续真机验收阶段也尚未开始。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
@@ -70,7 +70,10 @@ cd android
 - 新增 `scripts/android_real_smoke.ps1` 作为辅助 smoke 入口；默认模式会跑环境、Android 单测、debug 打包和 connected 安全集，但不会触发真实 YouTube 网络请求。
 - 已运行 `powershell -ExecutionPolicy Bypass -File .\scripts\android_real_smoke.ps1`，结果通过：`android_env.ps1`、`:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:connectedDebugAndroidTest` 均 `BUILD SUCCESSFUL`；真实 YouTube 相关用例按默认规则 `SKIPPED`，脚本输出 `No real YouTube opt-in step was run.`。
 - 本轮发现并修复 connected 设置页外观测试的可见性假失败：`颜色方案`摘要行新增 `ytdl-settings-appearance-summary`，测试滚到摘要行后再断言颜色方案更新；已单独运行 `YtdlAppUiTest#settingsAppearanceColorPresetsAreVisibleAndSummaryUpdates`，结果 `BUILD SUCCESSFUL`。
-- 本次未对三条新地址做真实分析或真实下载，原因是用户要求注意测试间隔、防止 429；后续真实测试必须按新地址集、显式开关和节流规则单项推进。
+- 已运行 `powershell -ExecutionPolicy Bypass -File .\scripts\android_real_smoke.ps1 -SkipUnitTests -SkipAssemble -SkipConnectedSafe -RunRealAnalyze`，对新主地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` 完成一次 API37 connected 真实分析；输出 `YTDL_ANALYSIS_SMOKE sdk=37 device=sdk_gphone16k_x86_64 title=KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥 formats=27 highest=1920 subtitles=0`，测试 `BUILD SUCCESSFUL`。
+- 该真实分析已写入本地节流状态 `.qa-real-smoke/android-real-youtube-state.json`：`lastAnalysisUtc=2026-07-09T02:32:15.0384254Z`。后续至少 10 分钟内不再跑分析/Shorts；完整下载仍按 30 分钟间隔推进。
+- 已重新安装当前 `android/app/build/outputs/apk/debug/app-debug.apk` 到 API37，并启动到 `com.garyapp.ytdl/.MainActivity`；adb 辅助截图保存到 `docs/qa/android-computer-use-20260709-new-urls/00-adb-launch-current-apk.png`。这只证明当前 APK 可启动，不替代 Computer Use 前台可视验收。
+- 已验证字幕暂停硬拦截：运行 `scripts/android_real_smoke.ps1 -SkipUnitTests -SkipAssemble -SkipConnectedSafe -RunRealSubtitleDownload` 会在真实网络请求前以 `Real subtitle download is paused` 拒绝；只有用户明确恢复字幕真实测试后，才允许额外传入 `-AllowRealSubtitleDownload`。
 
 ## 已完成的能力/绑定层重点
 

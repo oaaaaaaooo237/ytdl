@@ -503,7 +503,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 - [ ] Analyze and confirm title, duration, thumbnail state, and real supported format rows.
 - [ ] Select a merge-required high-resolution `视频+音频` option.
 - [ ] Start download and observe queue states for video download, audio download, merge, and completion.
-- [ ] Exercise separate subtitle-file output on a short fixture or a URL/subtitle case that the app can legally process; subtitle embed/burn remains MVP2 scope.
+- [ ] Do not select subtitles while subtitle testing is paused. Verify only that subtitle UI follows the current analysis result: unavailable when the video has no subtitle file, selectable only when subtitles exist, and no `字幕文件` queue stage appears when subtitles are not selected.
 - [ ] Inspect history, output summary, export/open behavior, settings parser/media status, and privacy/cookies boundary text.
 - [ ] Run one Shorts compatibility sample with `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf` for analysis and a short download path, without duplicating every normal-video assertion.
 - [ ] Save screenshots and command/test outputs in `docs/qa/android-mvp-smoke.md`.
@@ -558,7 +558,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 **M9.10 temporary test boundary, 2026-07-07:** 用户要求暂时不测试下载字幕文件，防止再次触发 YouTube 429。后续下载测试默认不选择字幕，不运行真实字幕下载、轻量字幕探针或前台字幕下载流程；T12 主路径只覆盖真实分析、视频/音频分离下载、原生合并、队列、历史、导出、通知、设置和失败恢复。字幕相关只保留“无字幕不可选、有字幕才可选但默认不选”的 UI/请求校验，以及既有历史能力证据。恢复字幕下载测试必须等用户明确同意。
 
-**M9.11 smoke helper, 2026-07-09:** 按用户要求，后续真实测试地址已切换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`；旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新增 `scripts/android_real_smoke.ps1` 作为辅助验证入口，默认只运行环境、单测、打包和无真实 YouTube 请求的 connected 安全集；真实分析/下载必须显式开关并遵守 10 分钟分析间隔、30 分钟下载间隔，字幕真实下载继续暂停。2026-07-09 默认脚本已通过；connected 设置页颜色测试的可见性假失败已修复为滚到 `ytdl-settings-appearance-summary` 后再断言。
+**M9.11 smoke helper, 2026-07-09:** 按用户要求，后续真实测试地址已切换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`；旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新增 `scripts/android_real_smoke.ps1` 作为辅助验证入口，默认只运行环境、单测、打包和无真实 YouTube 请求的 connected 安全集；真实分析/下载必须显式开关并遵守 10 分钟分析间隔、30 分钟下载间隔，字幕真实下载继续暂停。字幕暂停期间即使传入 `-RunRealSubtitleDownload` 也会被脚本拒绝，除非用户明确恢复后额外传入 `-AllowRealSubtitleDownload`。2026-07-09 默认脚本已通过；connected 设置页颜色测试的可见性假失败已修复为滚到 `ytdl-settings-appearance-summary` 后再断言；新主地址真实分析单项已通过并写入节流状态。
 
 ### Continuation Task M10: Xiaomi 14 Real-Device Validation
 
