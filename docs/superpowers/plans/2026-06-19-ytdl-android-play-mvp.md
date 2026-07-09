@@ -596,6 +596,33 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 **Acceptance:** M10 is accepted only when a real Xiaomi 14 or equivalent `arm64-v8a` phone runs the GUI flow and records device-specific evidence. Do not attempt this task until a phone is connected; continue the current M9/T12 emulator and GUI-verification work first.
 
+### Continuation Task M11: Reference Visual Fidelity and Codex Appearance
+
+**Status:** 未开始；M9/T12 证明当前 GUI 可真实运行，但还不能证明五页静态视觉已经尽可能贴合 `docs/android-gui-reference-v3.png`，也不能证明 Codex 风格在前台截图层面对五页都一致生效。
+
+**Purpose:** Bring the implemented five-page Compose UI closer to the confirmed Android GUI reference while preserving the real data bindings, queue/history behavior, privacy boundaries, and Play-safe wording already accepted by M9/T12.
+
+**Files:**
+- Modify as needed: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt`
+- Modify as needed: `android/app/src/main/java/com/garyapp/ytdl/ui/theme/Theme.kt`
+- Modify/add focused tests under `android/app/src/test/java/com/garyapp/ytdl/ui/`
+- Update: `docs/qa/android-full-visual-test-plan.md`
+- Update: `docs/qa/android-mvp-smoke.md`
+- Create or update visual evidence under `docs/qa/android-visual-fidelity-*`
+
+**Steps:**
+- [ ] Create a focused visual-fidelity checklist from `docs/android-gui-reference-v3.png` covering five-page title hierarchy, card density, bottom navigation icon/pill behavior, format rows, queue grouping, history search/filter/actions, settings rows, safe areas, and scroll behavior.
+- [ ] Capture or reuse foreground screenshots for all five current pages with the keyboard dismissed; compare them against the checklist and record exact gaps before implementation.
+- [ ] Make only scoped UI refinements that preserve real state: do not add fake sample data, do not hide required privacy/legal text, do not remove unavailable-format reasons, and do not weaken download/queue/history functionality.
+- [ ] Verify both `基准图配色` and `Codex 风格` remain selectable, persisted, and visibly affect five-page accents; Codex colors must be consistent with the existing Codex preset rather than a new unrelated palette.
+- [ ] Add or adjust focused JVM/Compose/UI binding tests for any new stable visual contract that can be asserted without pixel snapshots.
+- [ ] Use Computer Use on the visible API37 emulator for the foreground visual smoke after changes. The smoke must include all five tabs and at least one page where the keyboard is dismissed so bottom navigation is fully visible.
+- [ ] Include at least one foreground queue-page capture while a real download task is actively running, not only an empty or completed queue. The capture must show real progress, speed or ETA when available, pause/cancel affordances, the bottom navigation, and safe-area behavior without overlap.
+- [ ] Run `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`, `cd android; .\gradlew.bat :app:testDebugUnitTest`, and `cd android; .\gradlew.bat :app:assembleDebug`.
+- [ ] Save screenshots/XML and document any remaining intentional deviations from the reference.
+
+**Acceptance:** M11 is accepted only when the current five-page UI has a screenshot-backed visual audit against `docs/android-gui-reference-v3.png`, Codex/reference appearance settings are verified at the foreground UI level, at least one real in-progress queue-page screenshot proves progress/speed-or-ETA/cancel affordances remain visible, focused tests pass, and any remaining mismatch is explicitly documented rather than silently treated as complete.
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.
@@ -606,4 +633,4 @@ After each task commit:
 
 ## Completion Gate
 
-The Android MVP is not complete until Task 9 passes with fresh evidence. Passing unit tests alone is not enough; the final gate requires real emulator GUI operation with the current primary normal video URL `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`, plus the current Shorts sample when spacing allows.
+The API37 emulator GUI release gate for M9/T12 passed on 2026-07-09 with fresh Computer Use evidence. The broader Android MVP goal remains open until the post-M9 requirements are also resolved: M11 visual fidelity/Codex appearance audit, M10 real-device validation when a Xiaomi 14 or equivalent `arm64-v8a` phone is connected, and the still-unstarted Play signing, privacy-policy URL, Data safety, and store-material decisions. Passing unit tests alone is never enough for a user-visible Android acceptance claim.

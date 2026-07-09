@@ -45,6 +45,7 @@ cookies.txt
 
 # Superpowers / git worktree isolation
 AGENTS.md
+.superpowers/
 .worktrees/
 worktrees/
 
