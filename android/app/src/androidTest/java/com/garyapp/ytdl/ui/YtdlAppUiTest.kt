@@ -444,6 +444,82 @@ class YtdlAppUiTest {
     }
 
     @Test
+    fun seedForegroundHistoryBadgeVisualRecordsWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("seedForegroundHistoryBadgeVisual") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        val root = File(context.filesDir, "gui-downloads")
+        val taskDir = File(root, "task-history-badge-visual").apply { mkdirs() }
+        val output = File(taskDir, "history-badge-visual.mp4").apply {
+            writeBytes(ByteArray(4096) { index -> (index % 251).toByte() })
+        }
+        historyDao.deleteByTitlePrefix("UITEST_BADGE_VISUAL_")
+        val now = System.currentTimeMillis()
+        val completedId = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                "UITEST_BADGE_VISUAL_COMPLETED_$now",
+                8,
+                "https",
+                "test-host",
+                "video",
+                ExportController.appPrivateOutputUri(output.absolutePath, root.absolutePath),
+                "720p MP4 · 视频+音频 · 前台视觉测试",
+                HistoryItemEntity.STATUS_COMPLETED,
+                100,
+                "",
+                "",
+                "",
+                now,
+                now,
+                now,
+            ),
+        )
+        val failedId = historyDao.insert(
+            HistoryItemEntity.createSafe(
+                "UITEST_BADGE_VISUAL_FAILED_$now",
+                8,
+                "https",
+                "test-host",
+                "video",
+                "",
+                "1080p MP4 · 视频+音频 · 前台视觉测试",
+                HistoryItemEntity.STATUS_FAILED,
+                42,
+                "",
+                "",
+                "前台视觉测试失败记录",
+                now + 1,
+                now + 1,
+                now + 1,
+            ),
+        )
+
+        assertTrue("必须插入完成徽标视觉记录", historyContains(completedId))
+        assertTrue("必须插入失败徽标视觉记录", historyContains(failedId))
+        assertTrue("必须创建小型 app-private 测试输出", output.isFile && output.length() == 4096L)
+    }
+
+    @Test
+    fun cleanupForegroundHistoryBadgeVisualRecordsWhenExplicitlyRequested() {
+        val args = InstrumentationRegistry.getArguments()
+        if (args.getString("cleanupForegroundHistoryBadgeVisual") != "true") {
+            return
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val historyDao = YtdlDatabaseProvider.get(context).historyDao()
+        historyDao.deleteByTitlePrefix("UITEST_BADGE_VISUAL_")
+        File(context.filesDir, "gui-downloads/task-history-badge-visual").deleteRecursively()
+
+        val remaining = historyDao.listRecent(100)
+            .filter { it.title.orEmpty().startsWith("UITEST_BADGE_VISUAL_") }
+        assertTrue("前台徽标视觉测试记录必须被精确清理", remaining.isEmpty())
+        assertTrue("前台徽标视觉测试文件夹必须被清理", !File(context.filesDir, "gui-downloads/task-history-badge-visual").exists())
+    }
+
+    @Test
     fun seedForegroundSubtitleOutputRecordWhenExplicitlyRequested() {
         val args = InstrumentationRegistry.getArguments()
         if (args.getString("seedForegroundSubtitleOutput") != "true") {

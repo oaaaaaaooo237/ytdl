@@ -242,6 +242,106 @@ private val HistoryTabIcon = tabIcon("HistoryTab") {
     close()
 }
 
+private val SearchIcon = tabIcon("Search") {
+    moveTo(10.5f, 5f)
+    lineTo(15.5f, 10f)
+    lineTo(10.5f, 15f)
+    lineTo(5.5f, 10f)
+    close()
+    moveTo(15f, 14f)
+    lineTo(20f, 19f)
+    lineTo(18.7f, 20.3f)
+    lineTo(13.7f, 15.3f)
+    close()
+}
+
+private val HistoryFilterIcon = tabIcon("HistoryFilter") {
+    moveTo(4f, 6f)
+    lineTo(20f, 6f)
+    lineTo(14f, 13f)
+    lineTo(14f, 18f)
+    lineTo(10f, 20f)
+    lineTo(10f, 13f)
+    close()
+}
+
+private val HistoryOpenIcon = tabIcon("HistoryOpen") {
+    moveTo(4f, 7f)
+    lineTo(10f, 7f)
+    lineTo(12f, 9f)
+    lineTo(20f, 9f)
+    lineTo(20f, 18f)
+    lineTo(4f, 18f)
+    close()
+    moveTo(6f, 11f)
+    lineTo(6f, 16f)
+    lineTo(18f, 16f)
+    lineTo(18f, 11f)
+    close()
+}
+
+private val HistoryShareIcon = tabIcon("HistoryShare") {
+    moveTo(18f, 5f)
+    lineTo(21f, 8f)
+    lineTo(18f, 11f)
+    lineTo(18f, 9f)
+    lineTo(12f, 9f)
+    lineTo(12f, 7f)
+    lineTo(18f, 7f)
+    close()
+    moveTo(6f, 10f)
+    lineTo(12f, 14f)
+    lineTo(18f, 10f)
+    lineTo(18f, 13f)
+    lineTo(12f, 17f)
+    lineTo(6f, 13f)
+    close()
+}
+
+private val HistoryExportIcon = tabIcon("HistoryExport") {
+    moveTo(11f, 4f)
+    lineTo(13f, 4f)
+    lineTo(13f, 12f)
+    lineTo(16f, 9f)
+    lineTo(17.4f, 10.4f)
+    lineTo(12f, 15.8f)
+    lineTo(6.6f, 10.4f)
+    lineTo(8f, 9f)
+    lineTo(11f, 12f)
+    close()
+    moveTo(5f, 18f)
+    lineTo(19f, 18f)
+    lineTo(19f, 20f)
+    lineTo(5f, 20f)
+    close()
+}
+
+private val HistoryDeleteIcon = tabIcon("HistoryDelete") {
+    moveTo(8f, 5f)
+    lineTo(16f, 5f)
+    lineTo(16f, 7f)
+    lineTo(20f, 7f)
+    lineTo(20f, 9f)
+    lineTo(18f, 9f)
+    lineTo(17f, 20f)
+    lineTo(7f, 20f)
+    lineTo(6f, 9f)
+    lineTo(4f, 9f)
+    lineTo(4f, 7f)
+    lineTo(8f, 7f)
+    close()
+    moveTo(9f, 10f)
+    lineTo(11f, 10f)
+    lineTo(11f, 18f)
+    lineTo(9f, 18f)
+    close()
+    moveTo(13f, 10f)
+    lineTo(15f, 10f)
+    lineTo(15f, 18f)
+    lineTo(13f, 18f)
+    close()
+}
+
 private val SettingsTabIcon = tabIcon("SettingsTab") {
     moveTo(10.5f, 3f)
     lineTo(13.5f, 3f)
@@ -2161,6 +2261,9 @@ internal fun appearanceSummaryForUiTest(settings: AppSettings): String {
 
 private val HistoryFilterOptions = listOf("全部", "视频", "音频")
 
+private fun nextHistoryFilterIndex(selectedFilterIndex: Int): Int =
+    (selectedFilterIndex.coerceIn(HistoryFilterOptions.indices) + 1) % HistoryFilterOptions.size
+
 internal fun filterHistoryItemsForUiTest(
     historyItems: List<HistoryUiItem>,
     query: String,
@@ -2190,6 +2293,66 @@ private fun isAudioOnlyHistory(item: HistoryUiItem): Boolean {
     return searchable.contains("仅音频") || (searchable.contains("音频") && !searchable.contains("视频"))
 }
 
+@Composable
+private fun HistorySearchHeader(
+    value: String,
+    onValueChange: (String) -> Unit,
+    selectedFilterIndex: Int,
+    onFilterClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .weight(1f)
+                .testTag("ytdl-history-search"),
+            placeholder = { Text("搜索历史") },
+            leadingIcon = {
+                Icon(SearchIcon, contentDescription = null, tint = LocalYtdlAppPalette.current.softText)
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+        )
+        HistoryFilterButton(
+            selectedFilterIndex = selectedFilterIndex,
+            onClick = onFilterClick,
+            tag = "ytdl-history-filter-action",
+        )
+    }
+}
+
+@Composable
+private fun HistoryFilterButton(
+    selectedFilterIndex: Int,
+    onClick: () -> Unit,
+    tag: String,
+) {
+    val palette = LocalYtdlAppPalette.current
+    Surface(
+        color = palette.historyAccent.copy(alpha = 0.12f),
+        shape = CircleShape,
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .testTag(tag),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                HistoryFilterIcon,
+                contentDescription = "筛选：${HistoryFilterOptions[selectedFilterIndex.coerceIn(HistoryFilterOptions.indices)]}",
+                tint = palette.historyAccent,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
 private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
     historyItems: List<HistoryUiItem>,
     historyQuery: String,
@@ -2206,16 +2369,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
 ) {
     val visibleItems = filterHistoryItems(historyItems, historyQuery, selectedFilterIndex)
     item {
-        OutlinedTextField(
+        HistorySearchHeader(
             value = historyQuery,
             onValueChange = onHistoryQueryChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("ytdl-history-search"),
-            placeholder = { Text("搜索历史") },
-            leadingIcon = { Text("⌕") },
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
+            selectedFilterIndex = selectedFilterIndex,
+            onFilterClick = { onHistoryFilterChange(nextHistoryFilterIndex(selectedFilterIndex)) },
         )
     }
     item {
@@ -2801,16 +2959,12 @@ private fun HistoryCard(
                             "导出字幕" -> onExportSubtitle
                             else -> onDelete
                         }
-                        Text(
-                            action,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(onClick = callback)
-                                .testTag("ytdl-history-action-${item.id}-$action")
-                                .padding(horizontal = 3.dp, vertical = 2.dp),
-                            color = if (action == "删除") palette.downloadAccent else palette.neutralText,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
+                        HistoryActionChip(
+                            action = action,
+                            icon = historyActionIcon(action),
+                            accent = if (action == "删除") palette.downloadAccent else palette.neutralText,
+                            onClick = callback,
+                            modifier = Modifier.testTag("ytdl-history-action-${item.id}-$action"),
                         )
                     }
                 }
@@ -2833,6 +2987,50 @@ private fun HistoryCard(
                     )
                 }
             }
+        }
+    }
+}
+
+private fun historyActionIcon(action: String): ImageVector = when (action) {
+    "打开" -> HistoryOpenIcon
+    "分享", "分享字幕" -> HistoryShareIcon
+    "导出", "导出字幕" -> HistoryExportIcon
+    else -> HistoryDeleteIcon
+}
+
+@Composable
+private fun HistoryActionChip(
+    action: String,
+    icon: ImageVector,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = accent.copy(alpha = 0.08f),
+        shape = RoundedCornerShape(9.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
+            .defaultMinSize(minHeight = 30.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = action,
+                tint = accent,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                action,
+                color = accent,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }

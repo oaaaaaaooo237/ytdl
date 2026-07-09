@@ -312,6 +312,9 @@ class DownloadUiBridgeTest {
         assertTrue(joined.contains("不保存内容"))
         assertTrue(joined.contains("App 私有目录"))
         assertTrue(joined.contains("导出"))
+        assertTrue(joined.contains("历史缩略图"))
+        assertTrue(joined.contains("公开预览图"))
+        assertTrue(joined.contains("不携带 Cookies"))
         assertTrue(joined.contains("DRM") || joined.contains("未授权"))
         listOf("SID=secret", "Authorization", "Bearer raw-token", "--cookies D:/private/cookies.txt").forEach {
             assertFalse("privacy text leaked $it", joined.contains(it))
@@ -632,6 +635,40 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("private val CardPillBadgeMinWidth = 64.dp"))
         assertTrue(source.contains("private val CardPillBadgeMinHeight = 30.dp"))
         assertTrue(source.contains("HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty())"))
+    }
+
+    @Test
+    fun historySearchHeaderUsesRightSideFilterIconAffordance() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("HistorySearchHeader("))
+        assertTrue(source.contains("HistoryFilterButton("))
+        assertTrue(source.contains("tag = \"ytdl-history-filter-action\""))
+        assertTrue(source.contains("Icon(SearchIcon"))
+        assertTrue(source.contains("HistoryFilterIcon"))
+        assertTrue(source.contains("contentDescription = \"筛选："))
+        assertTrue(source.contains("onFilterClick = { onHistoryFilterChange(nextHistoryFilterIndex(selectedFilterIndex)) }"))
+        assertFalse(source.contains("leadingIcon = { Text(\"⌕\") }"))
+    }
+
+    @Test
+    fun historyActionsRenderAsIconTextChipsWithoutLosingCallbacks() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("HistoryActionChip("))
+        assertTrue(source.contains("icon = historyActionIcon(action)"))
+        assertTrue(source.contains("contentDescription = action"))
+        assertTrue(source.contains("testTag(\"ytdl-history-action-${'$'}{item.id}-${'$'}action\")"))
+        assertTrue(source.contains("\"打开\" -> onOpen"))
+        assertTrue(source.contains("\"分享\" -> onShare"))
+        assertTrue(source.contains("\"导出\" -> onExport"))
+        assertTrue(source.contains("else -> onDelete"))
     }
 
     @Test

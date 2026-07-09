@@ -1428,6 +1428,28 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - `29-queue-badge-size-fix.png`
 - `30-history-badge-size-fix.png`
 
+用户继续要求历史/下载状态信息更稳定对应：状态徽标保持右上角，`完成` 为绿色、`失败` 为红色；分辨率保持右下角，和状态徽标同尺寸，形成上下对齐的信息组。本轮追加修复历史页控件密度：搜索框右侧新增圆形筛选 icon，历史行操作从裸文字改为 icon+text chip。为避免重复触发 YouTube 请求，本轮用显式 instrumentation 参数插入两条本地安全测试记录（一条完成 `720p`、一条失败 `1080p`），再通过 Computer Use 在可见 API37 模拟器前台打开历史页复核。
+
+追加验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historySearchHeaderUsesRightSideFilterIconAffordance --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.historyActionsRenderAsIconTextChipsWithoutLosingCallbacks
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.settingsPrivacyLegalTextStatesConcreteBoundariesWithoutSecrets
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebugAndroidTest
+D:\Softwares\Android\SDK\platform-tools\adb.exe shell am instrument -w -e class 'com.garyapp.ytdl.ui.YtdlAppUiTest#seedForegroundHistoryBadgeVisualRecordsWhenExplicitlyRequested' -e seedForegroundHistoryBadgeVisual true com.garyapp.ytdl.test/androidx.test.runner.AndroidJUnitRunner
+D:\Softwares\Android\SDK\platform-tools\adb.exe shell am instrument -w -e class 'com.garyapp.ytdl.ui.YtdlAppUiTest#cleanupForegroundHistoryBadgeVisualRecordsWhenExplicitlyRequested' -e cleanupForegroundHistoryBadgeVisual true com.garyapp.ytdl.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+结果：focused 测试、相关测试组、全量 debug 单测、debug APK 打包、androidTest APK 打包、显式本地种子 instrumentation 和清理 instrumentation 均通过。Computer Use 前台复核截图追加保存于 `docs/qa/android-visual-fidelity-20260709-m11/`：
+
+- `31-history-status-resolution-paired-badges.jpg`
+
+前台观察：历史页搜索框右侧已有圆形筛选 icon；失败记录右上为红色 `失败`，右下为 `1080p`；完成记录右上为绿色 `完成`，右下为 `720p`；打开/分享/导出/删除动作显示为带小图标的 chip。未触发新的 YouTube 网络请求；真实进行中队列右侧徽标截图仍留到后续下载窗口补齐。
+
 ### 2026-07-09 M11 视觉一致性审计与首轮修复
 
 本轮开始执行 Continuation Task M11，不触发新的 YouTube 网络请求。已基于 `docs/android-gui-reference-v3.png` 创建截图审计目录：
