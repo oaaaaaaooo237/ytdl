@@ -78,15 +78,15 @@ function Set-AvdHardwareKeyboard {
   for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($lines[$i] -match "^hw\.keyboard=") {
       $found = $true
-      if ($lines[$i] -ne "hw.keyboard=yes") {
-        $lines[$i] = "hw.keyboard=yes"
+      if ($lines[$i] -ne "hw.keyboard=no") {
+        $lines[$i] = "hw.keyboard=no"
         $updated = $true
       }
     }
   }
 
   if (!$found) {
-    $lines += "hw.keyboard=yes"
+    $lines += "hw.keyboard=no"
     $updated = $true
   }
 
@@ -94,7 +94,7 @@ function Set-AvdHardwareKeyboard {
     Set-Content -Path $config -Value $lines -Encoding ASCII
   }
 
-  return "yes"
+  return "no"
 }
 
 function Set-OnlineEmulatorSoftKeyboard {

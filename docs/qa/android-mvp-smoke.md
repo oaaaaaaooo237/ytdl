@@ -4,9 +4,9 @@
 
 ## 当前结论
 
-Android Play MVP 尚未通过最终验收。
+Android Play MVP 的 API37 模拟器前台 M9/T12 验收已有新鲜通过证据；真机 M10、Play 签名/商店素材和正式上架交付仍未完成。
 
-截至 2026-07-09，默认无字幕主路径已在旧地址上完成过前台可见阶段 smoke；真实测试地址已切换为新三条链接。新主地址 `lcFR2mFSmSs` 已完成一次受控 API37 connected 真实分析，证明 yt-dlp 当前可解析该地址；完整 GUI 下载、Shorts 抽样、通知拒权前台复核和最终 release gate 汇总仍未完成。真实字幕下载按用户要求暂停，不再作为默认 T12 阻塞项；后续真机验收阶段也尚未开始。
+截至 2026-07-09，真实测试地址已切换为新三条链接。新主地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` 已完成 Computer Use 前台可见完整 GUI 路径：点击地址框直接弹出完整 Gboard、逐键输入完整分享 URL、真实分析、格式页 MP4 原生合并兼容复核、无字幕下载、队列视频/音频/原生合并完成、历史落地和系统播放器打开。通知拒权设置页前台复核已完成。新 Shorts 地址 `jWTrleK2_MU` 已完成前台软键盘输入、真实分析、格式页竖屏高度修复复核、无字幕短下载、原生合并、队列完成和历史落地。真实字幕下载按用户要求暂停，不再作为默认 T12 阻塞项；后续真机验收阶段尚未开始。当前输入环境已改为更拟真手机的 `hw.keyboard=no`，并已通过可见 Gboard 设置修正为点击 URL 输入框后直接从底部弹出完整键盘；最终前台验收不得再依赖先显示工具条、再点 `Show on-screen keyboard` 的路径。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
@@ -16,7 +16,7 @@ Android Play MVP 尚未通过最终验收。
 
 - 当前分支：`feature/android-play-mvp-1`
 - 当前远程同步提交：
-  - `16cb073 android: retry failed format downloads`
+  - `cf2d24a android: gate subtitle real smoke while paused`
   - `7d37978 Clean merged Android download intermediates`
   - `792c737 Fix Android URL input state reset`
   - `e1e0ac1 android: improve queue progress feedback`
@@ -75,6 +75,30 @@ cd android
 - 已重新安装当前 `android/app/build/outputs/apk/debug/app-debug.apk` 到 API37，并启动到 `com.garyapp.ytdl/.MainActivity`；adb 辅助截图保存到 `docs/qa/android-computer-use-20260709-new-urls/00-adb-launch-current-apk.png`。这只证明当前 APK 可启动，不替代 Computer Use 前台可视验收。
 - 已验证字幕暂停硬拦截：运行 `scripts/android_real_smoke.ps1 -SkipUnitTests -SkipAssemble -SkipConnectedSafe -RunRealSubtitleDownload` 会在真实网络请求前以 `Real subtitle download is paused` 拒绝；只有用户明确恢复字幕真实测试后，才允许额外传入 `-AllowRealSubtitleDownload`。
 
+2026-07-09 前台输入环境纠偏：
+
+- 本轮复现确认 Computer Use 可以控制 `Android Emulator - ytdl_api37_play_x86_64:5554`，问题不是 Computer Use 不可用。
+- API37 AVD 原 `hw.keyboard=yes` 时，Gboard 会进入实体键盘工具栏/浮动面板状态，长 URL 前台软键盘输入不稳定。
+- 临时改为 `hw.keyboard=no` 并重启 API37 后，Computer Use 点击 URL 输入框可显示完整 Gboard 软键盘，未再出现中间遮挡输入框的 `Emulator` 大浮层。
+- `scripts/android_env.ps1` 已改为对矩阵 AVD 写入 `hw.keyboard=no`，并继续设置 `show_ime_with_hard_keyboard=1` 与 Gboard；新增 `tests/test_android_env_script.py` 防止脚本回退到硬件键盘模式。
+- 已运行 `.\.venv\Scripts\python.exe -m pytest tests\test_android_env_script.py -q -o cache_dir=.qa-real-smoke\pytest-cache`，通过。
+- 已运行 `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`，输出四个矩阵 AVD 均为 `hardwareKeyboard=no`，API37 在线且 `SOFT_KEYBOARD emulator-5554 showImeWithHardKeyboard=1 ime=Gboard`。
+- 同轮随后重试 Computer Use 时，`node_repl`/Computer Use 运行核返回 `Transport closed`，因此本轮没有继续形成新的前台 YouTube GUI 分析或下载验收证据；这只记录工具层边界，不代表应用前台流程已通过或失败。
+
+2026-07-09 前台输入环境续跑：
+
+- 本轮按用户指定顺序先验证 `node_repl` 最小 smoke 成功：`{"ok":true,"cwd":"D:\\garyapp\\ytdl"}`；随后 `setupComputerUseRuntime` 和 `sky.list_apps()` 成功，计算器前台 `1 + 1 = 2` 冒烟通过。
+- 启动 Android 前确认没有现存 `qemu-system-x86_64`/`emulator` 进程且 `adb devices` 为空；随后启动 `ytdl_api37_play_x86_64`，等到 `emulator-5554 boot_completed=1`，并用 Computer Use 将窗口移动到主屏幕右侧、竖屏完整可见。
+- 本轮重新运行 `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`，输出 API37 在线、`SOFT_KEYBOARD emulator-5554 showImeWithHardKeyboard=1 ime=Gboard`，四个矩阵 AVD 仍为 `hardwareKeyboard=no`；当前 `app-debug.apk` 安装返回 `Success`，可见前台打开下载页。
+- 点击 URL 输入框后，API37 仍先显示 Gboard 硬件键盘工具条而非完整键盘。辅助诊断显示 served view 是 `app:id/ytdl_url_input`、`mInputShown=true`、`hw.keyboard=no` 已生效，但系统仍枚举 `AT Translated Set 2 keyboard`；Gboard 可见菜单中存在 `Show on-screen keyboard (Alt+K)`。点击该可见菜单项后，完整 Gboard 按键区出现。
+- URL 输入使用 Computer Use 点击可见 Gboard 按键完成，未使用 adb、剪贴板、硬件键或候选词。由于 Gboard 第一符号页的 `=\<` 是符号页切换键而不是等号键，本轮用可见退格删除分享参数，最终以前台输入的 canonical 地址 `https://youtu.be/lcFR2mFSmSs` 继续；UIAutomator 辅助树确认输入框文本精确为该值。
+- 点击 `分析` 后，Computer Use 前台可见结果显示真实缩略图、标题 `KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥`、时长 `15:04`，格式摘要 `自动（推荐） · 1920p WEBM 需原生合并`；没有触发下载，没有选择字幕。
+- 证据保存于 `docs/qa/android-computer-use-20260709-new-url-analysis/`：
+  - `01-analysis-result.png` / `01-analysis-result.xml`
+  - `02-soft-keyboard-url.png` / `02-soft-keyboard-url.xml`
+- 本轮真实分析已把本地节流状态 `.qa-real-smoke/android-real-youtube-state.json` 更新为 `lastAnalysisUtc=2026-07-09T05:14:22.5937299Z`。该目录被 `.gitignore` 忽略，只作本机频率控制。
+- 边界：这次补齐的是新主地址 Computer Use 前台输入和真实 GUI 分析证据，不是完整 GUI 下载、Shorts 抽样、通知拒权前台复核或最终 T12 通过。Gboard 菜单只用于恢复完整软键盘显示，没有用于替代文本输入；后续最终验收仍应尽量从完整键盘直接输入原始分享 URL，或明确记录 canonical URL 等价边界。
+
 ## 已完成的能力/绑定层重点
 
 - `yt-dlp` 真实分析和明确 format id 下载能力。
@@ -115,11 +139,11 @@ cd android
 
 ## 当前下一步
 
-1. 继续补齐不触发破坏性操作的前台失败恢复路径；非 http/https URL、缺失输出和导出取消已有前台证据，真实导出写出已有历史证据，仍需最终 coherent 主路径统一复核。
-2. 系统软键盘拟真输入的主路径已继续到真实下载、队列、历史和设置；后续不能回退到后台写入、硬件键或剪贴板输入作为验收。
-3. 历史测试记录确认删除和合成 `cookies.txt` 文件选择已完成前台可视复核；后续仍需补更多失败恢复前台路径。
-4. 视觉密度截图审计已完成一轮；后续只在相关 GUI 代码继续变化后重采截图。
-5. 等后续推进到真机阶段且小米 14 已连接时，再做小米 14 或同级 `arm64-v8a` 真机验收；当前不把真机验收作为 M9 模拟器前台验收的阻断。
+1. 除非相关代码、测试地址或输入环境继续变化，不需要重复跑 API37 模拟器 M9/T12 完整主路径；后续应保留当前证据并进入真机/发布前事项。
+2. 系统软键盘拟真输入后续不能回退到后台写入、硬件键、剪贴板、候选词、自动补全、手写浮层或 Gboard 菜单作为验收。
+3. 真实字幕下载继续暂停；恢复字幕下载测试必须等用户明确同意。
+4. 等后续推进到真机阶段且小米 14 或同级 `arm64-v8a` 设备已连接时，再做 M10 真机验收。
+5. Play 签名、隐私政策 URL、Data safety 和商店素材仍是后续发布前事项，不属于本轮 API37 模拟器前台验收完成的证据范围。
 
 ## 2026-07-06 队列进度修正
 
@@ -1214,3 +1238,142 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 - 本节证明当前 APK 的默认无字幕主路径已经用 Computer Use 前台可见方式跑通并补齐格式页、队列完成态、历史和设置证据。
 - 真实字幕下载仍按用户要求暂停，不作为本轮阻塞项；恢复必须等用户明确同意。
 - T12 仍需在最终 release gate 前汇总一次完整清单，确认 Shorts 兼容抽样、通知拒权前台复核、失败恢复覆盖和构建测试均为新鲜证据后，才能写成最终通过。
+
+### 2026-07-09 通知拒权前台复核
+
+本轮继续使用右侧完整可见的 `Android Emulator - ytdl_api37_play_x86_64:5554` 和 Computer Use。执行前已按要求完成 `node_repl` 最小 smoke、`sky.list_apps()` bootstrap，并确认计算器前台仍显示 `1 + 1 = 2`。
+
+前置状态和前台观察：
+
+- 辅助命令确认当前 App 通知权限为拒绝态：`adb shell appops get com.garyapp.ytdl POST_NOTIFICATION` 输出 `POST_NOTIFICATION: ignore`，`dumpsys package` 显示 `android.permission.POST_NOTIFICATIONS: granted=false`。
+- Computer Use 在可见模拟器窗口中从下载页切到 `设置` 页；设置页 `通知权限` 行显示 `未授权 · 下载仍在应用内显示进度`，右侧提供 `请求` 入口。
+- 本轮没有点击系统权限弹窗，也没有把通知权限改为允许；这是拒权可见状态和降级文案复核，不是通知允许路径或通知取消路径的重复测试。
+- 证据保存于 `docs/qa/android-computer-use-20260709-notification-denied/`：
+  - `01-settings-notification-denied.png`
+  - `01-settings-notification-denied.xml`
+
+边界：本节补齐通知拒权设置页前台复核；在本节完成时，T12 仍待新主地址完整 GUI 下载和 release gate 汇总。后续已在 2026-07-09 新主地址完整 GUI 下载小节补齐。
+
+### 2026-07-09 Shorts 前台抽样与格式兼容修复
+
+本轮继续使用右侧完整可见的 `Android Emulator - ytdl_api37_play_x86_64:5554` 和 Computer Use。执行前重新完成 `node_repl` 最小 smoke 与 `sky.list_apps()` bootstrap；计算器不再作为每次 Computer Use 前的必需步骤。
+
+前台过程：
+
+- 使用完整可见 Gboard 逐键输入 canonical Shorts 地址 `https://youtube.com/shorts/jWTrleK2_MU`，未使用 adb 文本注入、剪贴板、硬件键、候选词或自动补全替代输入；辅助 UI 树确认输入框内容为该完整 URL。
+- 真实分析成功：标题为 `🚨THIS IS WHY The Celtics Won The Jaylen Brown-Paul George Trade #celtics #nba #chatsports`，时长 `00:57`，摘要最初显示 `自动（推荐） · 1920p MP4 需原生合并`。
+- 本轮未选择字幕。点击开始下载后，队列页观察到真实视频阶段进度，例如 `4.0 MB / 13.3 MB`、`9%`。
+- 随后任务失败，队列页显示 `下载失败：文件处理失败，请重试或选择其他格式。`。logcat 未见 429；app-private 任务目录显示已下载 `download-jWTrleK2_MU-137-video.mp4` 和 `download-jWTrleK2_MU-251-audio.webm`。
+
+根因与修复：
+
+- 根因是自动 `视频+音频` 路线为 MP4 原生合并选择了 MP4/AVC 视频 `137`，但同时选择了 WebM/Opus 音频 `251`；当前 MVP1 原生合并输出使用 Android `MediaMuxer` 写 MP4，不能把 WebM/Opus 音频直接封装进 MP4。
+- `FormatSelection` 现在只把 MP4/AVC 视频和 M4A/MP4A 音频纳入 MP4 原生合并候选；单文件格式、纯视频和纯音频路线不受影响。
+- 只提供 WebM/VP9 的高分辨率不再被描述成“当前视频未提供”，而是显示 `当前视频未提供可原生合并的 MP4 格式`。
+- 用户前台复核指出 Shorts 竖屏视频的真实高度包含 `1920p/1280p/854p/640p/426p/256p` 等非固定横屏档位；格式页现在会合并固定常用分辨率和当前分析实际高度，避免 `自动（推荐）` 可用但下面每个固定行都像“未提供”。
+- `DownloadGuiBindingTest` 的格式摘要测试数据也改为真实可合并的 MP4/AVC + M4A 组合，避免测试继续固化 WebM 合并假设。
+
+新鲜验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.FormatSelectionModelTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.formatSettingSummariesComeFromSelectedFormats
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+.\.venv\Scripts\python.exe -m pytest tests\test_android_env_script.py -q -o cache_dir=.qa-real-smoke\pytest-cache
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+```
+
+结果：以上格式选择模型测试、GUI 摘要回归、全量 debug 单测、debug 打包、环境脚本测试和修复后 APK 安装均已通过。
+
+证据保存于 `docs/qa/android-computer-use-20260709-shorts-sample/`：
+
+- `01-shorts-analysis.png`
+- `01-shorts-analysis.xml`
+- `02-shorts-queue-progress.png`
+- `02-shorts-queue-progress.xml`
+- `03-shorts-download-failed.png`
+- `03-shorts-download-failed.xml`
+- `04-shorts-fixed-url-entered.png`
+- `04-shorts-fixed-url-entered.xml`
+- `05-shorts-fixed-analysis.png`
+- `05-shorts-fixed-analysis.xml`
+- `06-shorts-fixed-format-rows.png`
+- `06-shorts-fixed-format-rows.xml`
+- `07-shorts-dynamic-format-rows.png`
+- `07-shorts-dynamic-format-rows.xml`
+
+修复后前台复核：
+
+- 重新安装修复后的 `app-debug.apk` 后，Computer Use 再次通过可见 Gboard 输入 `https://youtube.com/shorts/jWTrleK2_MU` 并完成真实分析。
+- 格式页现在显示 Shorts 真实高度行：`1920p`、`1280p`、`854p`、`640p`、`426p`、`256p` 等；`1920p`、`1280p`、`854p` 等可见为“需原生合并”，不再被固定横屏列表吞掉。
+- 等待 30 分钟下载间隔后，前台启动无字幕短下载。队列显示视频阶段真实进度 `10.4 MB / 13.3 MB`，随后完成 `下载视频✓ / 下载音频✓ / 原生合并✓`、`14.2 MB / 14.2 MB`、`100%`。
+- 辅助 app-private 目录确认新任务输出为 `files/gui-downloads/task-1783581536428-1/merged-137-140.mp4`；旧失败任务仍保留 `download-jWTrleK2_MU-137-video.mp4` + `download-jWTrleK2_MU-251-audio.webm` 作为对照。
+- 历史页顶部显示新完成记录，元信息为 `视频 137 + 音频 140`，并提供 `打开 / 分享 / 导出 / 删除`；旧 `视频 137 + 音频 251` 失败记录留在下方。
+
+新增修复后证据：
+
+- `08-shorts-fixed-queue-progress.png`
+- `08-shorts-fixed-queue-progress.xml`
+- `09-shorts-fixed-queue-complete.png`
+- `09-shorts-fixed-queue-complete.xml`
+- `10-shorts-fixed-history-complete.png`
+- `10-shorts-fixed-history-complete.xml`
+
+边界：本节已补齐当前 Shorts 样本的前台可见无字幕成功下载和历史落地证据。为控制真实 YouTube 请求频率，本轮已把本地节流状态更新为 `lastAnalysisUtc=2026-07-09T07:10:15.7532328Z`、`lastDownloadUtc=2026-07-09T07:19:45.8766903Z`。真实字幕下载仍按用户要求暂停；在本节完成时，最终 T12 仍待新主地址完整 GUI 下载和 release gate 汇总，后续已在 2026-07-09 新主地址完整 GUI 下载小节补齐。
+
+### 2026-07-09 Gboard 直接弹出环境修正
+
+用户前台观察指出：点击 URL 地址框后，拟真手机输入应直接从底部弹出完整软键盘；如果只出现 Gboard 顶部工具条，还需要再点菜单，这不能算最终拟真输入通过。
+
+本轮诊断结果：
+
+- Android 应用侧已经正常请求输入法：辅助诊断显示 URL 输入框是 served view，`mInputShown=true`。
+- AVD 配置已是 `hw.keyboard=no`，`show_ime_with_hard_keyboard=1` 也已写入；但系统仍枚举 `AT Translated Set 2 keyboard`，Gboard 自身仍可能按物理键盘偏好显示工具条。
+- 在可见 Gboard 设置中确认并修正：`Write in text fields -> Use stylus to write in text fields = off`、`Physical keyboard -> Show on-screen keyboard = on`、`Show toolbar = off`。
+- 修正后回到当前 APK 下载页，隐藏键盘后单击 URL 输入框，完整 Gboard 按键区直接从底部弹出，不再需要点击 `Show on-screen keyboard`。
+- `adb root` 返回 `adbd cannot run as root in production builds`，`adb shell run-as com.google.android.inputmethod.latin ...` 返回 `package not debuggable`；因此 Gboard 私有偏好不能用稳定公开的 `settings put` 写入，`scripts/android_env.ps1` 只负责可脚本化的系统层检查和矩阵 AVD `hw.keyboard=no` 契约。
+
+证据保存于 `docs/qa/android-computer-use-20260709-keyboard-direct-popup/`：
+
+- `01-direct-gboard-popup.png`
+- `01-direct-gboard-popup.xml`
+
+边界：本节修正的是输入环境，不是新的 YouTube 下载验收。后续新主地址完整 GUI 下载必须从“点击地址框后直接出现完整 Gboard”这个环境状态继续，不再把先点 Gboard 工具条作为最终验收路径。
+
+### 2026-07-09 新主地址完整 GUI 下载与 M9/T12 release gate
+
+本轮继续使用右侧完整可见的 `Android Emulator - ytdl_api37_play_x86_64:5554` 和 Computer Use。执行前按要求完成 `node_repl` 最小 smoke 与 `sky.list_apps()` bootstrap；未再把计算器作为必需前置步骤。输入环境已先通过上一节 Gboard 直接弹出验证。
+
+前台过程：
+
+- 点击 URL 输入框后，完整 Gboard 直接从底部弹出；通过可见 Gboard 逐键输入完整分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`，未使用 adb 文本注入、剪贴板、硬件键、候选词、自动补全或 Gboard 工具条替代输入。辅助 UI 树确认输入框文本精确为该完整 URL。
+- 点击 `分析` 后，Computer Use 前台可见真实缩略图、标题 `KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥`、时长 `15:04`，格式摘要为 `自动（推荐） · 1080p MP4 需原生合并`。
+- 格式页显示 `1080p/720p/480p/240p/144p` 为可用的 MP4 原生合并路线，`360p` 为单文件；`1920p/1280p/854p/640p/426p/256p` 等 WebM-only 高度显示 `当前视频未提供可原生合并的 MP4 格式`，不再被误认为可 MP4 原生合并。
+- 字幕行显示 `当前视频未提供字幕` / `无可选`，本轮没有选择字幕，队列中也没有出现 `字幕文件` 阶段。
+- 等待完整下载间隔超过 30 分钟后，前台点击 `开始下载`。下载页显示 `正在下载视频...`；队列页随后观察到真实任务从视频下载推进到音频下载和原生合并。任务很快切换阶段，保存的中途证据覆盖音频/合并阶段，队列完成态显示 `下载视频 ✓ / 下载音频 ✓ / 原生合并 ✓`、`101.5 MB / 101.5 MB`、`100%`。
+- 历史页顶部出现完成记录，显示真实缩略图、`视频 137 + 音频 140 · youtube · 07/09 07:51 · 媒体文件`，并提供 `打开 / 分享 / 导出 / 删除`。
+- 点击历史页顶部记录的 `打开` 后，系统视频查看器可播放合并后的 MP4；随后用可见返回箭头回到应用历史页。没有执行删除，没有发送分享，没有写出外部导出文件。
+
+辅助证据：
+
+- App-private 输出文件：`files/gui-downloads/task-1783583408203-2/merged-137-140.mp4`。
+- 输出大小：`106421453` bytes。
+- logcat 未发现 `429`、`Too Many Requests` 或下载失败；只见模拟器系统噪声和服务停止计时。
+- 本地节流状态已更新为 `lastAnalysisUtc=2026-07-09T07:35:53.3385695Z`、`lastDownloadUtc=2026-07-09T07:50:37.8777089Z`。
+- 收尾新鲜验证：`.\.venv\Scripts\python.exe -m pytest tests\test_android_env_script.py -q -o cache_dir=.qa-real-smoke\pytest-cache` 输出 `1 passed`；`D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest` 为 `BUILD SUCCESSFUL`；`D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug` 为 `BUILD SUCCESSFUL`；`git diff --check` 仅有换行风格 warning，没有实际空白错误。
+
+证据保存于 `docs/qa/android-computer-use-20260709-primary-full-download/`：
+
+- `01-primary-url-entered.png` / `01-primary-url-entered.xml`
+- `02-primary-analysis-result.png` / `02-primary-analysis-result.xml`
+- `03-primary-format-rows.png` / `03-primary-format-rows.xml`
+- `04-primary-format-subtitle-state.png` / `04-primary-format-subtitle-state.xml`
+- `05-primary-download-started.png` / `05-primary-download-started.xml`
+- `06-primary-queue-inflight-progress.png` / `06-primary-queue-inflight-progress.xml`
+- `07-primary-queue-merge-progress.png` / `07-primary-queue-merge-progress.xml`
+- `08-primary-queue-complete.png` / `08-primary-queue-complete.xml`
+- `09-primary-history-complete.png` / `09-primary-history-complete.xml`
+- `10-primary-open-player.png` / `10-primary-open-player.xml`
+
+Release gate 结论：当前 API37 模拟器前台 M9/T12 验收已补齐新主地址完整默认无字幕路径、当前 Shorts 样本、通知拒权可见状态、Gboard 直接弹出输入环境、格式兼容修复证据、队列/历史/打开链路，以及本轮新鲜单元测试、debug 打包和环境脚本验证。真实字幕下载仍按用户要求暂停；M10 真机验收、Play 签名、隐私政策 URL、Data safety 和商店素材仍是后续阶段，不属于本轮模拟器前台通过结论。

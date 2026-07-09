@@ -181,7 +181,7 @@
 - M1/M2: Android 原生 `MediaExtractor + MediaMuxer` 合同与真实兼容流合并，已完成。
 - M3/M4: yt-dlp 指定 format id 分离下载和 required URL 核心合并 smoke，已完成能力层验证。
 - M5: 可选字幕文件独立下载/输出模型，已完成能力层验证；无字幕或未选择字幕时不下载字幕文件。
-- M6-M8: 下载编排、前台服务、GUI 绑定、历史/导出/cookies/失败恢复和 Play 草案已推进到单元/绑定层；仍未完成最终前台 Computer Use 全量验收。
+- M6-M8: 下载编排、前台服务、GUI 绑定、历史/导出/cookies/失败恢复和 Play 草案已推进到单元/绑定层；相关前台行为已在后续 M9/T12 API37 模拟器 Computer Use 验收中复核。
 - MVP2: 自编译最小 LGPL FFmpeg 动态库、自有 JNI/命令桥、字幕嵌入/烧录、三合一输出、许可证/ABI/16KB/体积证据。
 
 **Execution Rule:** 后续 worker 先完成 MVP1 的原生合并和可选独立字幕文件闭环，不得把 FFmpeg 构建、字幕嵌入、字幕烧录或真实字幕成功专项作为 MVP1 主路径阻断项。
@@ -397,7 +397,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M6: Download Orchestration and Foreground State
 
-**Status:** 已完成核心编排与绑定层验证；最终前台可视验收仍在 M9/T12。
+**Status:** 已完成核心编排、绑定层验证，并已在后续 M9/T12 API37 模拟器前台流程中复核。
 
 **Purpose:** Build the real download pipeline that turns an analyzed format choice into direct download, split video/audio download, native merge, or separate subtitle-file download, while exposing honest queue progress and foreground-service state.
 
@@ -428,7 +428,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M7: GUI Binding and Anti-Fallback UX
 
-**Status:** 绑定层已完成并通过审计；最终前台可视全量验收仍在 M9/T12。
+**Status:** 绑定层已完成并通过审计，已在后续 M9/T12 API37 模拟器前台流程中复核。
 
 **Purpose:** Bind the approved five-page GUI to the real pipeline from M4-M6, so visible choices, queue progress, settings, and errors reflect actual capabilities instead of demo values.
 
@@ -458,7 +458,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M8: History, Export, Cookies Privacy, and Failure Recovery
 
-**Status:** 单元/绑定层已完成；Play-safe 文档草案已补齐 Data safety、隐私政策和第三方许可证工作稿，但正式 Google Play 上架交付不是当前任务。真实设置页 cookies 选择、历史打开/分享/导出/删除和失败恢复仍留到 M9/T12 前台可视验收。等推进到后续第 7 项时，只做小米 14 真机验收，不做 Google Play 商店交付。
+**Status:** 单元/绑定层已完成；Play-safe 文档草案已补齐 Data safety、隐私政策和第三方许可证工作稿，但正式 Google Play 上架交付不是当前任务。真实设置页 cookies 选择、历史打开/分享/导出/删除和失败恢复已在 M9.x/M9.17 前台可视验收中复核。等推进到后续第 7 项时，只做小米 14 真机验收，不做 Google Play 商店交付。
 
 **Purpose:** Complete the non-happy-path and Play-facing behavior before final visible acceptance: output discovery/export, local history, cookies reference safety, and user-readable failures.
 
@@ -488,7 +488,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M9: Full Foreground Visible Acceptance Flow
 
-**Status:** 进行中；M8 前置能力已到位，Computer Use 已恢复并完成普通 YouTube 链接与 Shorts 链接的部分前台真实流程，2026-07-05 已完成一次截图级视觉密度修复，并补强队列页取消的 connected 真实链路。M9 仍未完全通过，不能称为 MVP 验收完成。
+**Status:** API37 模拟器前台 M9/T12 已通过；M8 前置能力已到位，Computer Use 已恢复并完成当前新主地址与当前 Shorts 样本的前台真实流程。真机 M10、Play 签名/商店素材和正式发布交付仍未开始。
 
 **Purpose:** Run the meaningful GUI test only after media capability, subtitle-file output, queue, history, export, and privacy behavior exist: user-visible analysis, format choice, split download, merge, separate subtitle file where applicable, foreground progress, history, export, settings, and failures.
 
@@ -497,16 +497,16 @@ Checkboxes before this section are historical scope inventory and must not be us
 - Modify: `docs/qa/android-full-visual-test-plan.md`
 
 **Steps:**
-- [ ] Install the current APK on `ytdl_api37_play_x86_64`.
-- [ ] Use Computer Use in the foreground visible emulator window; URL input must mimic a real phone by focusing the field, allowing the Android system keyboard to appear, and entering text through that visible keyboard. Do not rely on candidate replacement, autocomplete, handwriting overlays, Gboard menus, background adb/script writes, or background-only automation.
-- [ ] Input `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`.
-- [ ] Analyze and confirm title, duration, thumbnail state, and real supported format rows.
-- [ ] Select a merge-required high-resolution `视频+音频` option.
-- [ ] Start download and observe queue states for video download, audio download, merge, and completion.
-- [ ] Do not select subtitles while subtitle testing is paused. Verify only that subtitle UI follows the current analysis result: unavailable when the video has no subtitle file, selectable only when subtitles exist, and no `字幕文件` queue stage appears when subtitles are not selected.
-- [ ] Inspect history, output summary, export/open behavior, settings parser/media status, and privacy/cookies boundary text.
-- [ ] Run one Shorts compatibility sample with `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf` for analysis and a short download path, without duplicating every normal-video assertion.
-- [ ] Save screenshots and command/test outputs in `docs/qa/android-mvp-smoke.md`.
+- [x] Install the current APK on `ytdl_api37_play_x86_64`.
+- [x] Use Computer Use in the foreground visible emulator window; URL input must mimic a real phone by focusing the field, allowing the Android system keyboard to appear, and entering text through that visible keyboard. Do not rely on candidate replacement, autocomplete, handwriting overlays, Gboard menus, background adb/script writes, or background-only automation.
+- [x] Input `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`.
+- [x] Analyze and confirm title, duration, thumbnail state, and real supported format rows.
+- [x] Select or verify a merge-required high-resolution `视频+音频` option; the final primary run used the automatic default, which resolved to `1080p MP4 需原生合并`.
+- [x] Start download and observe queue states for video download, audio download, merge, and completion.
+- [x] Do not select subtitles while subtitle testing is paused. Verify only that subtitle UI follows the current analysis result: unavailable when the video has no subtitle file, selectable only when subtitles exist, and no `字幕文件` queue stage appears when subtitles are not selected.
+- [x] Inspect history, output summary, export/open behavior, settings parser/media status, and privacy/cookies boundary text.
+- [x] Run one Shorts compatibility sample with `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf` for analysis and a short download path, without duplicating every normal-video assertion.
+- [x] Save screenshots and command/test outputs in `docs/qa/android-mvp-smoke.md`.
 
 **Acceptance:** This is the first point where the Android MVP can be called accepted. Earlier unit, instrumentation, adb, UIAutomator, or screenshot checks are necessary evidence but not final acceptance.
 
@@ -559,6 +559,18 @@ Checkboxes before this section are historical scope inventory and must not be us
 **M9.10 temporary test boundary, 2026-07-07:** 用户要求暂时不测试下载字幕文件，防止再次触发 YouTube 429。后续下载测试默认不选择字幕，不运行真实字幕下载、轻量字幕探针或前台字幕下载流程；T12 主路径只覆盖真实分析、视频/音频分离下载、原生合并、队列、历史、导出、通知、设置和失败恢复。字幕相关只保留“无字幕不可选、有字幕才可选但默认不选”的 UI/请求校验，以及既有历史能力证据。恢复字幕下载测试必须等用户明确同意。
 
 **M9.11 smoke helper, 2026-07-09:** 按用户要求，后续真实测试地址已切换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`；旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新增 `scripts/android_real_smoke.ps1` 作为辅助验证入口，默认只运行环境、单测、打包和无真实 YouTube 请求的 connected 安全集；真实分析/下载必须显式开关并遵守 10 分钟分析间隔、30 分钟下载间隔，字幕真实下载继续暂停。字幕暂停期间即使传入 `-RunRealSubtitleDownload` 也会被脚本拒绝，除非用户明确恢复后额外传入 `-AllowRealSubtitleDownload`。2026-07-09 默认脚本已通过；connected 设置页颜色测试的可见性假失败已修复为滚到 `ytdl-settings-appearance-summary` 后再断言；新主地址真实分析单项已通过并写入节流状态。
+
+**M9.12 input-environment correction, 2026-07-09:** Computer Use remains available and can control the visible API37 emulator. A foreground reproduction showed that the matrix AVD setting `hw.keyboard=yes` can put Gboard into a physical-keyboard toolbar mode that blocks reliable long-URL soft-keyboard entry. The environment route is corrected to phone-like input: `scripts/android_env.ps1` now writes `hw.keyboard=no` for matrix AVDs while keeping `show_ime_with_hard_keyboard=1` and Gboard enabled on online emulators. Added `tests/test_android_env_script.py` to keep this contract. API37 was restarted with `hw.keyboard=no`; Computer Use then showed the full Gboard on-screen keyboard without the large `Emulator` floating input panel. This is input-environment progress only; it does not count as new YouTube GUI analysis or download acceptance.
+
+**M9.13 foreground new-primary analysis, 2026-07-09:** After a fresh `node_repl` smoke, `sky.list_apps()` bootstrap, and Calculator `1+1=2` Computer Use check, API37 was cold-started from no running emulator, moved to the right side of the primary screen, refreshed with `android_env.ps1`, and reinstalled with the current debug APK. Clicking the URL field still initially showed the Gboard hardware-keyboard toolbar even with `hw.keyboard=no`; diagnostics showed the app `EditText` was served and `mInputShown=true`, while Gboard exposed a visible `Show on-screen keyboard` action. Choosing that visible action restored the full Gboard key area. The new primary video was then entered through visible Gboard key presses, without adb text injection, clipboard, hardware keys, or candidate selection. Because Gboard's first symbol-page `=\<` key toggles symbols rather than typing `=`, the optional `?si` share parameter was removed with visible backspace and the canonical URL `https://youtu.be/lcFR2mFSmSs` was analyzed. Foreground analysis succeeded with title `KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥`, duration `15:04`, and `自动（推荐） · 1920p WEBM 需原生合并`. Evidence is saved under `docs/qa/android-computer-use-20260709-new-url-analysis/`. This is foreground analysis evidence only: no download, no Shorts sample, no subtitle test, no notification-denied foreground review, and no final T12 pass.
+
+**M9.14 notification-denied foreground review, 2026-07-09:** Continued in the same visible API37 emulator after re-running the required `node_repl` smoke, `sky.list_apps()` bootstrap, and Calculator `1+1=2` check. Auxiliary permission state showed `POST_NOTIFICATION: ignore` and `android.permission.POST_NOTIFICATIONS: granted=false`. Computer Use switched the app to Settings in the foreground and verified the user-visible `通知权限` row shows `未授权 · 下载仍在应用内显示进度` with a `请求` entry. No Android permission dialog was accepted or permission-grant path executed. Evidence is saved under `docs/qa/android-computer-use-20260709-notification-denied/`. This closes the notification-denied visible-state review, but final T12 still needs the current Shorts sample and release-gate summary; real subtitle download remains paused.
+
+**M9.15 Shorts foreground sampling and native-merge compatibility fix, 2026-07-09:** Continued in the same visible API37 emulator after the required `node_repl` smoke and `sky.list_apps()` bootstrap; Calculator is no longer treated as a required Computer Use preflight. Computer Use entered `https://youtube.com/shorts/jWTrleK2_MU` through the visible Gboard keyboard without adb text injection, clipboard, hardware keys, candidates, or autocomplete. Real analysis succeeded with title `🚨THIS IS WHY The Celtics Won The Jaylen Brown-Paul George Trade #celtics #nba #chatsports`, duration `00:57`, and an initial `1920p MP4 需原生合并` auto summary. A no-subtitle short download was started and reached real queue progress, then failed with file processing error rather than 429. The app-private task directory showed MP4 video `137` plus WebM/Opus audio `251`, exposing that the automatic MP4 native-merge route could select an incompatible standalone audio stream. The fix restricts MP4 native-merge candidates to MP4/AVC video plus M4A/MP4A audio while leaving single-file, video-only, and audio-only routes unchanged; WebM-only high-resolution rows now explain `当前视频未提供可原生合并的 MP4 格式` instead of pretending the resolution is absent. A user foreground review then caught that vertical Shorts expose actual heights such as `1920p/1280p/854p/640p/426p/256p`, while the old format page only listed fixed landscape-style heights; the format page now merges standard heights with current-analysis heights so real Shorts rows appear as selectable options. After the 30-minute real-download spacing window, Computer Use started the no-subtitle Shorts download again; the visible queue completed `下载视频✓ / 下载音频✓ / 原生合并✓`, `14.2 MB / 14.2 MB`, and history recorded the completed `视频 137 + 音频 140` item. Auxiliary app-private inspection confirmed the new output is `merged-137-140.mp4`, while the old failed `251.webm` task remains only as historical evidence. Fresh checks passed: `FormatSelectionModelTest`, the focused GUI summary regression test, full `:app:testDebugUnitTest`, `:app:assembleDebug`, `tests/test_android_env_script.py`, and installing the rebuilt debug APK. Evidence is saved under `docs/qa/android-computer-use-20260709-shorts-sample/`. This closes the current Shorts sample, but final T12 still needs the new primary normal-video complete GUI download and release-gate summary; real subtitle download remains paused.
+
+**M9.16 Gboard direct-popup correction, 2026-07-09:** User review correctly pointed out that a real-phone-like URL input path should show the bottom on-screen keyboard immediately after tapping the address field; needing an extra tap on Gboard's physical-keyboard toolbar is an environment gap, not a final acceptance path. Diagnostics showed the app URL `EditText` was already served and `mInputShown=true`, and the AVD matrix was already on `hw.keyboard=no`, but Android/Gboard still enumerated a physical keyboard and Gboard's own `Physical keyboard` preference had `Show on-screen keyboard` off with toolbar behavior enabled. The visible Gboard settings were corrected to `Write in text fields -> Use stylus to write in text fields = off`, `Physical keyboard -> Show on-screen keyboard = on`, and `Show toolbar = off`; after that, tapping the current APK URL field directly displayed the full bottom Gboard. `adb root` and `run-as com.google.android.inputmethod.latin` are unavailable on the Play production emulator image, so this Gboard private preference is recorded as a visible emulator setup fact rather than a scriptable `settings put` action. Evidence is saved under `docs/qa/android-computer-use-20260709-keyboard-direct-popup/`. Final T12 must continue from this corrected direct-popup state and must not count the extra-toolbar-tap path as realistic input acceptance.
+
+**M9.17 primary normal-video full foreground download and release gate, 2026-07-09:** Continued in the visible API37 emulator after the required `node_repl` smoke and `sky.list_apps()` bootstrap. Computer Use clicked the URL field and verified that the full bottom Gboard appeared directly, then entered the full primary share URL `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` through visible Gboard key presses without adb text injection, clipboard, hardware keys, candidates, autocomplete, handwriting overlays, or a Gboard toolbar workaround. UIAutomator auxiliary evidence confirmed the exact URL in the input field. Foreground analysis succeeded with title `KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥`, duration `15:04`, and `自动（推荐） · 1080p MP4 需原生合并`. The format page confirmed compatible MP4 native-merge rows and correctly disabled WebM-only heights with `当前视频未提供可原生合并的 MP4 格式`; subtitles showed `当前视频未提供字幕` / `无可选` and were not selected. After the 30-minute real-download spacing window, Computer Use clicked `开始下载`. The queue progressed through video download, audio download, and native merge; completion showed `下载视频 ✓ / 下载音频 ✓ / 原生合并 ✓`, `101.5 MB / 101.5 MB`, and `100%`, with no subtitle stage. History recorded the completed `视频 137 + 音频 140` media item at `07/09 07:51` with `打开 / 分享 / 导出 / 删除`; opening the top history item launched the system video viewer and played the merged MP4. Auxiliary inspection found `files/gui-downloads/task-1783583408203-2/merged-137-140.mp4`, `106421453` bytes. logcat did not show 429, Too Many Requests, or download failure. Fresh closing checks passed: `tests/test_android_env_script.py` reported `1 passed`, `:app:testDebugUnitTest` was `BUILD SUCCESSFUL`, `:app:assembleDebug` was `BUILD SUCCESSFUL`, and `git diff --check` showed only line-ending warnings. Evidence is saved under `docs/qa/android-computer-use-20260709-primary-full-download/`, and `docs/qa/android-mvp-smoke.md` records the release-gate summary. This closes the API37 emulator foreground M9/T12 gate. Real subtitle download remains paused by user request, and M10 real-device validation plus Play signing/store materials remain later-stage work.
 
 ### Continuation Task M10: Xiaomi 14 Real-Device Validation
 

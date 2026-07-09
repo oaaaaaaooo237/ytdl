@@ -474,7 +474,7 @@ class DownloadGuiBindingTest {
     @Test
     fun formatSettingSummariesComeFromSelectedFormats() {
         val analysis = analysisWith(
-            videoOnlyFormat(id = "137", height = 1080, fps = 60.0, ext = "webm", videoCodec = "vp9"),
+            videoOnlyFormat(id = "137", height = 1080, fps = 60.0, ext = "mp4", videoCodec = "avc1"),
             audioOnlyFormat(id = "140", ext = "m4a"),
         )
         val selection = selectBestAvailableFormatSelection(
@@ -486,7 +486,7 @@ class DownloadGuiBindingTest {
         val summaries = formatSettingSummariesForUiTest(analysis, selection)
 
         assertEquals("60fps", summaries.frameRate)
-        assertEquals("vp9", summaries.videoCodec)
+        assertEquals("avc1", summaries.videoCodec)
         assertEquals("MP4（原生合并输出）", summaries.container)
     }
 

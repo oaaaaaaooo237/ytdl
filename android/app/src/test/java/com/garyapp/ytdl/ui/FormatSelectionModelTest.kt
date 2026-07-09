@@ -51,6 +51,74 @@ class FormatSelectionModelTest {
     }
 
     @Test
+    fun mergeRequiredVideoAndAudioPrefersMp4CompatibleAudioOverLargerWebmAudio() {
+        val rows = buildFormatResolutionRows(
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140", filesizeBytes = 1_000_000),
+                audioOnlyFormat(id = "251", ext = "webm", audioCodec = "opus", filesizeBytes = 2_000_000),
+            ),
+            selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 1080),
+        )
+
+        val row = rows.single { it.height == 1080 }
+        assertTrue(row.selectable)
+        assertTrue(row.mergeRequired)
+        assertEquals("137", row.videoFormatId)
+        assertEquals("140", row.audioFormatId)
+        assertTrue(row.summary.contains("MP4"))
+    }
+
+    @Test
+    fun automaticVideoAndAudioSelectionPrefersNativeMuxerCompatibleVideoOverHigherWebmVideo() {
+        val selection = defaultFormatSelection(
+            analysisWith(
+                videoOnlyFormat(id = "248", height = 1440, ext = "webm", videoCodec = "vp9", filesizeBytes = 2_000_000),
+                videoOnlyFormat(id = "137", height = 1080, ext = "mp4", videoCodec = "avc1", filesizeBytes = 1_000_000),
+                audioOnlyFormat(id = "140", filesizeBytes = 500_000),
+            ),
+        )
+
+        assertNull(selection.selectedHeight)
+        assertEquals("137", selection.selectedVideoFormatId)
+        assertEquals("140", selection.selectedAudioFormatId)
+        assertTrue(selection.mergeRequired)
+    }
+
+    @Test
+    fun mergeRequiredWebmOnlyResolutionExplainsNativeMp4MergeLimit() {
+        val rows = buildFormatResolutionRows(
+            analysis = analysisWith(
+                videoOnlyFormat(id = "248", height = 1440, ext = "webm", videoCodec = "vp9"),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 1440),
+        )
+
+        val row = rows.single { it.height == 1440 }
+        assertFalse(row.selectable)
+        assertEquals("当前视频未提供可原生合并的 MP4 格式", row.reason)
+    }
+
+    @Test
+    fun verticalShortsNativeMergeHeightAppearsAsSelectableResolutionRow() {
+        val rows = buildFormatResolutionRows(
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1920),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 1920),
+        )
+
+        val row = rows.single { it.height == 1920 }
+        assertEquals("1920p", row.label)
+        assertTrue(row.selectable)
+        assertTrue(row.selected)
+        assertEquals("137", row.videoFormatId)
+        assertEquals("140", row.audioFormatId)
+    }
+
+    @Test
     fun missingResolutionIsDisabledWithVisibleReason() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
@@ -182,22 +250,34 @@ class FormatSelectionModelTest {
         audioCodec = "mp4a",
     )
 
-    private fun videoOnlyFormat(id: String, height: Int) = VideoFormat(
+    private fun videoOnlyFormat(
+        id: String,
+        height: Int,
+        ext: String = "mp4",
+        videoCodec: String = "avc1",
+        filesizeBytes: Long? = null,
+    ) = VideoFormat(
         id = id,
-        ext = "mp4",
+        ext = ext,
         height = height,
         label = "${height}p 需合并音频",
         hasVideo = true,
         hasAudio = false,
         mergeRequired = true,
         isSupported = true,
-        videoCodec = "avc1",
+        filesizeBytes = filesizeBytes,
+        videoCodec = videoCodec,
         audioCodec = "none",
     )
 
-    private fun audioOnlyFormat(id: String, filesizeBytes: Long? = null) = VideoFormat(
+    private fun audioOnlyFormat(
+        id: String,
+        ext: String = "m4a",
+        audioCodec: String = "mp4a",
+        filesizeBytes: Long? = null,
+    ) = VideoFormat(
         id = id,
-        ext = "m4a",
+        ext = ext,
         height = null,
         label = "音频",
         hasVideo = false,
@@ -205,7 +285,7 @@ class FormatSelectionModelTest {
         mergeRequired = false,
         isSupported = false,
         videoCodec = "none",
-        audioCodec = "mp4a",
+        audioCodec = audioCodec,
         filesizeBytes = filesizeBytes,
     )
 }

@@ -53,7 +53,7 @@ fun buildFormatResolutionRows(
         }
     }
 
-    return StandardHeights.map { height ->
+    return resolutionHeightsFor(analysis).map { height ->
         buildRowForHeight(analysis, selection, height)
     }
 }
@@ -110,7 +110,7 @@ private fun buildRowForHeight(
             FormatMode.VideoAndAudio -> {
                 val best = bestVideoAndAudioChoice(analysis)
                 if (best == null) {
-                    unavailableRow(height, "自动（推荐）", selection, "当前视频未提供")
+                    unavailableRow(height, "自动（推荐）", selection, videoAndAudioUnavailableReason(analysis, height))
                 } else {
                     rowFromChoice(
                         height = null,
@@ -161,13 +161,13 @@ private fun buildRowForHeight(
                 rowFromChoice(height, "${height}p", FormatChoice(direct, null, false), selection.selectedHeight == height)
             } else {
                 val video = analysis.formats
-                    .filter { it.isSupported && it.height == height && it.hasVideo && !it.hasAudio }
+                    .filter { it.isSupported && it.height == height && it.hasVideo && !it.hasAudio && it.isNativeMp4MergeVideoCompatible() }
                     .bestByQuality()
-                val audio = bestStandaloneAudio(analysis)
+                val audio = bestStandaloneAudioForNativeMp4Merge(analysis)
                 if (video != null && audio != null) {
                     rowFromChoice(height, "${height}p", FormatChoice(video, audio, true), selection.selectedHeight == height)
                 } else {
-                    unavailableRow(height, "${height}p", selection, "当前视频未提供")
+                    unavailableRow(height, "${height}p", selection, videoAndAudioUnavailableReason(analysis, height))
                 }
             }
         }
@@ -251,6 +251,15 @@ private fun unavailableRow(
     )
 }
 
+private fun resolutionHeightsFor(analysis: VideoAnalysis): List<Int?> {
+    val analyzedHeights = analysis.formats
+        .mapNotNull { it.height }
+    val mergedHeights = (StandardHeights.filterNotNull() + analyzedHeights)
+        .distinct()
+        .sortedDescending()
+    return listOf(null) + mergedHeights
+}
+
 private data class FormatChoice(
     val video: VideoFormat,
     val audio: VideoFormat?,
@@ -262,9 +271,9 @@ private fun bestVideoAndAudioChoice(analysis: VideoAnalysis): FormatChoice? {
         .filter { it.isSupported && it.hasVideo && it.hasAudio }
         .bestByQuality()
     val videoOnly = analysis.formats
-        .filter { it.isSupported && it.hasVideo && !it.hasAudio }
+        .filter { it.isSupported && it.hasVideo && !it.hasAudio && it.isNativeMp4MergeVideoCompatible() }
         .bestByQuality()
-    val audio = bestStandaloneAudio(analysis)
+    val audio = bestStandaloneAudioForNativeMp4Merge(analysis)
     val merged = if (videoOnly != null && audio != null) FormatChoice(videoOnly, audio, true) else null
 
     return listOfNotNull(direct?.let { FormatChoice(it, null, false) }, merged)
@@ -281,6 +290,47 @@ private fun bestStandaloneAudio(analysis: VideoAnalysis): VideoFormat? {
     return analysis.formats
         .filter { !it.hasVideo && it.hasAudio }
         .maxByOrNull { it.filesizeBytes ?: 0L }
+}
+
+private fun bestStandaloneAudioForNativeMp4Merge(analysis: VideoAnalysis): VideoFormat? {
+    return analysis.formats
+        .filter { !it.hasVideo && it.hasAudio && it.isNativeMp4MergeAudioCompatible() }
+        .maxByOrNull { it.filesizeBytes ?: 0L }
+}
+
+private fun videoAndAudioUnavailableReason(analysis: VideoAnalysis, height: Int?): String {
+    val videoCandidates = analysis.formats
+        .filter { it.isSupported && it.hasVideo && !it.hasAudio && (height == null || it.height == height) }
+    val hasCompatibleVideo = videoCandidates.any { it.isNativeMp4MergeVideoCompatible() }
+    val hasCompatibleAudio = bestStandaloneAudioForNativeMp4Merge(analysis) != null
+    return when {
+        videoCandidates.isNotEmpty() && !hasCompatibleVideo -> "当前视频未提供可原生合并的 MP4 格式"
+        hasCompatibleVideo && !hasCompatibleAudio -> "当前视频未提供可原生合并的音频流"
+        else -> "当前视频未提供"
+    }
+}
+
+private fun VideoFormat.isNativeMp4MergeVideoCompatible(): Boolean {
+    val normalizedExt = ext.lowercase()
+    val normalizedCodec = videoCodec.orEmpty().lowercase()
+    return normalizedExt == "mp4" && (
+        normalizedCodec.isBlank() ||
+            normalizedCodec == "none" ||
+            normalizedCodec.startsWith("avc1") ||
+            normalizedCodec.startsWith("avc3") ||
+            normalizedCodec.startsWith("h264")
+        )
+}
+
+private fun VideoFormat.isNativeMp4MergeAudioCompatible(): Boolean {
+    val normalizedExt = ext.lowercase()
+    val normalizedCodec = audioCodec.orEmpty().lowercase()
+    return normalizedExt in setOf("m4a", "mp4") && (
+        normalizedCodec.isBlank() ||
+            normalizedCodec == "none" ||
+            normalizedCodec.startsWith("mp4a") ||
+            normalizedCodec.startsWith("aac")
+        )
 }
 
 private fun List<VideoFormat>.bestByQuality(): VideoFormat? {
