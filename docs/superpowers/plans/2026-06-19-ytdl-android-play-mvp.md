@@ -558,6 +558,8 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 **M9.10 temporary test boundary, 2026-07-07:** 用户要求暂时不测试下载字幕文件，防止再次触发 YouTube 429。后续下载测试默认不选择字幕，不运行真实字幕下载、轻量字幕探针或前台字幕下载流程；T12 主路径只覆盖真实分析、视频/音频分离下载、原生合并、队列、历史、导出、通知、设置和失败恢复。字幕相关只保留“无字幕不可选、有字幕才可选但默认不选”的 UI/请求校验，以及既有历史能力证据。恢复字幕下载测试必须等用户明确同意。
 
+**M9.11 smoke helper, 2026-07-09:** 按用户要求，后续真实测试地址已切换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`；旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新增 `scripts/android_real_smoke.ps1` 作为辅助验证入口，默认只运行环境、单测、打包和无真实 YouTube 请求的 connected 安全集；真实分析/下载必须显式开关并遵守 10 分钟分析间隔、30 分钟下载间隔，字幕真实下载继续暂停。2026-07-09 默认脚本已通过；connected 设置页颜色测试的可见性假失败已修复为滚到 `ytdl-settings-appearance-summary` 后再断言。
+
 ### Continuation Task M10: Xiaomi 14 Real-Device Validation
 
 **Status:** 未开始；当前 ADB 只显示 API37 模拟器，用户确认暂时不会连接小米 14。该任务等 M9/T12 模拟器前台验收之后、推进到后续第 7 项时再执行。

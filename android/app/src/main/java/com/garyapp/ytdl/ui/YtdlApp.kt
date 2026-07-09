@@ -2184,7 +2184,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
                 onSelected = { index -> onColorPresetChange(presets[index].id) },
             )
             Spacer(Modifier.height(10.dp))
-            SettingLineCard("颜色方案", appearanceSummaryForUiTest(settings), "▣", "›", palette.settingsAccent, inCard = false)
+            SettingLineCard(
+                "颜色方案",
+                appearanceSummaryForUiTest(settings),
+                "▣",
+                "›",
+                palette.settingsAccent,
+                inCard = false,
+                modifier = Modifier.testTag("ytdl-settings-appearance-summary"),
+            )
         }
     }
     item { SettingLineCard("关于", "版本 1.0.0", "i", "›", Color(0xFF55606C)) }

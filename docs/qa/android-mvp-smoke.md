@@ -67,7 +67,10 @@ cd android
 - 已运行 `cd android; .\gradlew.bat :app:testDebugUnitTest`，通过。
 - 已运行 `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.YtdlpBridgeInstrumentedTest"`，在未传 `realYoutube=true` 时 4 个真实 YouTube 用例全部 `SKIPPED`，没有触发真实网络请求。
 - 已运行 `cd android; .\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.core.ytdlp.SubtitleDownloadInstrumentedTest"`，在未传 `realYoutubeSubtitle=true` 时字幕下载专项 `SKIPPED`，没有触发真实字幕下载。
-- 本次未对三条新地址做真实分析或真实下载，原因是用户要求注意测试间隔、防止 429；后续真实测试按新地址集、显式开关和节流规则单项推进。
+- 新增 `scripts/android_real_smoke.ps1` 作为辅助 smoke 入口；默认模式会跑环境、Android 单测、debug 打包和 connected 安全集，但不会触发真实 YouTube 网络请求。
+- 已运行 `powershell -ExecutionPolicy Bypass -File .\scripts\android_real_smoke.ps1`，结果通过：`android_env.ps1`、`:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:connectedDebugAndroidTest` 均 `BUILD SUCCESSFUL`；真实 YouTube 相关用例按默认规则 `SKIPPED`，脚本输出 `No real YouTube opt-in step was run.`。
+- 本轮发现并修复 connected 设置页外观测试的可见性假失败：`颜色方案`摘要行新增 `ytdl-settings-appearance-summary`，测试滚到摘要行后再断言颜色方案更新；已单独运行 `YtdlAppUiTest#settingsAppearanceColorPresetsAreVisibleAndSummaryUpdates`，结果 `BUILD SUCCESSFUL`。
+- 本次未对三条新地址做真实分析或真实下载，原因是用户要求注意测试间隔、防止 429；后续真实测试必须按新地址集、显式开关和节流规则单项推进。
 
 ## 已完成的能力/绑定层重点
 

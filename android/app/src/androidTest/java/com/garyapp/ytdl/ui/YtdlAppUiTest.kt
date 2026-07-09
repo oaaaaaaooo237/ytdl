@@ -95,9 +95,12 @@ class YtdlAppUiTest {
 
         try {
             tapTag("ytdl-settings-color-preset-0")
-            assertTextContains("基准图配色 · 跟随系统", timeoutMs = 2_000)
+            scrollUntilTag("ytdl-settings-appearance-summary")
+            assertAppearanceSummaryContains("基准图配色")
+            scrollUntilTag("ytdl-settings-color-preset-1")
             tapTag("ytdl-settings-color-preset-1")
-            assertTextContains("Codex 风格 · 跟随系统", timeoutMs = 2_000)
+            scrollUntilTag("ytdl-settings-appearance-summary")
+            assertAppearanceSummaryContains("Codex 风格")
         } finally {
             findTag("ytdl-settings-color-preset-0", timeoutMs = 1_000)?.click()
             device.waitForIdle()
@@ -800,6 +803,17 @@ class YtdlAppUiTest {
             Thread.sleep(500)
         }
         assertTrue("未看到任一文本：${texts.joinToString(" / ")}", false)
+    }
+
+    private fun assertAppearanceSummaryContains(colorPresetLabel: String) {
+        assertAnyTextContains(
+            listOf(
+                "$colorPresetLabel · 跟随系统",
+                "$colorPresetLabel · 浅色",
+                "$colorPresetLabel · 深色",
+            ),
+            timeoutMs = 5_000,
+        )
     }
 
     private fun saveScreen(name: String) {
