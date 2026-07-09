@@ -56,6 +56,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -78,8 +79,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathBuilder
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -144,6 +149,133 @@ private const val HistoryThumbnailTargetPx = 160
 private const val HistoryThumbnailCacheMaxItems = 64
 private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
 private val BottomBarGestureBuffer = 32.dp
+private val SettingsAppearanceBottomBuffer = 96.dp
+
+private fun tabIcon(name: String, draw: PathBuilder.() -> Unit): ImageVector =
+    ImageVector.Builder(
+        name = name,
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.Black)) { draw() }
+    }.build()
+
+private val DownloadTabIcon = tabIcon("DownloadTab") {
+    moveTo(11f, 4f)
+    lineTo(13f, 4f)
+    lineTo(13f, 12.8f)
+    lineTo(15.8f, 10f)
+    lineTo(17.2f, 11.4f)
+    lineTo(12f, 16.6f)
+    lineTo(6.8f, 11.4f)
+    lineTo(8.2f, 10f)
+    lineTo(11f, 12.8f)
+    close()
+    moveTo(5f, 18f)
+    lineTo(19f, 18f)
+    lineTo(19f, 20f)
+    lineTo(5f, 20f)
+    close()
+}
+
+private val FormatTabIcon = tabIcon("FormatTab") {
+    moveTo(4f, 4f)
+    lineTo(10f, 4f)
+    lineTo(10f, 10f)
+    lineTo(4f, 10f)
+    close()
+    moveTo(14f, 4f)
+    lineTo(20f, 4f)
+    lineTo(20f, 10f)
+    lineTo(14f, 10f)
+    close()
+    moveTo(4f, 14f)
+    lineTo(10f, 14f)
+    lineTo(10f, 20f)
+    lineTo(4f, 20f)
+    close()
+    moveTo(14f, 14f)
+    lineTo(20f, 14f)
+    lineTo(20f, 20f)
+    lineTo(14f, 20f)
+    close()
+}
+
+private val QueueTabIcon = tabIcon("QueueTab") {
+    moveTo(5f, 6f)
+    lineTo(19f, 6f)
+    lineTo(19f, 8f)
+    lineTo(5f, 8f)
+    close()
+    moveTo(5f, 11f)
+    lineTo(19f, 11f)
+    lineTo(19f, 13f)
+    lineTo(5f, 13f)
+    close()
+    moveTo(5f, 16f)
+    lineTo(19f, 16f)
+    lineTo(19f, 18f)
+    lineTo(5f, 18f)
+    close()
+}
+
+private val HistoryTabIcon = tabIcon("HistoryTab") {
+    moveTo(12f, 3f)
+    lineTo(18.5f, 6.5f)
+    lineTo(21f, 13f)
+    lineTo(17.5f, 19f)
+    lineTo(11f, 21f)
+    lineTo(5.5f, 17.5f)
+    lineTo(3f, 11f)
+    lineTo(6.5f, 5f)
+    close()
+    moveTo(11f, 7f)
+    lineTo(13f, 7f)
+    lineTo(13f, 12f)
+    lineTo(16.5f, 14f)
+    lineTo(15.5f, 15.8f)
+    lineTo(11f, 13.2f)
+    close()
+}
+
+private val SettingsTabIcon = tabIcon("SettingsTab") {
+    moveTo(10.5f, 3f)
+    lineTo(13.5f, 3f)
+    lineTo(14.2f, 5.2f)
+    lineTo(16.3f, 6.1f)
+    lineTo(18.3f, 5.1f)
+    lineTo(20.4f, 7.2f)
+    lineTo(19.4f, 9.2f)
+    lineTo(20.2f, 11.4f)
+    lineTo(22f, 12.5f)
+    lineTo(21.2f, 15.4f)
+    lineTo(19f, 15.7f)
+    lineTo(17.8f, 17.6f)
+    lineTo(18.2f, 19.8f)
+    lineTo(15.5f, 21.2f)
+    lineTo(13.9f, 19.6f)
+    lineTo(11.6f, 19.6f)
+    lineTo(10f, 21.2f)
+    lineTo(7.3f, 19.8f)
+    lineTo(7.7f, 17.6f)
+    lineTo(6.5f, 15.7f)
+    lineTo(4.3f, 15.4f)
+    lineTo(3.5f, 12.5f)
+    lineTo(5.3f, 11.4f)
+    lineTo(6.1f, 9.2f)
+    lineTo(5.1f, 7.2f)
+    lineTo(7.2f, 5.1f)
+    lineTo(9.2f, 6.1f)
+    lineTo(10.3f, 5.2f)
+    close()
+    moveTo(12f, 9f)
+    lineTo(15f, 12f)
+    lineTo(12f, 15f)
+    lineTo(9f, 12f)
+    close()
+}
 
 internal val YtdlColorPresetIdKey = SemanticsPropertyKey<String>("YtdlColorPresetId")
 internal var SemanticsPropertyReceiver.ytdlColorPresetId by YtdlColorPresetIdKey
@@ -194,7 +326,7 @@ data class YtdlDestination(
     val label: String,
     val title: String,
     val summary: String,
-    val icon: String,
+    val icon: ImageVector,
     val accent: Color,
     val reservedEntries: List<String> = emptyList(),
 )
@@ -261,7 +393,7 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         label = "下载",
         title = "视频地址提取器",
         summary = "粘贴公开视频页面地址，分析后再开始保存。",
-        icon = "↓",
+        icon = DownloadTabIcon,
         accent = palette.downloadAccent,
     ),
     YtdlDestination(
@@ -269,7 +401,7 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         label = "格式",
         title = "格式",
         summary = "设置下载格式偏好，不做强制转码承诺。",
-        icon = "▦",
+        icon = FormatTabIcon,
         accent = palette.formatAccent,
     ),
     YtdlDestination(
@@ -277,7 +409,7 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         label = "队列",
         title = "队列",
         summary = "查看进行中、等待、完成和失败任务。",
-        icon = "≡",
+        icon = QueueTabIcon,
         accent = palette.queueAccent,
     ),
     YtdlDestination(
@@ -285,7 +417,7 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         label = "历史",
         title = "历史",
         summary = "搜索、打开、分享或删除本地记录。",
-        icon = "◷",
+        icon = HistoryTabIcon,
         accent = palette.historyAccent,
     ),
     YtdlDestination(
@@ -293,7 +425,7 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         label = "设置",
         title = "设置",
         summary = "管理保存位置、解析器、媒体处理、隐私和外观。",
-        icon = "⚙",
+        icon = SettingsTabIcon,
         accent = palette.settingsAccent,
         reservedEntries = listOf("外观与颜色"),
     ),
@@ -1128,25 +1260,25 @@ private fun YtdlBottomBar(
                 val selected = destination.route == selectedRoute
                 Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
+                        .defaultMinSize(minWidth = 54.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (selected) destination.accent.copy(alpha = 0.14f) else Color.Transparent)
                         .testTag("ytdl-tab-${destination.route}")
                         .clickable { onSelected(destination.route) }
-                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(width = 42.dp, height = 24.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(if (selected) destination.accent.copy(alpha = 0.16f) else Color.Transparent),
+                            .size(width = 32.dp, height = 22.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            text = destination.icon,
-                            color = if (selected) destination.accent else palette.neutralText,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                        Icon(
+                            imageVector = destination.icon,
+                            contentDescription = destination.label,
+                            tint = if (selected) destination.accent else palette.neutralText,
+                            modifier = Modifier.size(16.dp),
                         )
                     }
                     Text(
@@ -2203,6 +2335,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
             )
         }
     }
+    item { Spacer(Modifier.height(SettingsAppearanceBottomBuffer)) }
     item { SettingLineCard("关于", "版本 1.0.0", "i", "›", Color(0xFF55606C)) }
 }
 

@@ -110,6 +110,34 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun settingsAppearanceSectionKeepsExtraBottomScrollBuffer() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("SettingsAppearanceBottomBuffer"))
+        assertTrue(source.contains("Spacer(Modifier.height(SettingsAppearanceBottomBuffer))"))
+    }
+
+    @Test
+    fun bottomNavigationUsesVectorIconsInsteadOfTextSymbols() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("val icon: ImageVector"))
+        assertTrue(source.contains("Icon("))
+        assertFalse(source.contains("text = destination.icon"))
+        assertFalse(source.contains("icon = \"↓\""))
+        assertFalse(source.contains("icon = \"▦\""))
+        assertFalse(source.contains("icon = \"≡\""))
+        assertFalse(source.contains("icon = \"◷\""))
+        assertFalse(source.contains("icon = \"⚙\""))
+    }
+
+    @Test
     fun queueProgressUsesPlainBarForFrequentStageUpdates() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",

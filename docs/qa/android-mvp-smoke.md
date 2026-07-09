@@ -1412,3 +1412,46 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - `01-history-format-summary.xml`
 - `02-history-status-resolution-badges.png`
 - `02-history-status-resolution-badges.xml`
+
+### 2026-07-09 M11 视觉一致性审计与首轮修复
+
+本轮开始执行 Continuation Task M11，不触发新的 YouTube 网络请求。已基于 `docs/android-gui-reference-v3.png` 创建截图审计目录：
+
+```text
+docs/qa/android-visual-fidelity-20260709-m11/
+```
+
+已完成：
+
+- 用 Computer Use 在前台可见 API37 模拟器中采集当前 APK 的五页 `基准图配色` 截图。
+- 滚动设置页后切换 `Codex 风格`，采集五页 Codex 配色截图。
+- 写入 `docs/qa/android-visual-fidelity-20260709-m11/audit.md`，列出 M11 checklist、当前差距和后续优先级。
+- 修复设置页外观配色区域底部留白，避免 `基准图配色` / `Codex 风格` 按钮贴近底部导航遮挡区。
+- 底部导航从文本符号改为本地 vector 图标，选中态背景扩展到 icon+label 的 tab 区域。
+
+新鲜验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.settingsAppearanceSectionKeepsExtraBottomScrollBuffer
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.bottomNavigationUsesVectorIconsInsteadOfTextSymbols
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+```
+
+结果：以上 focused 测试、相关 UI 绑定测试、全量 debug 单测和 debug 打包均 `BUILD SUCCESSFUL`。已重新安装当前 `app-debug.apk` 并用 Computer Use 前台复核，修复后截图保存为：
+
+- `17-download-after-nav-fix.png`
+- `18-format-after-nav-fix.png`
+- `19-queue-after-nav-fix.png`
+- `20-history-after-nav-fix.png`
+- `21-settings-after-nav-fix.png`
+- `22-settings-appearance-buffer-after-nav-fix.png`
+- `23-download-reference-after-nav-fix.png`
+- `24-format-reference-after-nav-fix.png`
+- `25-queue-reference-after-nav-fix.png`
+- `26-history-reference-after-nav-fix.png`
+- `27-settings-reference-after-nav-fix.png`
+- `28-settings-reference-appearance-buffer-after-nav-fix.png`
+
+边界：M11 尚未通过。仍缺真实下载进行中队列截图，队列/格式/历史页与基准图仍有密度和动作样式差距，Codex 配色还需要在后续截图审计中明确剩余偏差。M10 真机验收、Play 签名、隐私政策 URL、Data safety 和商店素材仍未开始。
