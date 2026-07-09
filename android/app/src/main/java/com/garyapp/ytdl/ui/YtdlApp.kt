@@ -2083,6 +2083,113 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                 modifier = Modifier.testTag("ytdl-queue-active-card"),
             )
         }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                QueueEmptyStepsCard()
+                QueueEmptyOutputCard()
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueEmptyStepsCard() {
+    val palette = LocalYtdlAppPalette.current
+    AppCard(modifier = Modifier.testTag("ytdl-queue-empty-steps-card")) {
+        Text("任务阶段", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ytdl-queue-empty-stage-strip"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            listOf("下载视频", "下载音频", "原生合并").forEach { label ->
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = palette.mutedCardBackground,
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text(
+                        text = label,
+                        color = palette.softText,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                    )
+                }
+            }
+        }
+        QueueEmptyGroupRows()
+        Text(
+            "不会显示假进度或占位百分比",
+            color = palette.softText,
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+@Composable
+private fun QueueEmptyGroupRows() {
+    val groups = listOf(
+        "ytdl-queue-empty-running-group" to "正在下载（0）",
+        "ytdl-queue-empty-waiting-group" to "等待中（0）",
+        "ytdl-queue-empty-completed-group" to "已完成（0）",
+        "ytdl-queue-empty-failed-group" to "失败（0）",
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        groups.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { (tag, label) ->
+                    QueueEmptyGroupPill(
+                        label = label,
+                        tag = tag,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueEmptyGroupPill(
+    label: String,
+    tag: String,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalYtdlAppPalette.current
+    Surface(
+        modifier = modifier.testTag(tag),
+        color = palette.mutedCardBackground,
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Text(
+            label,
+            color = palette.softText,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun QueueEmptyOutputCard() {
+    val palette = LocalYtdlAppPalette.current
+    AppCard(modifier = Modifier.testTag("ytdl-queue-empty-output-card")) {
+        Text("输出信息", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(
+            "开始后显示文件大小、速度和剩余时间",
+            color = palette.softText,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "完成或失败后，右侧会显示状态；有分辨率时显示在右下角。",
+            color = palette.softText,
+            style = MaterialTheme.typography.labelSmall,
+        )
     }
 }
 

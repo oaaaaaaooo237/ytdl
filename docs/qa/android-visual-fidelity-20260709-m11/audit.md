@@ -121,3 +121,33 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - 本轮没有声明 M11 通过。
 - 真实字幕下载仍暂停。
 - M10 真机验收、Play 签名、隐私政策 URL、Data safety 和商店素材仍未开始。
+
+## 队列空态密度补强
+
+本轮继续处理 M11 中“队列页空态缺少基准图式分组密度”的差距，不触发 YouTube 请求，不构造 sample 下载任务。
+
+代码修复：
+
+- 队列无真实任务时，在原等待卡下方新增禁用的 `任务阶段` 卡，显示 `下载视频` / `下载音频` / `原生合并` 准备骨架。
+- 新增四个空态分组：`正在下载（0）`、`等待中（0）`、`已完成（0）`、`失败（0）`，只作为视觉分组提示，不复用真实队列 `QueueStageStrip` 或进度条。
+- 新增 `输出信息` 卡，说明开始后才显示文件大小、速度和剩余时间；空态明确写出“不会显示假进度或占位百分比”。
+
+TDD 过程：
+
+- 先新增 `DownloadGuiBindingTest.emptyQueuePageKeepsReferenceDensityWithoutFakeProgress` 并确认红灯：缺少 `ytdl-queue-empty-steps-card`。
+- 增加阶段卡后测试转绿。
+- 按 fresh explorer 审计建议增强断言，要求四个空态分组 tag，并确认空态不出现 `ytdl-real-queue-card`、`ytdl-queue-cancel-action`、真实 `ytdl-queue-stage-strip` 或 `ytdl-queue-format-badge`；增强后再次红灯，随后补四个禁用分组转绿。
+
+新鲜验证：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.emptyQueuePageKeepsReferenceDensityWithoutFakeProgress
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+```
+
+结果：环境脚本、队列空态 focused 测试、两个相关 UI 测试类、全量 debug 单测和 debug APK 打包均通过。APK 已重新安装并启动到可见 API37 模拟器作为辅助运行证据。
+
+Computer Use 边界：本轮按要求重新执行 `nodeRepl.write(JSON.stringify({ ok: true, cwd: nodeRepl.cwd }))` 和 `sky.list_apps()`，均成功并识别 `Android Emulator - ytdl_api37_play_x86_64:5554`；但 Windows 仍显示“是否允许网络访问此应用？”安全提示，且 `PickerHost` 透明层拦截模拟器底部点击。按安全规则未点击该系统安全提示，因此本轮没有新增队列空态前台截图，不能把该切片写成新的前台可见通过，也不能声明 M11 通过。M11 仍缺真实进行中队列截图和安全提示解除后的五页前台复核。

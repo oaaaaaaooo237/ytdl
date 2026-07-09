@@ -1526,3 +1526,27 @@ Computer Use 前台证据：
 观察：格式页空态已有禁用结构和明确 summary；历史页种子记录中，失败记录右上红色 `失败`、右下 `1080p`，完成记录右上绿色 `完成`、右下 `720p`，尺寸和左右边缘对齐。队列终态徽标由 Compose bounds 单测覆盖；本轮尝试用本机 HTTP + adb reverse 生成不触发外网的队列任务，generic `.webm` 直链可分析但提示“请选择可用格式”，无法自然进入队列终态，因此没有把本轮记为新的队列前台终态通过。
 
 边界：M11 仍未通过。还缺真实下载进行中队列截图和后续五页视觉复核；本轮 URL 输入使用过 adb 辅助，仅服务于本机直链队列尝试，不计入系统软键盘 URL 输入验收。
+
+### 2026-07-09 M11 队列空态密度补强
+
+本轮继续推进 M11 队列页视觉一致性，不触发新的 YouTube 请求，不测试字幕下载，不构造假下载任务。
+
+代码变化：
+
+- 队列页无真实任务时，在原等待卡下方新增禁用的 `任务阶段` 骨架，显示 `下载视频` / `下载音频` / `原生合并`。
+- 新增空态分组 `正在下载（0）`、`等待中（0）`、`已完成（0）`、`失败（0）`，用于接近基准图队列页的分组密度；这些分组不复用真实 `QueueStageStrip`、不显示进度条、不显示取消动作、不显示分辨率徽标。
+- 新增 `输出信息` 卡，说明真实任务开始后才显示文件大小、速度和剩余时间；空态明确提示不会显示假进度或占位百分比。
+
+TDD 与验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.emptyQueuePageKeepsReferenceDensityWithoutFakeProgress
+powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+```
+
+结果：队列空态 focused 测试先按 TDD 红灯后转绿；环境脚本、相关 UI 测试组、全量 debug 单测和 debug 打包均通过。当前 debug APK 已重新安装并启动到 API37 模拟器作为辅助运行证据。
+
+Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: true, cwd: nodeRepl.cwd }))` 和 `sky.list_apps()`，均成功；Computer Use 可看到 `Android Emulator - ytdl_api37_play_x86_64:5554`。但 Windows 仍弹出“是否允许网络访问此应用？”安全提示，`PickerHost` 透明层拦截模拟器底部点击。按安全边界未点击该系统提示，因此本轮没有新增队列空态前台截图，不能算新的 Android 前台 GUI 验收通过。M11 仍未通过：仍缺真实进行中队列截图，以及安全提示解除后的五页前台复核。

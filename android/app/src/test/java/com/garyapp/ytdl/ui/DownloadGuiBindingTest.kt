@@ -342,6 +342,32 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun emptyQueuePageKeepsReferenceDensityWithoutFakeProgress() {
+        renderQueuePage(RuntimeDownloadState())
+
+        composeRule.onNodeWithTag("ytdl-queue-empty-steps-card").assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-empty-stage-strip").assertExists()
+        composeRule.onNodeWithText("下载视频").assertExists()
+        composeRule.onNodeWithText("下载音频").assertExists()
+        composeRule.onNodeWithText("原生合并").assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-empty-running-group").assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-empty-waiting-group").assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-empty-completed-group").assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-empty-failed-group").assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-empty-output-card").assertExists()
+        composeRule.onNodeWithText("正在下载（0）").assertExists()
+        composeRule.onNodeWithText("等待中（0）").assertExists()
+        composeRule.onNodeWithText("已完成（0）").assertExists()
+        composeRule.onNodeWithText("失败（0）").assertExists()
+        composeRule.onNodeWithText("开始后显示文件大小、速度和剩余时间").assertExists()
+        composeRule.onNodeWithText("不会显示假进度或占位百分比").assertExists()
+        composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-queue-cancel-action").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-queue-stage-strip").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-queue-format-badge").assertCountEquals(0)
+    }
+
+    @Test
     fun modeSelectionFallsBackToExecutableChoiceForCurrentAnalysis() {
         val analysis = analysisWith(
             progressiveFormat(id = "18", height = 360),
