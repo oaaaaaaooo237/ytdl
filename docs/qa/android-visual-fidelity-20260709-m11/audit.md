@@ -101,6 +101,9 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - `29-queue-badge-size-fix.png`
 - `30-history-badge-size-fix.png`
 - `31-history-status-resolution-paired-badges.jpg`
+- `32-format-empty-state-density.jpg`
+- `33-format-empty-state-summary-disabled.jpg`
+- `34-history-status-resolution-badges.jpg`
 
 观察：
 
@@ -108,7 +111,9 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - 设置页滚动后，外观配色卡、`基准图配色`、`Codex 风格` 和 `颜色方案` 行均能完整露出在底部导航上方，前台点击更稳定。
 - 用户复核后再次微调历史/队列右侧徽标：状态徽标和分辨率徽标统一为 `64dp x 30dp` 最小尺寸并使用 `labelMedium`；历史页前台截图显示 `完成` 在右上角为绿色、`失败` 在右上角为红色，分辨率在右下角且与状态徽标尺寸一致。队列空态前台截图确认未误伤空态；真实进行中队列徽标仍待后续真实下载窗口截图。
 - 本轮追加修复历史页搜索/动作控件：搜索框右侧新增圆形筛选 icon，历史行操作从裸文字改为 icon+text chip；并通过本地 instrumentation 种子插入一条完成、一条失败记录，前台 Computer Use 截图 `31-history-status-resolution-paired-badges.jpg` 确认 `失败` 红色、`完成` 绿色均在右上角，`1080p` / `720p` 分辨率均在右下角且尺寸一致。
-- 当前仍未满足 M11：还缺真实下载进行中队列截图，队列页仍偏空态，格式页空态过稀，部分历史缩略图在修复后截图中仍短暂显示占位渐变，需后续复核。
+- 本轮继续修复格式页无分析空态：不再只显示空卡，而是保留分辨率列表、帧率/编码/容器/字幕行、summary 和禁用的 `应用选择` 按钮；所有行明确标注需先分析或分析后显示，不伪造格式 id、大小、字幕或可下载能力。Computer Use 前台截图 `32-format-empty-state-density.jpg` / `33-format-empty-state-summary-disabled.jpg` 已确认空态密度和禁用 summary。
+- 本轮继续按用户反馈微调下载状态徽标：队列完成态右上角从 `100%` 改为短状态 `完成`，失败为 `失败`；队列/历史共用右侧徽标列，状态在右上角、分辨率在右下角，二者固定同尺寸。`34-history-status-resolution-badges.jpg` 以前台历史种子记录再次确认 `失败` 红色 + `1080p`、`完成` 绿色 + `720p` 对齐。队列完成态样式已由 Compose bounds 单测覆盖；本轮用本机 HTTP 直链尝试生成队列任务，generic 直链可分析但没有可用下载格式，未形成新的队列终态前台截图。
+- 当前仍未满足 M11：还缺真实下载进行中队列截图，队列页仍偏空态，部分历史缩略图在修复后截图中仍短暂显示占位渐变，需后续复核。
 
 ## 边界
 

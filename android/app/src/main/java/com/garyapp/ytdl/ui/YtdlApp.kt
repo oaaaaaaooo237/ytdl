@@ -1863,10 +1863,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
                 Text("格式页会根据当前视频真实提供的格式生成可选项。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
             }
         }
-        return
     }
     val rows = buildFormatResolutionRows(analysis, selection)
     val summaries = formatSettingSummaries(analysis, selection)
+    val hasAnalysis = analysis != null
     item {
         AppCard(modifier = Modifier.testTag("ytdl-format-resolution-card")) {
             SectionTitle("分辨率")
@@ -1882,11 +1882,38 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             }
         }
     }
-    item { SettingLineCard("帧率", summaries.frameRate, "▾", "›") }
-    item { SettingLineCard("视频编码", summaries.videoCodec, "▾", "›") }
-    item { SettingLineCard("容器格式", summaries.container, "▾", "›") }
     item {
-        val subtitles = analysis.subtitles
+        SettingLineCard(
+            "帧率",
+            summaries.frameRate,
+            "▾",
+            "›",
+            enabled = hasAnalysis,
+            modifier = Modifier.testTag("ytdl-format-frame-rate-line"),
+        )
+    }
+    item {
+        SettingLineCard(
+            "视频编码",
+            summaries.videoCodec,
+            "▾",
+            "›",
+            enabled = hasAnalysis,
+            modifier = Modifier.testTag("ytdl-format-video-codec-line"),
+        )
+    }
+    item {
+        SettingLineCard(
+            "容器格式",
+            summaries.container,
+            "▾",
+            "›",
+            enabled = hasAnalysis,
+            modifier = Modifier.testTag("ytdl-format-container-line"),
+        )
+    }
+    item {
+        val subtitles = analysis?.subtitles.orEmpty()
         val hasSubtitles = subtitles.isNotEmpty()
         val subtitleUi = subtitleSelectionUiState(analysis, selectedSubtitles)
         val newSelection = if (selectedSubtitles.isEmpty() && hasSubtitles) {
@@ -1907,6 +1934,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     }
     item {
         val palette = LocalYtdlAppPalette.current
+        val summaryTitle = if (hasAnalysis) {
+            "实际下载：${formatSelectionSummaryWithSubtitles(analysis, selection, selectedSubtitles)}"
+        } else {
+            "分析后显示真实格式"
+        }
+        val summaryBody = if (hasAnalysis) {
+            "开始下载会按当前格式选择进入真实任务队列。"
+        } else {
+            "请先在下载页完成分析，再应用格式选择。"
+        }
         Surface(
             modifier = Modifier.testTag("ytdl-format-summary"),
             color = palette.formatAccent.copy(alpha = 0.11f),
@@ -1914,8 +1951,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             border = androidx.compose.foundation.BorderStroke(1.dp, palette.formatAccent.copy(alpha = 0.35f)),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("实际下载：${formatSelectionSummaryWithSubtitles(analysis, selection, selectedSubtitles)}", color = palette.formatAccent, fontWeight = FontWeight.Bold)
-                Text("开始下载会按当前格式选择进入真实任务队列。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
+                Text(summaryTitle, color = palette.formatAccent, fontWeight = FontWeight.Bold)
+                Text(summaryBody, color = palette.softText, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -1923,6 +1960,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
         val palette = LocalYtdlAppPalette.current
         Button(
             onClick = onApplySelection,
+            enabled = hasAnalysis,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("ytdl-format-apply"),
@@ -2154,7 +2192,7 @@ private fun queueOverallProgressPercent(state: DownloadTaskState, currentStagePe
 
 private fun queueCardStatus(state: RuntimeDownloadState): String {
     return when (state.downloadStatus) {
-        "下载完成" -> "100%"
+        "下载完成" -> "完成"
         "下载失败" -> "失败"
         "已取消" -> "取消"
         else -> "${(state.overallProgressPercent ?: state.progressPercent ?: 0.0).toInt()}%"
@@ -2196,6 +2234,11 @@ private fun queueCardAccent(
         else -> palette.queueAccent
     }
 }
+
+internal fun queueCardAccentForUiTest(
+    state: RuntimeDownloadState,
+    palette: YtdlAppPalette = DefaultPalette,
+): Color = queueCardAccent(state, palette)
 
 private fun queueCardActions(state: RuntimeDownloadState): List<String> {
     if (!state.hasRealTask) return emptyList()
@@ -2829,24 +2872,14 @@ private fun QueueCard(
                     }
                 }
             }
-            Column(
-                modifier = Modifier.fillMaxHeight(),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                CardPillBadge(
-                    text = status,
-                    accent = accent,
-                    tag = "ytdl-queue-status-badge",
-                )
-                if (formatBadge.isNotBlank()) {
-                    CardPillBadge(
-                        text = formatBadge,
-                        accent = palette.formatAccent,
-                        tag = "ytdl-queue-format-badge",
-                    )
-                }
-            }
+            CardTrailingBadges(
+                status = status,
+                statusAccent = accent,
+                formatBadge = formatBadge,
+                formatAccent = palette.formatAccent,
+                statusTag = "ytdl-queue-status-badge",
+                formatTag = "ytdl-queue-format-badge",
+            )
         }
     }
 }
@@ -2969,24 +3002,14 @@ private fun HistoryCard(
                     }
                 }
             }
-            Column(
-                modifier = Modifier.fillMaxHeight(),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                CardPillBadge(
-                    text = item.badge,
-                    accent = historyStatusBadgeAccent(item, palette),
-                    tag = "ytdl-history-status-badge",
-                )
-                if (item.formatBadge.isNotBlank()) {
-                    CardPillBadge(
-                        text = item.formatBadge,
-                        accent = palette.formatAccent,
-                        tag = "ytdl-history-format-badge",
-                    )
-                }
-            }
+            CardTrailingBadges(
+                status = item.badge,
+                statusAccent = historyStatusBadgeAccent(item, palette),
+                formatBadge = item.formatBadge,
+                formatAccent = palette.formatAccent,
+                statusTag = "ytdl-history-status-badge",
+                formatTag = "ytdl-history-format-badge",
+            )
         }
     }
 }
@@ -3036,6 +3059,35 @@ private fun HistoryActionChip(
 }
 
 @Composable
+private fun CardTrailingBadges(
+    status: String,
+    statusAccent: Color,
+    formatBadge: String,
+    formatAccent: Color,
+    statusTag: String,
+    formatTag: String,
+) {
+    Column(
+        modifier = Modifier.fillMaxHeight(),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        CardPillBadge(
+            text = status,
+            accent = statusAccent,
+            tag = statusTag,
+        )
+        if (formatBadge.isNotBlank()) {
+            CardPillBadge(
+                text = formatBadge,
+                accent = formatAccent,
+                tag = formatTag,
+            )
+        }
+    }
+}
+
+@Composable
 private fun CardPillBadge(
     text: String,
     accent: Color,
@@ -3044,10 +3096,13 @@ private fun CardPillBadge(
     Surface(
         color = accent.copy(alpha = 0.12f),
         shape = RoundedCornerShape(10.dp),
-        modifier = Modifier.testTag(tag),
+        modifier = Modifier
+            .size(width = CardPillBadgeMinWidth, height = CardPillBadgeMinHeight)
+            .testTag(tag),
     ) {
         Box(
             modifier = Modifier
+                .fillMaxSize()
                 .defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)
                 .padding(horizontal = 9.dp, vertical = 5.dp),
             contentAlignment = Alignment.Center,
@@ -3057,6 +3112,8 @@ private fun CardPillBadge(
                 color = accent,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

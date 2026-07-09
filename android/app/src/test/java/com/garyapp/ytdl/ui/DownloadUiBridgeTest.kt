@@ -856,6 +856,27 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun queueTerminalStatusBadgeUsesCompactStateTextAndOutcomeColor() {
+        val palette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetCodex)
+        val request = mergeRequest()
+        val completed = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Completed,
+                request = request,
+                outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, "done.mp4", 4096L)),
+            ),
+        )
+        val failed = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState.waiting(request).failed("下载失败"),
+        )
+
+        assertEquals("完成", queueCardStatusForUiTest(completed))
+        assertEquals(palette.successGreen, queueCardAccentForUiTest(completed, palette))
+        assertEquals("失败", queueCardStatusForUiTest(failed))
+        assertEquals(Color(0xFFFF5B63), queueCardAccentForUiTest(failed, palette))
+    }
+
+    @Test
     fun queueFormatBadgeUsesActiveRequestResolutionInsteadOfHardcodedValue() {
         val shortsRequest = DownloadRequest(
             url = "https://youtube.com/shorts/QBwpO9f0oAw",

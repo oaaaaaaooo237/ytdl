@@ -7,9 +7,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.settings.AppearanceSettings
@@ -21,6 +27,8 @@ import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.data.HistoryItemEntity
+import com.garyapp.ytdl.download.DownloadOutputFile
+import com.garyapp.ytdl.download.DownloadOutputKind
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
@@ -276,6 +284,61 @@ class DownloadGuiBindingTest {
         assertEquals("当前视频未提供", unavailable.reason)
         assertEquals(null, unavailable.videoFormatId)
         assertEquals(null, unavailable.audioFormatId)
+    }
+
+    @Test
+    fun formatPageWithoutAnalysisKeepsDisabledReferenceStructure() {
+        composeRule.setContent { YtdlApp() }
+
+        composeRule.onNodeWithTag("ytdl-tab-formats").performClick()
+
+        composeRule.onNodeWithTag("ytdl-format-empty-card").assertExists()
+        composeRule.onNodeWithTag("ytdl-format-resolution-card").assertExists()
+        composeRule.onNodeWithTag("ytdl-format-row-auto").assertExists()
+        scrollFormatsTo("ytdl-format-row-1080")
+        scrollFormatsTo("ytdl-format-frame-rate-line")
+        scrollFormatsTo("ytdl-format-video-codec-line")
+        scrollFormatsTo("ytdl-format-container-line")
+        scrollFormatsTo("ytdl-format-subtitle-toggle")
+        scrollFormatsTo("ytdl-format-summary")
+        composeRule.onNodeWithText("分析后显示真实格式").assertExists()
+        composeRule.onNodeWithText("请先在下载页完成分析，再应用格式选择。").assertExists()
+        scrollFormatsTo("ytdl-format-apply")
+        composeRule.onNodeWithTag("ytdl-format-apply").assertIsNotEnabled()
+    }
+
+    @Test
+    fun terminalQueueCardPinsStatusAboveResolutionWithMatchedBadgeSize() {
+        val request = DownloadRequest(
+            url = TestUrl,
+            title = "队列徽标测试",
+            route = DownloadRoute.MergeRequired(videoFormatId = "137", audioFormatId = "140"),
+            formatSummary = "1080p MP4 需原生合并",
+        )
+        val completed = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Completed,
+                request = request,
+                outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, "done.mp4", 4096L)),
+            ),
+        )
+
+        renderQueuePage(completed)
+
+        composeRule.onNodeWithText("完成").assertExists()
+        composeRule.onNodeWithText("1080p").assertExists()
+
+        val statusBounds = composeRule.onNodeWithTag("ytdl-queue-status-badge").getUnclippedBoundsInRoot()
+        val formatBounds = composeRule.onNodeWithTag("ytdl-queue-format-badge").getUnclippedBoundsInRoot()
+        val statusWidth = statusBounds.right.value - statusBounds.left.value
+        val formatWidth = formatBounds.right.value - formatBounds.left.value
+        val statusHeight = statusBounds.bottom.value - statusBounds.top.value
+        val formatHeight = formatBounds.bottom.value - formatBounds.top.value
+
+        assertTrue(statusBounds.top < formatBounds.top)
+        assertTrue(kotlin.math.abs(statusWidth - formatWidth) < 0.5f)
+        assertTrue(kotlin.math.abs(statusHeight - formatHeight) < 0.5f)
+        assertTrue(kotlin.math.abs(statusBounds.left.value - formatBounds.left.value) < 0.5f)
     }
 
     @Test
@@ -624,6 +687,11 @@ class DownloadGuiBindingTest {
                 }
             }
         }
+    }
+
+    private fun scrollFormatsTo(tag: String) {
+        composeRule.onNodeWithTag("ytdl-screen-formats").performScrollToNode(hasTestTag(tag))
+        composeRule.onNodeWithTag(tag).assertExists()
     }
 
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(

@@ -1492,3 +1492,37 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 - `28-settings-reference-appearance-buffer-after-nav-fix.png`
 
 边界：M11 尚未通过。仍缺真实下载进行中队列截图，队列/格式/历史页与基准图仍有密度和动作样式差距，Codex 配色还需要在后续截图审计中明确剩余偏差。M10 真机验收、Play 签名、隐私政策 URL、Data safety 和商店素材仍未开始。
+
+### 2026-07-09 M11 格式空态和状态/分辨率徽标二次修正
+
+本轮继续处理用户对下载状态徽标和格式页空态的反馈，不触发新的 YouTube 请求，不测试字幕下载。
+
+代码变化：
+
+- 格式页无分析时保留更接近基准图的信息密度：显示禁用的分辨率列表、帧率/视频编码/容器格式/字幕行、summary 和禁用的 `应用选择` 按钮；文案明确为“请先分析视频”或“分析后显示”，不伪造真实格式。
+- 队列完成态右上角状态从 `100%` 改为 `完成`，失败态仍为 `失败`；完成用绿色，失败用固定红色。
+- 队列和历史共用同一个右侧徽标列：状态在右上角，分辨率在右下角，两个 `CardPillBadge` 固定同尺寸，避免新增分辨率后状态徽标缩小或错位。
+
+新鲜验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.terminalQueueCardPinsStatusAboveResolutionWithMatchedBadgeSize --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest.queueTerminalStatusBadgeUsesCompactStateTextAndOutcomeColor --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.formatPageWithoutAnalysisKeepsDisabledReferenceStructure
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.garyapp.ytdl.ui.YtdlAppUiTest#seedForegroundHistoryBadgeVisualRecordsWhenExplicitlyRequested" "-Pandroid.testInstrumentationRunnerArguments.seedForegroundHistoryBadgeVisual=true"
+D:\Softwares\Android\SDK\platform-tools\adb.exe shell am instrument -w -e class com.garyapp.ytdl.ui.YtdlAppUiTest#seedForegroundHistoryBadgeVisualRecordsWhenExplicitlyRequested -e seedForegroundHistoryBadgeVisual true com.garyapp.ytdl.test/androidx.test.runner.AndroidJUnitRunner
+D:\Softwares\Android\SDK\platform-tools\adb.exe shell am instrument -w -e class com.garyapp.ytdl.ui.YtdlAppUiTest#cleanupForegroundHistoryBadgeVisualRecordsWhenExplicitlyRequested -e cleanupForegroundHistoryBadgeVisual true com.garyapp.ytdl.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+结果：focused 测试、两个相关测试类、全量 debug 单测、debug APK 打包均 `BUILD SUCCESSFUL`。显式本地历史徽标种子和清理 instrumentation 均 `OK (1 test)`；第一次通过 Gradle 跑 connected 种子成功后，Gradle 清理了 app 包，因此又手动安装 app/test APK 并用 `adb shell am instrument` 重新种子，供前台可见复核使用。
+
+Computer Use 前台证据：
+
+- `docs/qa/android-visual-fidelity-20260709-m11/32-format-empty-state-density.jpg`
+- `docs/qa/android-visual-fidelity-20260709-m11/33-format-empty-state-summary-disabled.jpg`
+- `docs/qa/android-visual-fidelity-20260709-m11/34-history-status-resolution-badges.jpg`
+
+观察：格式页空态已有禁用结构和明确 summary；历史页种子记录中，失败记录右上红色 `失败`、右下 `1080p`，完成记录右上绿色 `完成`、右下 `720p`，尺寸和左右边缘对齐。队列终态徽标由 Compose bounds 单测覆盖；本轮尝试用本机 HTTP + adb reverse 生成不触发外网的队列任务，generic `.webm` 直链可分析但提示“请选择可用格式”，无法自然进入队列终态，因此没有把本轮记为新的队列前台终态通过。
+
+边界：M11 仍未通过。还缺真实下载进行中队列截图和后续五页视觉复核；本轮 URL 输入使用过 adb 辅助，仅服务于本机直链队列尝试，不计入系统软键盘 URL 输入验收。

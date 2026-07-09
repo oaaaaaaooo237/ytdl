@@ -675,7 +675,9 @@ docs/qa/android-visual-fidelity-20260709-m11/audit.md
 - 设置页外观配色区域在未滚动时被底部导航区域部分遮挡，`Codex 风格` 首次点击不稳定。
 - 底部导航仍使用文本符号作为 icon，选中 pill 只包 icon 区域，和基准图的图标化底栏不完全一致。
 - 队列页空态缺少基准图式多分组密度；M11 仍要求后续补一张真实下载进行中队列截图。
-- 格式页空态过空；后续修复必须继续坚持“不加假格式数据”，只能通过真实分析结果或更好的空态布局收敛。
-- 历史页已有搜索、筛选和动作，但缺少基准图右侧过滤 icon，动作仍偏文本工具条。
+- 格式页空态启动时过空；后续修复必须继续坚持“不加假格式数据”，只能通过真实分析结果或更好的空态布局收敛。
+- 历史页启动时已有搜索、筛选和动作，但缺少基准图右侧过滤 icon，动作仍偏文本工具条。
 
 本节是 M11 的截图审计启动记录，不代表 M11 已通过。M11 通过仍需要完成 scoped UI 修复、focused 测试、`testDebugUnitTest`、`assembleDebug`、Computer Use 前台五页复核、基准/Codex 配色复核、至少一张真实进行中队列截图，以及剩余偏差说明。
+
+2026-07-09 M11 增量更新：设置页底部留白和底部导航 vector icon 已完成首轮修复；历史页已补右侧筛选 icon、icon+text 动作 chip，并通过前台种子截图确认完成/失败状态徽标在右上角、分辨率在右下角且尺寸一致；格式页无分析空态已补禁用的分辨率列表、设置行、summary 和禁用按钮，不伪造真实格式。证据见 `docs/qa/android-visual-fidelity-20260709-m11/32-format-empty-state-density.jpg`、`33-format-empty-state-summary-disabled.jpg`、`34-history-status-resolution-badges.jpg` 和同目录 `audit.md`。M11 仍未通过：真实下载进行中队列截图和后续完整五页视觉复核仍待补齐。
