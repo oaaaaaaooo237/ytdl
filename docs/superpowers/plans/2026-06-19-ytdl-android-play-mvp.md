@@ -16,9 +16,9 @@
 - Keep `AGENTS.md` and `.qa-android-env/` ignored and uncommitted.
 - Do not edit Windows GUI/source files unless a task explicitly says so.
 - Use current real test URLs for full-flow verification:
-  - primary normal video: `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`
-  - backup normal video: `https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW`
-  - Shorts sample: `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf`
+  - primary normal video: `https://www.youtube.com/watch?v=PqQNXB6hhUs`
+  - backup normal video: `https://www.youtube.com/watch?v=svoD582Pas4`
+  - Shorts sample: `https://www.youtube.com/shorts/oXFad1nt6v0`
   - old `tkxzMEfp49Q` / `QBwpO9f0oAw` URLs are historical evidence only.
 - Real YouTube connected tests are skipped by default; run them only as single targeted checks with `-Pandroid.testInstrumentationRunnerArguments.realYoutube=true`. Real subtitle download remains paused unless the user explicitly restores it, and then also requires `-Pandroid.testInstrumentationRunnerArguments.realYoutubeSubtitle=true`.
 - Keep 429-safe spacing for real YouTube requests: at least 10 minutes between analysis/short samples, at least 30 minutes between full downloads, and stop YouTube real requests for the day if 429 appears.

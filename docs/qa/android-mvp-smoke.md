@@ -10,7 +10,7 @@ Android Play MVP 的 API37 模拟器前台 M9/T12 验收已有新鲜通过证据
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
-2026-07-09 测试地址替换：后续真实测试视频改为三条新地址，旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新默认集为普通视频主路径 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`、普通视频备用 `https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW`、Shorts 抽样 `https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf`。为降低 429 风险，真实 connected 网络测试默认跳过，只有显式 `realYoutube=true` 才单项运行；真实字幕下载继续暂停，除非用户恢复并显式 `realYoutubeSubtitle=true`。真实分析/Shorts 抽样间隔至少 10 分钟，完整下载间隔至少 30 分钟；一旦出现 429，当天停止 YouTube 真实请求，改做单元、构建或非网络 UI 验证。
+2026-07-10 测试地址替换：后续真实测试只使用普通视频主路径 `https://www.youtube.com/watch?v=PqQNXB6hhUs`、普通视频备用 `https://www.youtube.com/watch?v=svoD582Pas4`、Shorts 抽样 `https://www.youtube.com/shorts/oXFad1nt6v0`。旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` / `lcFR2mFSmSs` / `auNezUzwCZg` / `jWTrleK2_MU` 只保留为历史证据。为降低 429 风险，真实 connected 网络测试默认跳过，只有显式 `realYoutube=true` 才单项运行；真实字幕下载继续暂停，除非用户恢复并显式 `realYoutubeSubtitle=true`。真实分析/Shorts 抽样间隔至少 10 分钟，完整下载间隔至少 30 分钟；一旦出现 429，当天停止 YouTube 真实请求，改做单元、构建或非网络 UI 验证。
 
 ## 本轮已确认
 

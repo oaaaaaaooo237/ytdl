@@ -12,10 +12,10 @@
 - 实现计划：`docs/superpowers/plans/2026-06-19-ytdl-android-play-mvp.md`
 - GUI 基准图：`docs/android-gui-reference-v3.png`
 - 固定真实测试地址：
-  - 普通视频主路径：`https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`
-  - 普通视频备用：`https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW`
-  - Shorts 兼容抽样：`https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf`
-  - 旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据，不再作为后续默认测试地址。
+  - 普通视频主路径：`https://www.youtube.com/watch?v=PqQNXB6hhUs`
+  - 普通视频备用：`https://www.youtube.com/watch?v=svoD582Pas4`
+  - Shorts 兼容抽样：`https://www.youtube.com/shorts/oXFad1nt6v0`
+  - 旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` / `lcFR2mFSmSs` / `auNezUzwCZg` / `jWTrleK2_MU` 只保留为历史证据，不再作为后续默认测试地址。
 
 ## 硬性验收规则
 

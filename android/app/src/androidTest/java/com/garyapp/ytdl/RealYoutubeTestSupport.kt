@@ -4,12 +4,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assume.assumeTrue
 
 object RealYoutubeTestUrls {
-    const val PRIMARY_VIDEO = "https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G"
-    const val PRIMARY_VIDEO_ID = "lcFR2mFSmSs"
-    const val SECONDARY_VIDEO = "https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW"
-    const val SECONDARY_VIDEO_ID = "auNezUzwCZg"
-    const val SHORTS = "https://youtube.com/shorts/jWTrleK2_MU?si=1hOoGpC7JM__M4Sf"
-    const val SHORTS_ID = "jWTrleK2_MU"
+    const val PRIMARY_VIDEO = "https://www.youtube.com/watch?v=PqQNXB6hhUs"
+    const val PRIMARY_VIDEO_ID = "PqQNXB6hhUs"
+    const val SECONDARY_VIDEO = "https://www.youtube.com/watch?v=svoD582Pas4"
+    const val SECONDARY_VIDEO_ID = "svoD582Pas4"
+    const val SHORTS = "https://www.youtube.com/shorts/oXFad1nt6v0"
+    const val SHORTS_ID = "oXFad1nt6v0"
 }
 
 object RealYoutubeTestGate {
