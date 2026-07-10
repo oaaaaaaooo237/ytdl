@@ -678,6 +678,10 @@ fresh audit 的 P2 指出上述目录目标单测未覆盖真实 muxer 成功路
 
 提交后 API37 `YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord` 经 `connectedDebugAndroidTest` 通过，覆盖插入测试记录、取消删除后保留、再次确认后删除。该无网络 instrumentation 是删除可见性前台复核之外的运行时辅助证据。
 
+#### M11 Current Primary URL Foreground Run (2026-07-10)
+
+Computer Use 在可见 API37 模拟器中以完整底部 Gboard 逐键输入当前主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs`，辅助 UIAutomator 树核验完整字段。真实分析成功，格式页显示当前视频实际提供的 `1080p/720p/480p/360p/240p/144p`，字幕不可选且未选择。默认无字幕视频+音频下载的队列前台显示真实视频字节进度 `39.2 MB / 187.9 MB`、`6%` 和 `107.1 MB / 187.9 MB`、`19%`，最终完成 `196.3 MB / 196.3 MB`、视频/音频/原生合并三阶段勾选、绿色完成和右下 `1080p`。历史记录已按用户授权删除，重启应用后队列/历史为空，辅助核验 `files/gui-downloads` 只剩根目录。该运行补足 M11 的新主地址真实队列与清理证据；截图未形成落盘包，因此 M11 仍未通过。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.
