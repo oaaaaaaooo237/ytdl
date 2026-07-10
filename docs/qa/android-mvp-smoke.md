@@ -1618,3 +1618,7 @@ API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboar
 - 按 30 分钟下载节流规则启动默认视频+音频下载。队列前台真实观察到视频阶段 `39.2 MB / 187.9 MB`、`6%`、取消动作和右下 `1080p`，随后观察到 `107.1 MB / 187.9 MB`、`19%`；最终完成态显示 `下载视频✓ / 下载音频✓ / 原生合并✓`、`196.3 MB / 196.3 MB`、绿色“完成”和右下 `1080p`。
 - 历史页确认本轮完成记录后，按用户授权在前台删除 Room 历史记录；应用删除提示明确说明不会删除已保存媒体文件。随后按用户授权，仅对本轮已核验的目录执行辅助清理：删除前 `run-as com.garyapp.ytdl find files/gui-downloads -type f -o -type d` 列出 `files/gui-downloads/task-1783691348285-1/merged-137-140.mp4`，删除该精确任务目录后同一命令只剩 `files/gui-downloads` 根目录。重启应用后的队列显示 `正在下载(0)`、`等待中(0)`、`已完成(0)`、`失败(0)`，历史页为空；这属于运行态 UI 复核，不作为文件删除原因的证明。
 - 本轮截图通过 Computer Use 在会话内可见，但未写入 `state.screenshots` 或生成落盘截图包；因此这条真实流程补强 M11 队列/历史/清理证据，但不宣称完成 M11 截图级验收。M11 仍需可保存的五页视觉审计包和剩余偏差说明。
+
+### 2026-07-10 当前五页空态辅助证据（非前台验收替代）
+
+本轮 Computer Use 在可见 API37 模拟器中重新切换下载、格式、队列、历史、设置五页，并滚动设置页复核外观与颜色区域。设备截图和同页 UIAutomator XML 作为辅助证据保存于 `docs/qa/android-visual-fidelity-20260709-m11/`：`37-download-current-aux-adb.png/.xml`、`38-format-current-aux-adb.png/.xml`、`39-queue-empty-current-aux-adb.png/.xml`、`40-history-empty-current-aux-adb.png/.xml`、`41-settings-top-current-aux-adb.png/.xml`、`42-settings-appearance-current-aux-adb.png/.xml`。六张 PNG 已核验标准 PNG 签名，六个 XML 已逐个解析；它们只用于复核设备画面和节点，不替代 Computer Use 前台可见操作证据，也不补足真实进行中队列截图。M11 仍未完成。

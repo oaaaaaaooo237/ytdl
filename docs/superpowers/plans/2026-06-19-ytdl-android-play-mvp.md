@@ -693,3 +693,7 @@ After each task commit:
 ## Completion Gate
 
 The API37 emulator GUI release gate for M9/T12 passed on 2026-07-09 with fresh Computer Use evidence. The broader Android MVP goal remains open until the post-M9 requirements are also resolved: M11 visual fidelity/Codex appearance audit, M10 real-device validation when a Xiaomi 14 or equivalent `arm64-v8a` phone is connected, and the still-unstarted Play signing, privacy-policy URL, Data safety, and store-material decisions. Passing unit tests alone is never enough for a user-visible Android acceptance claim.
+
+#### M11 Current Five-Page Empty-State Recheck (2026-07-10)
+
+Computer Use 在同一可见 API37 模拟器中完成下载、格式、队列、历史、设置五页切换，并滚动设置页复核 `外观与颜色`、`基准图配色`、`Codex 风格` 和颜色方案均不被底栏遮挡。当前队列和历史已按授权清理为空；设备 `screencap` 辅助截图及同页 UIAutomator XML 保存于 `docs/qa/android-visual-fidelity-20260709-m11/37-download-current-aux-adb.png/.xml` 至 `42-settings-appearance-current-aux-adb.png/.xml`，六张 PNG 签名和六个 XML 均已校验，仅用于后续对照，不能替代 Computer Use 前台证据。真实进行中队列截图和完整落盘视觉对照仍缺，M11 未完成。
