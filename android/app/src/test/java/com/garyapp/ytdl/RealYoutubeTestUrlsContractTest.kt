@@ -36,9 +36,21 @@ class RealYoutubeTestUrlsContractTest {
             "../../docs/qa/android-mvp-smoke.md",
         ).readText()
 
-        assertTrue(plan.contains("against `https://www.youtube.com/watch?v=PqQNXB6hhUs`"))
-        assertTrue(visualPlan.contains("用 `https://www.youtube.com/shorts/oXFad1nt6v0` 做分析和短下载抽样"))
-        assertTrue(smokeLedger.contains("后续真实测试只使用当前主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs`、备用 `https://www.youtube.com/watch?v=svoD582Pas4` 和短视频 `https://www.youtube.com/shorts/oXFad1nt6v0`"))
+        assertCurrentUrlPolicy(plan)
+        assertCurrentUrlPolicy(visualPlan)
+        assertCurrentUrlPolicy(smokeLedger)
+
+        assertTrue(plan.contains("### Historical Record M9:"))
+        val m9History = plan
+            .substringAfter("### Historical Record M9:")
+            .substringBefore("### Continuation Task M10:")
+        assertTrue(m9History.contains("历史记录，已由 2026-07-10 地址集替代"))
+    }
+
+    private fun assertCurrentUrlPolicy(document: String) {
+        assertTrue(document.contains("PqQNXB6hhUs"))
+        assertTrue(document.contains("svoD582Pas4"))
+        assertTrue(document.contains("oXFad1nt6v0"))
     }
 
     private fun sourceFile(vararg candidates: String): File {

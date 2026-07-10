@@ -486,9 +486,9 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 **Acceptance:** This task is accepted only when the Play-facing privacy/storage behavior is test-covered and failure states are recoverable without sensitive leakage.
 
-### Continuation Task M9: Full Foreground Visible Acceptance Flow
+### Historical Record M9: Full Foreground Visible Acceptance Flow（历史记录，已由 2026-07-10 地址集替代）
 
-**Status:** API37 模拟器前台 M9/T12 已通过；M8 前置能力已到位，Computer Use 已恢复并完成当前新主地址与当前 Shorts 样本的前台真实流程。真机 M10、Play 签名/商店素材和正式发布交付仍未开始。
+**Status:** 历史证据：API37 模拟器曾完成 M9/T12 前台路径；该段记录的主地址与 Shorts 样本均不再是当前执行规范。真机 M10、Play 签名/商店素材和正式发布交付仍未开始。
 
 **Purpose:** Run the meaningful GUI test only after media capability, subtitle-file output, queue, history, export, and privacy behavior exist: user-visible analysis, format choice, split download, merge, separate subtitle file where applicable, foreground progress, history, export, settings, and failures.
 
