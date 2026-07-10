@@ -167,4 +167,6 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 
 结果：以上 focused 测试、相关 UI 测试组、全量 debug 单测和 debug APK 打包均 `BUILD SUCCESSFUL`。当前 APK 已安装并启动到 API37 模拟器，Computer Use 重新执行 `nodeRepl.write(JSON.stringify({ ok: true, cwd: nodeRepl.cwd }))` 和 `sky.list_apps()` 成功；前台可见截图 `35-top-safe-area-punch-hole.png` 显示顶部居中挖孔标记已出现。
 
-暂停点：用户最新反馈要求继续调整队列/历史下载框右侧徽标，状态大小需与分辨率一致，完成为绿色、失败为红色，状态放右上角，分辨率放右下角，并避免把分辨率写死为 `1080p`。该反馈尚未实现；后续恢复时从此处继续。M11 仍未通过：仍需完成上述徽标复核、真实进行中队列截图和完整五页前台复核。
+暂停点后的处理：队列/历史下载框右侧徽标继续共用同尺寸与同位置规则；完成保持绿色、失败保持红色，状态在右上角、分辨率在右下角。本轮移除了按旧格式 ID 推断分辨率的回退逻辑，徽标只从实际 `formatSummary` 提取；例如短视频摘要为 `720p` 时显示 `720p`，旧记录只有 `视频 137 + 音频 140` 时留空而不臆测为 `1080p`。新增 `DownloadUiBridgeTest.resolutionBadgesUseRecordedSummaryInsteadOfGuessingFromLegacyFormatIds` 先验证旧行为失败，再验证修复后通过。
+
+新鲜验证：focused 回归测试、`DownloadGuiBindingTest` 与 `DownloadUiBridgeTest`、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过；APK 已安装到 API37 模拟器。Computer Use 已完成连接和可见模拟器窗口快照，但 Windows 拒绝激活该窗口，截图只见 Android 桌面，未能进入 YTDL 页面。因此本轮没有新增前台 GUI 验收，也不能声明 M11 通过。后续仍需真实进行中队列截图和完整五页前台复核。

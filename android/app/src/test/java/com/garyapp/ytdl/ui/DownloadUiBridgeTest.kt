@@ -769,7 +769,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun historyMetaHidesLegacyInternalFormatIds() {
+    fun resolutionBadgesUseRecordedSummaryInsteadOfGuessingFromLegacyFormatIds() {
         val legacyMerge = HistoryItemEntity.createSafe(
             "旧合并记录",
             60,
@@ -827,21 +827,28 @@ class DownloadUiBridgeTest {
         val shorts = items[1]
         val multiSubtitle = items[2]
 
-        assertEquals("1080p", item.formatBadge)
-        assertFalse(item.meta.contains("1080p"))
+        assertEquals("", item.formatBadge)
         assertTrue(item.meta.contains("视频+音频"))
         assertTrue(item.meta.contains("原生合并"))
         assertFalse(item.meta.contains("137"))
         assertFalse(item.meta.contains("140"))
-        assertEquals("720p", shorts.formatBadge)
-        assertFalse(shorts.meta.contains("720p"))
+        assertEquals("", shorts.formatBadge)
         assertFalse(shorts.meta.contains("136"))
         assertFalse(shorts.meta.contains("140"))
-        assertEquals("1080p", multiSubtitle.formatBadge)
+        assertEquals("", multiSubtitle.formatBadge)
         assertTrue(multiSubtitle.meta.contains("视频+音频"))
         assertTrue(multiSubtitle.meta.contains("原生合并"))
         assertFalse(multiSubtitle.meta.contains("299"))
         assertFalse(multiSubtitle.meta.contains("140"))
+
+        val shortVideoRequest = DownloadRequest(
+            url = "https://www.youtube.com/shorts/example",
+            title = "短视频",
+            route = DownloadRoute.MergeRequired(videoFormatId = "137", audioFormatId = "140"),
+            formatSummary = "720p MP4 需原生合并",
+        )
+
+        assertEquals("720p", formatResolutionBadgeForRequest(shortVideoRequest))
     }
 
     @Test

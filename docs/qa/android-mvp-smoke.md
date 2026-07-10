@@ -1555,4 +1555,4 @@ Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: tr
 
 顶部挖孔安全区已补到五页公共内容开头，新增单测覆盖安全区/挖孔节点、尺寸、居中和标题顺序；focused 测试、相关 UI 测试组、全量 debug 单测和 debug 打包均通过。Computer Use 已重新完成 node_repl smoke 与 `sky.list_apps()`，并在可见 API37 模拟器截图 `docs/qa/android-visual-fidelity-20260709-m11/35-top-safe-area-punch-hole.png` 中确认顶部居中挖孔标记出现。
 
-用户随后要求继续调整下载队列/历史右侧徽标：状态与分辨率同尺寸，完成绿色、失败红色，状态右上角、分辨率右下角，且分辨率不能写死为 `1080p`。该反馈尚未实现；M11 仍未通过。
+用户随后要求继续调整下载队列/历史右侧徽标：状态与分辨率同尺寸，完成绿色、失败红色，状态右上角、分辨率右下角，且分辨率不能写死为 `1080p`。本轮已移除按格式 ID 猜测分辨率的回退；队列和历史徽标只读取实际 `formatSummary`，短视频摘要为 `720p` 时显示 `720p`，仅含旧格式 ID 的历史记录不展示猜测值。focused 回归、相关 UI 测试、全量 debug 单测和 debug APK 打包均通过；Computer Use 因 Windows 拒绝激活模拟器窗口而未形成新的 YTDL 前台页面证据。M11 仍未通过。
