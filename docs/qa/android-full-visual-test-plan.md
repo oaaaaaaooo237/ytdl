@@ -685,3 +685,5 @@ docs/qa/android-visual-fidelity-20260709-m11/audit.md
 2026-07-09 M11 暂停点：顶部挖孔安全区已补齐并通过单测、全量 debug 单测、debug 打包和 Computer Use 可见截图 `35-top-safe-area-punch-hole.png` 复核。随后已按用户反馈完成队列/历史下载框右侧徽标的数据来源收紧：状态与分辨率同尺寸，完成绿色、失败红色，状态右上角、分辨率右下角；分辨率只从真实 `formatSummary` 提取，不再按格式 ID 推断 `1080p` 等值。新增回归先证实旧格式 ID 会错误显示，再验证短视频真实 `720p` 摘要正确显示。focused 回归、相关 UI 测试、全量 debug 单测和 debug APK 打包均通过。APK 已安装到 API37；Computer Use 可捕获模拟器桌面但 Windows 拒绝激活窗口，未能完成新的 YTDL 前台复核。M11 仍未通过。
 
 2026-07-10 M11 恢复诊断：环境脚本确认 API37 和 Gboard 软键盘前置；Computer Use 曾通过模拟器 `Raise` 动作恢复可见前台控制，前台切换五页并滚动设置页确认外观/配色控件不受底栏遮挡。地址框点击后完整 Gboard 从底部弹出，但开始逐键输入时 Windows 再次拒绝窗口激活；后续辅助 Activity 状态为 YTDL 顶层，Computer Use 捕获却连续显示黑色桌面/天气。该状态下未继续发送业务输入，也未使用 adb/剪贴板/硬件键代替 URL 输入；未触发任何 YouTube 请求。M11 仍需要可保存的前台五页复核和一个真实进行中队列截图。
+
+根因补充：辅助 UIAutomator 节点树及设备帧缓冲仍完整显示 YTDL 下载页和 Gboard，故应用与键盘没有退到后台；Computer Use 只枚举到一个 QEMU 外层窗口，且该窗口截图与真实设备帧缓冲不一致。这个 Computer Use 捕获/激活失配是当前前台验收阻断。辅助 adb/UIAutomator 证据不可替代前台操作，恢复前不再发送业务输入。

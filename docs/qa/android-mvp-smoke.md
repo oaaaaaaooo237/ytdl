@@ -1560,3 +1560,5 @@ Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: tr
 ### 2026-07-10 M11 前台恢复诊断
 
 环境脚本确认 API37 `emulator-5554` 在线，`hw.keyboard=no` 与 Gboard 软键盘前置正确。Computer Use 首先通过可见 `Raise` 动作恢复前台控制，并前台切换下载、格式、队列、历史、设置五页；设置页滚动后 `基准图配色` / `Codex 风格` 选择器完整可见。随后点击地址框，完整 Gboard 从底部弹出；因窗口激活再次被 Windows 拒绝，逐键 URL 输入未完成。辅助 `topResumedActivity` 仍为 YTDL，但 Computer Use 捕获画面变为黑色桌面/天气，无法作为应用前台证据。未使用 adb/剪贴板/硬件键补写 URL，未点击分析，未触发 YouTube 请求或字幕下载。M11 的真实进行中队列截图与完整可保存的五页前台复核仍待恢复后补齐。
+
+补充根因证据：辅助 UIAutomator 树和设备帧缓冲仍显示 YTDL 下载页与完整 Gboard，证明 Activity/应用渲染未退出；`sky.list_windows()` 只提供一个 QEMU 外层窗口，而其 Computer Use 捕获持续显示黑色桌面/天气。该窗口捕获失配被视为前台验收阻断，UIAutomator/adb 只用于说明原因，不用于替代前台输入或验收。
