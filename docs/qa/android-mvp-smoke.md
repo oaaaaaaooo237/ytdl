@@ -1604,3 +1604,5 @@ API37 可见模拟器已安装当前 APK。Computer Use 通过完整底部 Gboar
 30 分钟节流窗口后，Computer Use 在可见 API37 模拟器通过完整底部 Gboard 逐键输入主分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；辅助 UIAutomator 仅核对最终字段值。真实分析成功后，以默认“视频+音频”、未选择字幕启动下载。队列先显示视频阶段 `19.3 MB / 87.4 MB`、`7%`、取消动作和实际 `1080p`，随后完成视频/音频阶段并进入“原生合并”；最终前台显示 `下载视频 ✓ / 下载音频 ✓ / 原生合并 ✓`、`101.5 MB / 101.5 MB` 和绿色“完成”。这证明容量探测已不再对不存在输出文件作假拒绝。
 
 历史页随后暴露完成记录的删除 chip 在窄卡内不可见。按 TDD 在 `DownloadUiBridgeTest.historyActionsRenderAsIconTextChipsWithoutLosingCallbacks` 加入可见删除行约束，旧布局红灯后，将删除 chip 置于主要操作行下方并保留原确认对话和测试 tag。focused、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。最新版 APK 的可见历史页显示“删除”，确认对话后历史为空；辅助仅删除已核验的 `files/gui-downloads/task-1783666522520-1` 测试目录并确认 `files/gui-downloads` 为空。此会话截图为前台可见证据但未另存为审计包，M11 仍未完成五页截图级审计。
+
+提交后补跑 API37 `YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord`，`connectedDebugAndroidTest` 成功：测试记录在取消后保留、再次确认后删除。该本地 connected 回归补足删除回调和确认流程的运行时辅助证据。

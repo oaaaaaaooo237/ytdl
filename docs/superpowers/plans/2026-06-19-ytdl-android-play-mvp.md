@@ -676,6 +676,8 @@ fresh audit 的 P2 指出上述目录目标单测未覆盖真实 muxer 成功路
 
 本次完成记录同时暴露历史删除 chip 在窄卡内不显示。先让 `DownloadUiBridgeTest.historyActionsRenderAsIconTextChipsWithoutLosingCallbacks` 因缺少删除独立行而失败，再把删除置于主操作行下方，保留确认对话和原 test tag；focused、全量 `:app:testDebugUnitTest` 与 `:app:assembleDebug` 均通过。新版 APK 前台显示删除 chip，确认删除后历史为空；辅助只移除已确认的本次测试任务目录并核验 `files/gui-downloads` 为空。该修复和成功流程仍未形成新的落盘五页审计包，M11 不因此完成。
 
+提交后 API37 `YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord` 经 `connectedDebugAndroidTest` 通过，覆盖插入测试记录、取消删除后保留、再次确认后删除。该无网络 instrumentation 是删除可见性前台复核之外的运行时辅助证据。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.

@@ -693,3 +693,5 @@ docs/qa/android-visual-fidelity-20260709-m11/audit.md
 2026-07-10 格式页口径更新：分析后的分辨率列表只显示当前视频实际提供的高度；不存在的固定高度不再生成灰显行。若当前高度存在但不能走 Android 原生 MP4 合并，仍显示该行和具体原因。单测与 debug 打包通过；前台布局复核待 Computer Use 恢复后完成。
 
 2026-07-10 容量探测前台复验：Computer Use 在可见 API37 模拟器中用完整底部 Gboard 输入新主分享地址，辅助 UIAutomator 只核验最终完整字段；无字幕视频+音频下载依次完成视频、音频和原生合并。队列可见 `19.3 MB / 87.4 MB`、`7%`、取消动作和 `1080p`，完成态可见 `101.5 MB / 101.5 MB`、三阶段勾选和绿色“完成”。这证明容量探测改为现有输出目录后不再假报空间不足。完成记录在历史页最初未显示删除 chip；TDD 后把删除放到独立可见行，最新版 APK 前台确认删除对话和空历史，辅助清理该次已核验的测试任务目录后 `files/gui-downloads` 为空。全量 debug 单测、debug 打包和 API37 本地媒体 instrumentation 均通过。会话内可见画面尚未另存为完整五页审计包，因此 M11 仍未通过。
+
+提交后 API37 `YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord` 经 `connectedDebugAndroidTest` 通过，辅助覆盖取消后保留和确认后删除；不替代前台可见路径。
