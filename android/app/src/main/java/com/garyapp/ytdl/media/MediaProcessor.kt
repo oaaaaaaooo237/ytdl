@@ -59,9 +59,10 @@ class NativeMuxerMediaProcessor(
         val videoInput = request.videoInput.canonicalFile
         val audioInput = request.audioInput.canonicalFile
         val outputFile = request.outputFile.canonicalFile
+        val outputDirectory = checkNotNull(outputFile.parentFile)
 
-        outputFile.parentFile?.mkdirs()
-        requireAvailableOutputSpace(videoInput, audioInput, outputFile)
+        outputDirectory.mkdirs()
+        requireAvailableOutputSpace(videoInput, audioInput, outputDirectory)
         if (outputFile.exists() && !outputFile.delete()) {
             throw MediaProcessingValidationException("无法覆盖已有输出文件。")
         }
@@ -208,9 +209,9 @@ class NativeMuxerMediaProcessor(
         }
     }
 
-    private fun requireAvailableOutputSpace(videoInput: File, audioInput: File, outputFile: File) {
+    private fun requireAvailableOutputSpace(videoInput: File, audioInput: File, outputDirectory: File) {
         val requiredBytes = videoInput.length() + audioInput.length() + MergeOutputSafetyMarginBytes
-        if (availableBytes(outputFile) < requiredBytes) {
+        if (availableBytes(outputDirectory) < requiredBytes) {
             throw MediaProcessingValidationException("设备存储空间不足，无法合并视频和音频。")
         }
     }

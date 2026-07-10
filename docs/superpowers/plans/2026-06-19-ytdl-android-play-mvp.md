@@ -662,6 +662,12 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 Computer Use 已在 API37 可见窗口重新执行新主地址的完整软键盘输入、真实分析和格式页复核。不存在的固定高度已隐藏，实际存在但不兼容原生 MP4 合并的高度仍显示原因。随后无字幕真实视频+音频任务在队列中显示视频/音频字节进度、取消动作和真实 `1080p`；合并前空间预检以前台中文存储不足提示终止任务。历史确认删除、流文件清理、空目录清理和最新版空历史/空队列均已复核。这个切片证明格式可见性和容量失败恢复的前台路径，但没有生成新的落盘截图审计包，也没有替代 M11 的完整五页视觉验收。
 
+#### M11 Capacity-Probe False-Rejection Correction (2026-07-10)
+
+对上一节的新主地址失败补充更正：当时 API37 `/data` 约有 `550 MB` 可用空间，下载输入约为 `87.4 MB + 13.9 MB`，因此该“存储空间不足”提示不是实际容量问题。`NativeMuxerMediaProcessor` 原先把不存在的 `merged-*.mp4` 传给 `usableSpace`；Android 可为不存在文件报告 `0`，造成假拒绝。
+
+按 TDD 新增 `MediaProcessorContractTest.mergeMeasuresAvailableSpaceAtExistingOutputDirectory`，旧实现失败后，修复为创建并使用受控的现有输出目录做可用空间探测。全量 `:app:testDebugUnitTest`、`:app:assembleDebug` 均通过，debug APK 已安装并在可见 API37 模拟器前台启动。完整真实下载受 30 分钟节流约束尚未重跑，因此不能将本修复视作新的前台原生合并成功或 M11 完成；下次允许的真实主/备用地址下载必须复核该路径。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.

@@ -131,6 +131,27 @@ class MediaProcessorContractTest {
     }
 
     @Test
+    fun mergeMeasuresAvailableSpaceAtExistingOutputDirectory() {
+        val outputRoot = tempFolder.newFolder("outputs")
+        val videoInput = tempFolder.newFile("video-only.mp4").apply {
+            writeBytes(byteArrayOf(1))
+        }
+        val audioInput = tempFolder.newFile("audio-only.m4a").apply {
+            writeBytes(byteArrayOf(2))
+        }
+        val outputFile = File(outputRoot, "merged.mp4")
+        var measuredTarget: File? = null
+        val processor = NativeMuxerMediaProcessor(outputRoot, availableBytes = { target ->
+            measuredTarget = target
+            Long.MAX_VALUE
+        })
+
+        processor.mergeVideoAndAudio(request(videoInput, audioInput, outputFile))
+
+        assertEquals(outputRoot.canonicalFile, measuredTarget)
+    }
+
+    @Test
     fun nativeMuxerExplicitlyKeepsSubtitleWorkForMvp2Processor() {
         val outputRoot = tempFolder.newFolder("outputs")
         val processor = NativeMuxerMediaProcessor(outputRoot)
