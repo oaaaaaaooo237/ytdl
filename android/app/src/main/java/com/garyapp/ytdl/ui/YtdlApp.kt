@@ -3113,11 +3113,12 @@ private fun HistoryCard(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
+                val actions = historyActionLabels(item)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    historyActionLabels(item).forEach { action ->
+                    actions.filterNot { it == "删除" }.forEach { action ->
                         val callback = when (action) {
                             "打开" -> onOpen
                             "分享" -> onShare
@@ -3134,6 +3135,15 @@ private fun HistoryCard(
                             modifier = Modifier.testTag("ytdl-history-action-${item.id}-$action"),
                         )
                     }
+                }
+                if ("删除" in actions) {
+                    HistoryActionChip(
+                        action = "删除",
+                        icon = historyActionIcon("删除"),
+                        accent = palette.downloadAccent,
+                        onClick = onDelete,
+                        modifier = Modifier.testTag("ytdl-history-action-${item.id}-删除"),
+                    )
                 }
             }
             CardTrailingBadges(

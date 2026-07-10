@@ -669,6 +669,7 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("\"分享\" -> onShare"))
         assertTrue(source.contains("\"导出\" -> onExport"))
         assertTrue(source.contains("else -> onDelete"))
+        assertTrue(source.contains("filterNot { it == \"删除\" }"))
     }
 
     @Test

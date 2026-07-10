@@ -1598,3 +1598,9 @@ API37 可见模拟器已安装当前 APK。Computer Use 通过完整底部 Gboar
 已新增 `MediaProcessorContractTest.mergeMeasuresAvailableSpaceAtExistingOutputDirectory`，先证明旧实现把未创建的输出文件作为探测目标；实现改为先取得并创建受控输出目录，再在该已存在目录上测量可用空间。`:app:testDebugUnitTest` 与 `:app:assembleDebug` 均已通过，debug APK 已重新安装到可见 API37 模拟器并能前台启动。因完整真实下载尚在 30 分钟节流窗口内，本条修复暂只有单测/打包/安装证据，不能把它写成新的前台合并成功或 M11 通过。
 
 提交 `023539d` 的独立审计提出 P2：目录目标单测本身没有证明真实 muxer 合并。已将 API37 本地生成媒体 instrumentation 的成功输出改到原本不存在的 `new-task/merged.mp4`，断言目录创建、输出非空以及各一条视频轨和音频轨；`NativeMuxerMediaProcessorInstrumentedTest` 的 2 项均通过。随后全量 `:app:testDebugUnitTest` 与 `:app:assembleDebug` 再次通过。该本地设备测试不触发 YouTube 请求，也仍不替代节流窗口后的前台真实下载复验。
+
+### 2026-07-10 容量修正前台复验与测试清理
+
+30 分钟节流窗口后，Computer Use 在可见 API37 模拟器通过完整底部 Gboard 逐键输入主分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；辅助 UIAutomator 仅核对最终字段值。真实分析成功后，以默认“视频+音频”、未选择字幕启动下载。队列先显示视频阶段 `19.3 MB / 87.4 MB`、`7%`、取消动作和实际 `1080p`，随后完成视频/音频阶段并进入“原生合并”；最终前台显示 `下载视频 ✓ / 下载音频 ✓ / 原生合并 ✓`、`101.5 MB / 101.5 MB` 和绿色“完成”。这证明容量探测已不再对不存在输出文件作假拒绝。
+
+历史页随后暴露完成记录的删除 chip 在窄卡内不可见。按 TDD 在 `DownloadUiBridgeTest.historyActionsRenderAsIconTextChipsWithoutLosingCallbacks` 加入可见删除行约束，旧布局红灯后，将删除 chip 置于主要操作行下方并保留原确认对话和测试 tag。focused、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。最新版 APK 的可见历史页显示“删除”，确认对话后历史为空；辅助仅删除已核验的 `files/gui-downloads/task-1783666522520-1` 测试目录并确认 `files/gui-downloads` 为空。此会话截图为前台可见证据但未另存为审计包，M11 仍未完成五页截图级审计。

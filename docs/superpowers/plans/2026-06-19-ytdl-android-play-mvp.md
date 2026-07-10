@@ -670,6 +670,12 @@ Computer Use 已在 API37 可见窗口重新执行新主地址的完整软键盘
 
 fresh audit 的 P2 指出上述目录目标单测未覆盖真实 muxer 成功路径。已把 API37 本地生成媒体 instrumentation 的输出改为原本不存在的受控子目录 `new-task/merged.mp4`，并断言目录创建、非空输出与一条视频轨/一条音频轨。`NativeMuxerMediaProcessorInstrumentedTest` 2 项通过，随后全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 再次通过；该无网络设备测试关闭了该 P2，但不替代后续前台真实下载复验。
 
+#### M11 Capacity-Probe Foreground Recheck and History Cleanup (2026-07-10)
+
+在 30 分钟完整下载间隔后，Computer Use 用完整底部 Gboard 逐键输入新主分享地址，辅助 UIAutomator 只核验最终准确字段。真实分析后启动默认无字幕视频+音频下载；队列可见 `19.3 MB / 87.4 MB`、`7%`、取消动作和 `1080p`，视频/音频阶段完成后进入原生合并，最终显示三阶段均为勾选、`101.5 MB / 101.5 MB` 和绿色“完成”。这给出容量探测目录修正的真实前台成功证据。
+
+本次完成记录同时暴露历史删除 chip 在窄卡内不显示。先让 `DownloadUiBridgeTest.historyActionsRenderAsIconTextChipsWithoutLosingCallbacks` 因缺少删除独立行而失败，再把删除置于主操作行下方，保留确认对话和原 test tag；focused、全量 `:app:testDebugUnitTest` 与 `:app:assembleDebug` 均通过。新版 APK 前台显示删除 chip，确认删除后历史为空；辅助只移除已确认的本次测试任务目录并核验 `files/gui-downloads` 为空。该修复和成功流程仍未形成新的落盘五页审计包，M11 不因此完成。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.
