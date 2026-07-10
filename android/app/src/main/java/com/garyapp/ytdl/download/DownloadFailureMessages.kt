@@ -22,6 +22,10 @@ object DownloadFailureMessages {
         return "文件处理失败，请重试或选择其他格式。"
     }
 
+    fun insufficientStorage(): String {
+        return "设备存储空间不足，请清理空间后重试。"
+    }
+
     fun saveExportDenied(detail: String? = null): String {
         return "未获得保存位置授权，导出已取消。请重新选择保存位置。"
     }
@@ -59,6 +63,9 @@ object DownloadFailureMessages {
     fun fromErrorText(message: String?): String {
         val safe = SensitiveText.redact(message.orEmpty())
         return when {
+            safe.contains("存储空间不足") ||
+                safe.contains("no space", ignoreCase = true) ||
+                safe.contains("enospc", ignoreCase = true) -> insufficientStorage()
             safe.contains("网络", ignoreCase = true) ||
                 safe.contains("network", ignoreCase = true) ||
                 safe.contains("timeout", ignoreCase = true) -> network(safe)

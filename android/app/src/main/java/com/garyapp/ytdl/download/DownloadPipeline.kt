@@ -234,6 +234,7 @@ class DownloadPipeline(
             emit(state.canceled())
             DownloadPipelineResult(state = state, outputs = finalOutputs)
         } catch (exc: Exception) {
+            cleanupUntrackedTaskFiles(taskOutputDirectory, finalOutputs)
             if (exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Canceled) {
                 emit(state.canceled())
             } else {
@@ -378,6 +379,24 @@ class DownloadPipeline(
     private fun deleteIntermediateStream(file: File) {
         if (file.isFile) {
             file.delete()
+        }
+    }
+
+    private fun cleanupUntrackedTaskFiles(
+        taskOutputDirectory: File,
+        finalOutputs: List<DownloadOutputFile>,
+    ) {
+        val retainedOutputs = finalOutputs.mapNotNull { output ->
+            runCatching { File(output.path).canonicalFile }.getOrNull()
+        }
+        taskOutputDirectory.listFiles()?.forEach { candidate ->
+            val canonicalCandidate = runCatching { candidate.canonicalFile }.getOrNull() ?: return@forEach
+            val containsRetainedOutput = retainedOutputs.any { output ->
+                output == canonicalCandidate || output.path.startsWith(canonicalCandidate.path + File.separator)
+            }
+            if (!containsRetainedOutput) {
+                canonicalCandidate.deleteRecursively()
+            }
         }
     }
 

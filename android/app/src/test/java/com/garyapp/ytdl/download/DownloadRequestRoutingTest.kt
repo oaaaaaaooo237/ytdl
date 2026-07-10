@@ -168,6 +168,33 @@ class DownloadRequestRoutingTest {
     }
 
     @Test
+    fun mergeRequiredRouteCleansIntermediateStreamsAfterMergeFailure() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val mediaProcessor = RecordingMediaProcessor().apply { mergeFailure = true }
+
+        val result = DownloadPipeline(RecordingDownloadEngine(temp.root), mediaProcessor).run(request, temp.root)
+        val mergeRequest = mediaProcessor.mergeRequests.single()
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertTrue(result.outputs.isEmpty())
+        assertFalse("合并失败后应清理独立视频流", mergeRequest.videoInput.exists())
+        assertFalse("合并失败后应清理独立音频流", mergeRequest.audioInput.exists())
+    }
+
+    @Test
     fun mergeRequiredRouteRetriesOnlyFailedFormatPartOnceForNetworkFailure() {
         val request = DownloadRequest.fromAnalysis(
             url = TestUrl,
@@ -708,9 +735,13 @@ class DownloadRequestRoutingTest {
     private class RecordingMediaProcessor : MediaProcessor {
         override val processorName: String = "recording"
         val mergeRequests = mutableListOf<MediaMergeRequest>()
+        var mergeFailure = false
 
         override fun mergeVideoAndAudio(request: MediaMergeRequest): Result<MediaProcessingResult> {
             mergeRequests += request
+            if (mergeFailure) {
+                return Result.failure(IllegalStateException("merge failed"))
+            }
             request.outputFile.parentFile?.mkdirs()
             request.outputFile.writeText("merged")
             return Result.success(

@@ -613,7 +613,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 **Steps:**
 - [ ] Create a focused visual-fidelity checklist from `docs/android-gui-reference-v3.png` covering five-page title hierarchy, card density, bottom navigation icon/pill behavior, format rows, queue grouping, history search/filter/actions, settings rows, safe areas, and scroll behavior.
 - [ ] Capture or reuse foreground screenshots for all five current pages with the keyboard dismissed; compare them against the checklist and record exact gaps before implementation.
-- [ ] Make only scoped UI refinements that preserve real state: do not add fake sample data, do not hide required privacy/legal text, do not remove unavailable-format reasons, and do not weaken download/queue/history functionality.
+- [ ] Make only scoped UI refinements that preserve real state: do not add fake sample data, do not hide required privacy/legal text, keep reasons for formats actually supplied but unavailable on this device, and do not weaken download/queue/history functionality.
 - [ ] Verify both `基准图配色` and `Codex 风格` remain selectable, persisted, and visibly affect five-page accents; Codex colors must be consistent with the existing Codex preset rather than a new unrelated palette.
 - [ ] Add or adjust focused JVM/Compose/UI binding tests for any new stable visual contract that can be asserted without pixel snapshots.
 - [ ] Use Computer Use on the visible API37 emulator for the foreground visual smoke after changes. The smoke must include all five tabs and at least one page where the keyboard is dismissed so bottom navigation is fully visible.
@@ -641,6 +641,18 @@ Checkboxes before this section are historical scope inventory and must not be us
 - [ ] Capture an active Queue page only while it visibly shows the real title, non-placeholder progress, byte/speed-or-ETA data when supplied by the pipeline, cancel affordance, safe area, and bottom navigation. Reject empty, completed, or blocked captures.
 - [ ] If a foreground screenshot exposes a new stable visual defect, write a failing focused Compose/JVM test first, implement the smallest `YtdlApp.kt` correction, then run focused test, related UI tests, full `:app:testDebugUnitTest`, and `:app:assembleDebug` sequentially.
 - [ ] Record the exact foreground evidence and any remaining mismatch in all three QA documents. Do not mark M11 complete until the acceptance paragraph above is satisfied.
+
+#### M11 Capacity and Test-Cleanup Correction (2026-07-10)
+
+一次历史链接的前台真实视频+音频下载在 `原生合并` 后失败。辅助容量证据确认 API37 `/data` 当时仅余约 `215 MB`，不足以在保留约 `331.5 MB` 视频流和音频流的同时再写出合并 MP4。历史记录的前台删除确认虽然移除了 Room 记录，但失败任务的中间流仍滞留在 App 私有下载目录；该目录已清理并核验为空。
+
+已修复并验证：合并器现在在写输出前检查输入流总大小加 `1 MiB` 缓冲所需的可用空间，并映射为可操作的存储不足提示；下载管线失败时清理未纳入最终输出的任务文件，同时保留已经完成的媒体输出。focused 回归、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均已通过，当前 APK 已在可见 API37 模拟器前台确认空历史和空队列。
+
+后续真实请求只使用本计划已列主/备用/Shorts 地址；旧 `tkxzMEfp49Q` 不得再用于新的真实验收。每次真实测试完成或失败后，必须前台删除对应历史记录并辅助核验 `files/gui-downloads` 没有遗留测试文件。该修复不替代 M11 的新地址前台真实下载、截图留存和五页视觉验收。
+
+#### M11 Format-Availability Visibility Correction (2026-07-10)
+
+用户将格式页口径收敛为“只显示当前视频提供的格式”。分析后保留 `自动（推荐）`，分辨率行只来自实际 `hasVideo` 格式高度；没有任何当前流的固定高度不再显示。真实存在但不兼容原生 MP4 合并的行仍显示并保留明确原因，避免把兼容性限制伪装成视频没有该高度；无分析时的禁用空态不变。回归、全量单测和 debug 打包已通过，前台复核等待用户恢复 Computer Use 后执行。
 
 After each task commit:
 

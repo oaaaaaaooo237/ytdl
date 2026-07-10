@@ -318,11 +318,7 @@ class DownloadGuiBindingTest {
         assertEquals("137", supported.videoFormatId)
         assertEquals("140", supported.audioFormatId)
 
-        val unavailable = rows.single { it.height == 720 }
-        assertFalse(unavailable.selectable)
-        assertEquals("当前视频未提供", unavailable.reason)
-        assertEquals(null, unavailable.videoFormatId)
-        assertEquals(null, unavailable.audioFormatId)
+        assertFalse(rows.any { it.height == 720 })
     }
 
     @Test

@@ -1562,3 +1562,19 @@ Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: tr
 环境脚本确认 API37 `emulator-5554` 在线，`hw.keyboard=no` 与 Gboard 软键盘前置正确。Computer Use 首先通过可见 `Raise` 动作恢复前台控制，并前台切换下载、格式、队列、历史、设置五页；设置页滚动后 `基准图配色` / `Codex 风格` 选择器完整可见。随后点击地址框，完整 Gboard 从底部弹出；因窗口激活再次被 Windows 拒绝，逐键 URL 输入未完成。辅助 `topResumedActivity` 仍为 YTDL，但 Computer Use 捕获画面变为黑色桌面/天气，无法作为应用前台证据。未使用 adb/剪贴板/硬件键补写 URL，未点击分析，未触发 YouTube 请求或字幕下载。M11 的真实进行中队列截图与完整可保存的五页前台复核仍待恢复后补齐。
 
 补充根因证据：辅助 UIAutomator 树和设备帧缓冲仍显示 YTDL 下载页与完整 Gboard，证明 Activity/应用渲染未退出；`sky.list_windows()` 只提供一个 QEMU 外层窗口，而其 Computer Use 捕获持续显示黑色桌面/天气。该窗口捕获失配被视为前台验收阻断，UIAutomator/adb 只用于说明原因，不用于替代前台输入或验收。
+
+### 2026-07-10 M11 真实队列、容量不足和测试文件清理
+
+本轮 Computer Use 恢复到可见 API37 模拟器后，用系统软键盘完成了一次历史链接的公开视频分析和视频+音频下载，未选择字幕。前台队列先后可见真实下载进度（`4.0 MB / 331.5 MB` 至 `326.6 MB / 331.5 MB`）以及 `原生合并` 阶段，右上角状态与右下角实际 `1080p` 徽标位置正确。合并随后失败，前台队列和历史都显示红色 `失败` 徽标与“文件处理失败，请重试或选择其他格式。”
+
+辅助容量核验确认失败根因：模拟器 `/data` 仅余约 `215 MB`，而视频流约 `331.5 MB`，原生合并还需要写出新的 MP4。该故障不是格式编号或分辨率显示问题。删除历史记录的前台确认流程成功，但随后发现失败合并的两条中间流仍残留在 App 私有下载目录，属于清理缺陷；已删除本次遗留目录并确认可用空间回升至约 `554 MB`、下载目录为空。
+
+修复：`NativeMuxerMediaProcessor` 现在会在创建合并输出前要求“视频流大小 + 音频流大小 + 1 MiB”可用空间，不足时输出“设备存储空间不足，请清理空间后重试。”；`DownloadPipeline` 在失败分支清理未纳入最终输出的任务文件，保留已完成媒体文件以兼容字幕后续失败。新增容量不足、失败合并清理和用户提示映射单测；相关 focused 测试、全量 `:app:testDebugUnitTest` 与 `:app:assembleDebug` 均通过，debug APK 已重新安装，并由 Computer Use 前台确认历史和队列均为空。
+
+测试地址与清理纪律：后续真实测试只使用当前主地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`、备用 `https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW` 和短视频 `https://www.youtube.com/shorts/jWTrleK2_MU`；旧链接只保留历史证据。每次真实测试收尾都要在前台删除对应历史记录，并辅助核验 App 私有下载目录无遗留测试文件。未因本轮再发起新地址下载，因此这不是新的 M11 最终验收通过。
+
+### 2026-07-10 M11 格式行只显示当前视频提供的高度
+
+用户确认格式页不再把固定分辨率表与分析结果混排。已有分析结果时，格式列表固定保留 `自动（推荐）`，其余只显示当前视频真实视频流提供的高度，并按高度降序排列；完全不存在的 `2160p`、`1440p`、`720p` 等高度不再显示“当前视频未提供”。实际存在但不适用于 Android 原生 MP4 合并的格式仍保留在列表中，继续显示具体不兼容原因。无分析空态仍维持禁用结构，不伪造可下载格式。
+
+TDD：`FormatSelectionModelTest.missingResolutionIsHiddenInsteadOfShownAsUnavailable` 和对应 GUI 绑定断言先按旧固定高度行为失败，随后仅收紧 `resolutionHeightsFor` 为真实 `hasVideo` 高度后转绿。`FormatSelectionModelTest`、`DownloadGuiBindingTest`、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。用户此前以 `Esc` 停止 Computer Use，因此本轮尚未安装并以前台可见模拟器复核这项新布局，不能作为新的 M11 前台验收。

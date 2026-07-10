@@ -105,6 +105,32 @@ class MediaProcessorContractTest {
     }
 
     @Test
+    fun mergeRejectsWhenAvailableSpaceCannotHoldTheMergedOutput() {
+        val outputRoot = tempFolder.newFolder("outputs")
+        val videoInput = tempFolder.newFile("video-only.mp4").apply {
+            writeBytes(ByteArray(8))
+        }
+        val audioInput = tempFolder.newFile("audio-only.m4a").apply {
+            writeBytes(ByteArray(4))
+        }
+        val outputFile = File(outputRoot, "merged.mp4")
+        val processor = NativeMuxerMediaProcessor(outputRoot, availableBytes = { 11L })
+
+        val result = processor.mergeVideoAndAudio(
+            request(
+                videoInput = videoInput,
+                audioInput = audioInput,
+                outputFile = outputFile,
+            ),
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is MediaProcessingValidationException)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("存储空间不足"))
+        assertFalse(outputFile.exists())
+    }
+
+    @Test
     fun nativeMuxerExplicitlyKeepsSubtitleWorkForMvp2Processor() {
         val outputRoot = tempFolder.newFolder("outputs")
         val processor = NativeMuxerMediaProcessor(outputRoot)

@@ -119,7 +119,7 @@ class FormatSelectionModelTest {
     }
 
     @Test
-    fun missingResolutionIsDisabledWithVisibleReason() {
+    fun missingResolutionIsHiddenInsteadOfShownAsUnavailable() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
                 progressiveFormat(id = "18", height = 360),
@@ -127,11 +127,8 @@ class FormatSelectionModelTest {
             selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 480),
         )
 
-        val row = rows.single { it.height == 480 }
-        assertEquals("480p", row.label)
-        assertFalse(row.selectable)
-        assertFalse(row.selected)
-        assertEquals("当前视频未提供", row.reason)
+        assertEquals(listOf(null, 360), rows.map { it.height })
+        assertFalse(rows.any { it.height == 480 })
     }
 
     @Test

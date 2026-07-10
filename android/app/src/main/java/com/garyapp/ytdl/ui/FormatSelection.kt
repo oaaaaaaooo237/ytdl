@@ -253,11 +253,12 @@ private fun unavailableRow(
 
 private fun resolutionHeightsFor(analysis: VideoAnalysis): List<Int?> {
     val analyzedHeights = analysis.formats
+        .filter { it.hasVideo }
         .mapNotNull { it.height }
-    val mergedHeights = (StandardHeights.filterNotNull() + analyzedHeights)
+    val availableHeights = analyzedHeights
         .distinct()
         .sortedDescending()
-    return listOf(null) + mergedHeights
+    return listOf(null) + availableHeights
 }
 
 private data class FormatChoice(

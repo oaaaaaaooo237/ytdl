@@ -41,6 +41,7 @@ interface MediaProcessor {
 
 class NativeMuxerMediaProcessor(
     private val controlledOutputRoot: File,
+    private val availableBytes: (File) -> Long = { it.usableSpace },
 ) : MediaProcessor {
     override val processorName: String = "android-native-muxer"
 
@@ -60,6 +61,7 @@ class NativeMuxerMediaProcessor(
         val outputFile = request.outputFile.canonicalFile
 
         outputFile.parentFile?.mkdirs()
+        requireAvailableOutputSpace(videoInput, audioInput, outputFile)
         if (outputFile.exists() && !outputFile.delete()) {
             throw MediaProcessingValidationException("无法覆盖已有输出文件。")
         }
@@ -206,6 +208,13 @@ class NativeMuxerMediaProcessor(
         }
     }
 
+    private fun requireAvailableOutputSpace(videoInput: File, audioInput: File, outputFile: File) {
+        val requiredBytes = videoInput.length() + audioInput.length() + MergeOutputSafetyMarginBytes
+        if (availableBytes(outputFile) < requiredBytes) {
+            throw MediaProcessingValidationException("设备存储空间不足，无法合并视频和音频。")
+        }
+    }
+
     private fun File.isInside(root: File): Boolean {
         return this == root || path.startsWith(root.path + File.separator)
     }
@@ -230,5 +239,6 @@ class NativeMuxerMediaProcessor(
 
     private companion object {
         private const val DefaultCopyBufferSize = 1024 * 1024
+        private const val MergeOutputSafetyMarginBytes = 1024 * 1024L
     }
 }
