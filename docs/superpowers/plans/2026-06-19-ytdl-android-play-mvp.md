@@ -598,7 +598,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M11: Reference Visual Fidelity and Codex Appearance
 
-**Status:** 未开始；M9/T12 证明当前 GUI 可真实运行，但还不能证明五页静态视觉已经尽可能贴合 `docs/android-gui-reference-v3.png`，也不能证明 Codex 风格在前台截图层面对五页都一致生效。
+**Status:** 进行中；M9/T12 已证明当前 GUI 可真实运行，M11 已完成五页基线/Codex 配色审计、底部导航与设置滚动缓冲、格式与队列空态密度、顶部挖孔安全区及状态/分辨率徽标的首轮修正。尚未完成真实下载进行中队列截图和完整五页前台复核，因此不能把 M11 写成通过。
 
 **Purpose:** Bring the implemented five-page Compose UI closer to the confirmed Android GUI reference while preserving the real data bindings, queue/history behavior, privacy boundaries, and Play-safe wording already accepted by M9/T12.
 
@@ -622,6 +622,25 @@ Checkboxes before this section are historical scope inventory and must not be us
 - [ ] Save screenshots/XML and document any remaining intentional deviations from the reference.
 
 **Acceptance:** M11 is accepted only when the current five-page UI has a screenshot-backed visual audit against `docs/android-gui-reference-v3.png`, Codex/reference appearance settings are verified at the foreground UI level, at least one real in-progress queue-page screenshot proves progress/speed-or-ETA/cancel affordances remain visible, focused tests pass, and any remaining mismatch is explicitly documented rather than silently treated as complete.
+
+#### M11 Current Execution Slice: Foreground Queue Evidence Recovery (2026-07-10)
+
+**Goal:** Recover reliable Computer Use control of the existing API37 window, then produce one rate-limited, no-subtitle real-download queue capture without compromising the Gboard-only URL-entry requirement.
+
+**Files:**
+- Update: `docs/qa/android-mvp-smoke.md`
+- Update: `docs/qa/android-full-visual-test-plan.md`
+- Update: `docs/qa/android-visual-fidelity-20260709-m11/audit.md`
+- Create: `docs/qa/android-visual-fidelity-20260709-m11/36-queue-real-progress-*.png` and matching XML only after the screenshot visibly shows an active task.
+- Modify only if the captured foreground UI reveals a reproducible mismatch: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt` and its focused test under `android/app/src/test/java/com/garyapp/ytdl/ui/`.
+
+- [x] Re-run the environment script and confirm one online API37 `hw.keyboard=no` emulator with Gboard is available.
+- [x] Reconnect Computer Use with the required smoke and foreground-raise the emulator; frontally inspect Download, Format, Queue, History, and Settings, including the `基准图配色` / `Codex 风格` controls above bottom navigation.
+- [ ] Before any URL input, recover a stable foreground window after any activation failure using Computer Use window discovery and visible `Raise`; do not use adb text injection, clipboard, hardware keyboard, or PowerShell/SendKeys as an alternate input route.
+- [ ] Use the visible Gboard to enter the approved real URL exactly, observe the complete value in the field, analyze once, leave subtitles unselected, and start one video+audio download only after the configured real-download interval permits it.
+- [ ] Capture an active Queue page only while it visibly shows the real title, non-placeholder progress, byte/speed-or-ETA data when supplied by the pipeline, cancel affordance, safe area, and bottom navigation. Reject empty, completed, or blocked captures.
+- [ ] If a foreground screenshot exposes a new stable visual defect, write a failing focused Compose/JVM test first, implement the smallest `YtdlApp.kt` correction, then run focused test, related UI tests, full `:app:testDebugUnitTest`, and `:app:assembleDebug` sequentially.
+- [ ] Record the exact foreground evidence and any remaining mismatch in all three QA documents. Do not mark M11 complete until the acceptance paragraph above is satisfied.
 
 After each task commit:
 
