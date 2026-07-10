@@ -170,3 +170,11 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 暂停点后的处理：队列/历史下载框右侧徽标继续共用同尺寸与同位置规则；完成保持绿色、失败保持红色，状态在右上角、分辨率在右下角。本轮移除了按旧格式 ID 推断分辨率的回退逻辑，徽标只从实际 `formatSummary` 提取；例如短视频摘要为 `720p` 时显示 `720p`，旧记录只有 `视频 137 + 音频 140` 时留空而不臆测为 `1080p`。新增 `DownloadUiBridgeTest.resolutionBadgesUseRecordedSummaryInsteadOfGuessingFromLegacyFormatIds` 先验证旧行为失败，再验证修复后通过。
 
 新鲜验证：focused 回归测试、`DownloadGuiBindingTest` 与 `DownloadUiBridgeTest`、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过；APK 已安装到 API37 模拟器。Computer Use 已完成连接和可见模拟器窗口快照，但 Windows 拒绝激活该窗口，截图只见 Android 桌面，未能进入 YTDL 页面。因此本轮没有新增前台 GUI 验收，也不能声明 M11 通过。后续仍需真实进行中队列截图和完整五页前台复核。
+
+## 2026-07-10 前台恢复复测
+
+本轮先运行环境脚本，确认 API37 `emulator-5554` 在线，AVD 为 `hw.keyboard=no` 且 Gboard 的 `showImeWithHardKeyboard=1` 已开启。按要求重新运行 `nodeRepl.write(JSON.stringify({ ok: true, cwd: nodeRepl.cwd }))` 与 `sky.list_apps()`；Computer Use 通过模拟器窗口的 `Raise` 动作恢复了一次可见前台控制。
+
+这一次前台可见观察已完成下载、格式、队列、历史、设置五页切换；格式空态、队列空态、历史空态、底栏选中态和顶部挖孔标记均可见。设置页滚动后，`跟随系统` / `浅色` / `深色` 以及 `基准图配色` / `Codex 风格` 均完整位于底部导航上方。该观察未保存新的可接受证据截图，故只作为恢复诊断，不能替代 M11 截图审计。
+
+随后点击地址框后，完整 Gboard 在约两秒内从底部弹出，符合拟真键盘前置；但逐键输入过程中 Windows 再次拒绝 Computer Use 的窗口激活。恢复后，辅助 `adb` 状态确认 `com.garyapp.ytdl/.MainActivity` 仍为 `topResumedActivity`，而 Computer Use 连续两次捕获到黑色 Android 桌面/天气画面，无法可靠看到应用。没有使用 adb、剪贴板、硬件键或脚本替代 URL 输入；没有点击分析、没有发起任何 YouTube 请求，也没有开始下载。模拟器保持运行，M11 仍未通过。

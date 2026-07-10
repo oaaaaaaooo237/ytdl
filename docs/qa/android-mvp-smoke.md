@@ -1556,3 +1556,7 @@ Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: tr
 顶部挖孔安全区已补到五页公共内容开头，新增单测覆盖安全区/挖孔节点、尺寸、居中和标题顺序；focused 测试、相关 UI 测试组、全量 debug 单测和 debug 打包均通过。Computer Use 已重新完成 node_repl smoke 与 `sky.list_apps()`，并在可见 API37 模拟器截图 `docs/qa/android-visual-fidelity-20260709-m11/35-top-safe-area-punch-hole.png` 中确认顶部居中挖孔标记出现。
 
 用户随后要求继续调整下载队列/历史右侧徽标：状态与分辨率同尺寸，完成绿色、失败红色，状态右上角、分辨率右下角，且分辨率不能写死为 `1080p`。本轮已移除按格式 ID 猜测分辨率的回退；队列和历史徽标只读取实际 `formatSummary`，短视频摘要为 `720p` 时显示 `720p`，仅含旧格式 ID 的历史记录不展示猜测值。focused 回归、相关 UI 测试、全量 debug 单测和 debug APK 打包均通过；Computer Use 因 Windows 拒绝激活模拟器窗口而未形成新的 YTDL 前台页面证据。M11 仍未通过。
+
+### 2026-07-10 M11 前台恢复诊断
+
+环境脚本确认 API37 `emulator-5554` 在线，`hw.keyboard=no` 与 Gboard 软键盘前置正确。Computer Use 首先通过可见 `Raise` 动作恢复前台控制，并前台切换下载、格式、队列、历史、设置五页；设置页滚动后 `基准图配色` / `Codex 风格` 选择器完整可见。随后点击地址框，完整 Gboard 从底部弹出；因窗口激活再次被 Windows 拒绝，逐键 URL 输入未完成。辅助 `topResumedActivity` 仍为 YTDL，但 Computer Use 捕获画面变为黑色桌面/天气，无法作为应用前台证据。未使用 adb/剪贴板/硬件键补写 URL，未点击分析，未触发 YouTube 请求或字幕下载。M11 的真实进行中队列截图与完整可保存的五页前台复核仍待恢复后补齐。
