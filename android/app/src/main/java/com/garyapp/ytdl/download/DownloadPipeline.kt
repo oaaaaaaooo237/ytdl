@@ -399,6 +399,9 @@ class DownloadPipeline(
                 canonicalCandidate.deleteRecursively()
             }
         }
+        if (taskOutputDirectory.listFiles().isNullOrEmpty()) {
+            taskOutputDirectory.delete()
+        }
     }
 
     private fun String.safeFileToken(): String {

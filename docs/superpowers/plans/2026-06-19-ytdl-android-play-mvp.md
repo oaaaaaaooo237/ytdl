@@ -658,6 +658,10 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 对 `93991c4` 的 fresh audit 发现取消分支会漏清已下载但尚未成为最终输出的中间流。已按 TDD 修复：取消分支复用失败分支的 `cleanupUntrackedTaskFiles`，并由取消视频流后的任务目录为空断言保护。修复不删除已完成媒体输出；focused 回归、全量单测和 debug 打包均通过。该行为仍待未来恢复 Computer Use 后随真实取消路径前台复核。
 
+#### M11 Foreground Format and Storage-Recovery Slice (2026-07-10)
+
+Computer Use 已在 API37 可见窗口重新执行新主地址的完整软键盘输入、真实分析和格式页复核。不存在的固定高度已隐藏，实际存在但不兼容原生 MP4 合并的高度仍显示原因。随后无字幕真实视频+音频任务在队列中显示视频/音频字节进度、取消动作和真实 `1080p`；合并前空间预检以前台中文存储不足提示终止任务。历史确认删除、流文件清理、空目录清理和最新版空历史/空队列均已复核。这个切片证明格式可见性和容量失败恢复的前台路径，但没有生成新的落盘截图审计包，也没有替代 M11 的完整五页视觉验收。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.

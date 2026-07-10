@@ -1582,3 +1582,11 @@ TDD：`FormatSelectionModelTest.missingResolutionIsHiddenInsteadOfShownAsUnavail
 ### 2026-07-10 提交审计：取消任务的中间流清理
 
 对提交 `93991c4` 的独立只读审计发现一个 P1：视频流下载成功后、进入下一阶段前若用户取消，`DownloadPipeline` 的取消分支此前没有执行失败分支已有的未跟踪文件清理，可能留下 App 私有中间视频流。已新增 `DownloadRequestRoutingTest.cancellationStopsBeforeNextRouteAndDoesNotComplete` 的目录为空断言，先复现红灯，再在 `DownloadPipelineCanceledException` 分支调用同一受控清理方法。该清理仍只删除未纳入最终输出的文件，不删除已经完成的媒体输出。focused 回归、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。
+
+### 2026-07-10 M11 前台格式过滤与容量失败恢复复核
+
+API37 可见模拟器已安装当前 APK。Computer Use 通过完整底部 Gboard 逐键输入新主分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；辅助 UIAutomator 只用于确认完整字段值。真实分析显示标题 `KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥`、时长 `15:04` 和 `1080p MP4 需原生合并`。
+
+前台格式页确认：没有实际流的 `2160p/1440p` 已隐藏；实际存在但非原生 MP4 合并兼容的 `1920p/1280p/854p/640p/426p/256p` 仍显示原因；`1080p/720p/480p/240p` 显示 `需原生合并`，`360p` 显示 `单文件`。随后以默认视频+音频、无字幕启动一条真实下载：队列可见视频阶段 `51.2 MB / 87.4 MB`、右下实际 `1080p` 和取消动作，随后可见音频阶段 `9.9 MB / 13.9 MB`。任务在合并前因容量预检进入失败，前台消息准确为“设备存储空间不足，请清理空间后重试”，并在队列/历史维持右上红色 `失败`、右下 `1080p`。
+
+在前台历史确认删除后，辅助核验本次流文件均已清理；发现旧包只遗留空任务目录，已删除该空目录并为新包补充回归。新版随后重新安装，Computer Use 前台确认历史和队列均为空，辅助 `files/gui-downloads` 也为空。M11 仍未标记为通过：本次 Computer Use 画面为会话内可见证据，未新增落盘的完整截图审计包；五页截图级对照和真机/Play 后续项仍待完成。

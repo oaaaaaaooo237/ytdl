@@ -446,6 +446,10 @@ class DownloadRequestRoutingTest {
             "取消前已下载的中间视频流不应遗留。",
             temp.root.walkTopDown().any { it.isFile },
         )
+        assertFalse(
+            "取消后不应遗留空任务目录。",
+            temp.root.listFiles().orEmpty().any { it.isDirectory },
+        )
     }
 
     @Test
