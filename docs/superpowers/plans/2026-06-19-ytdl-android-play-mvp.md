@@ -590,7 +590,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 - [ ] Run the current primary normal video URL `https://www.youtube.com/watch?v=PqQNXB6hhUs` through real GUI analysis, 1080p-or-best-supported video+audio format selection, real download, native merge, queue completion, and history landing.
 - [ ] Verify device-specific behavior that the emulator cannot prove: notification visibility/permission behavior, background download survival, app-private output open/export, share sheet appearance without sending data, and storage permission denial recovery.
 - [ ] 字幕下载测试当前暂停；不要选择字幕或触发字幕文件下载。只在用户明确恢复后，再验证 "merged video+audio file plus separate subtitle file"。
-- [ ] Record device model, Android version, ABI, build fingerprint if available, screenshots, output file sizes, and observed gaps in `docs/qa/android-mvp-smoke.md`.
+- [ ] Record device model, Android version, ABI, build fingerprint if available, output file sizes, and observed gaps in `docs/qa/android-mvp-smoke.md`.
 - [ ] Run `cd android; .\gradlew.bat :app:testDebugUnitTest` and `cd android; .\gradlew.bat :app:assembleDebug` after any code fix.
 - [ ] Commit and push only after the real-device evidence or any fix is recorded.
 
@@ -598,7 +598,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 ### Continuation Task M11: Reference Visual Fidelity and Codex Appearance
 
-**Status:** 进行中；M9/T12 已证明当前 GUI 可真实运行，M11 已完成五页基线/Codex 配色审计、底部导航与设置滚动缓冲、格式与队列空态密度、顶部挖孔安全区及状态/分辨率徽标的首轮修正。尚未完成真实下载进行中队列截图和完整五页前台复核，因此不能把 M11 写成通过。
+**Status:** 进行中；M9/T12 已证明当前 GUI 可真实运行，M11 已完成五页基线/Codex 配色审计、底部导航与设置滚动缓冲、格式与队列空态密度、顶部挖孔安全区及状态/分辨率徽标的首轮修正。仍需完成当前五页前台复核、外观联动确认和真实进行中队列的前台观察整理，因此不能把 M11 写成通过。
 
 **Purpose:** Bring the implemented five-page Compose UI closer to the confirmed Android GUI reference while preserving the real data bindings, queue/history behavior, privacy boundaries, and Play-safe wording already accepted by M9/T12.
 
@@ -608,39 +608,37 @@ Checkboxes before this section are historical scope inventory and must not be us
 - Modify/add focused tests under `android/app/src/test/java/com/garyapp/ytdl/ui/`
 - Update: `docs/qa/android-full-visual-test-plan.md`
 - Update: `docs/qa/android-mvp-smoke.md`
-- Create or update visual evidence under `docs/qa/android-visual-fidelity-*`
 
 **Steps:**
 - [ ] Create a focused visual-fidelity checklist from `docs/android-gui-reference-v3.png` covering five-page title hierarchy, card density, bottom navigation icon/pill behavior, format rows, queue grouping, history search/filter/actions, settings rows, safe areas, and scroll behavior.
-- [ ] Capture or reuse foreground screenshots for all five current pages with the keyboard dismissed; compare them against the checklist and record exact gaps before implementation.
+- [ ] Use Computer Use to inspect all five current pages with the keyboard dismissed; compare the visible UI against the checklist and record exact gaps before implementation.
 - [ ] Make only scoped UI refinements that preserve real state: do not add fake sample data, do not hide required privacy/legal text, keep reasons for formats actually supplied but unavailable on this device, and do not weaken download/queue/history functionality.
 - [ ] Verify both `基准图配色` and `Codex 风格` remain selectable, persisted, and visibly affect five-page accents; Codex colors must be consistent with the existing Codex preset rather than a new unrelated palette.
 - [ ] Add or adjust focused JVM/Compose/UI binding tests for any new stable visual contract that can be asserted without pixel snapshots.
 - [ ] Use Computer Use on the visible API37 emulator for the foreground visual smoke after changes. The smoke must include all five tabs and at least one page where the keyboard is dismissed so bottom navigation is fully visible.
-- [ ] Include at least one foreground queue-page capture while a real download task is actively running, not only an empty or completed queue. The capture must show real progress, speed or ETA when available, pause/cancel affordances, the bottom navigation, and safe-area behavior without overlap.
+- [ ] Use Computer Use to observe at least one real download task while it is actively running, not only an empty or completed queue. The visible state must show real progress, speed or ETA when available, pause/cancel affordances, the bottom navigation, and safe-area behavior without overlap.
 - [ ] Run `powershell -ExecutionPolicy Bypass -File .\scripts\android_env.ps1`, `cd android; .\gradlew.bat :app:testDebugUnitTest`, and `cd android; .\gradlew.bat :app:assembleDebug`.
-- [ ] Save screenshots/XML and document any remaining intentional deviations from the reference.
+- [ ] Document any remaining intentional deviations from the reference.
 
-**Acceptance:** M11 is accepted only when the current five-page UI has a screenshot-backed visual audit against `docs/android-gui-reference-v3.png`, Codex/reference appearance settings are verified at the foreground UI level, at least one real in-progress queue-page screenshot proves progress/speed-or-ETA/cancel affordances remain visible, focused tests pass, and any remaining mismatch is explicitly documented rather than silently treated as complete.
+**Acceptance:** M11 is accepted only when Computer Use has inspected the current five-page UI against `docs/android-gui-reference-v3.png`, Codex/reference appearance settings are verified at the foreground UI level, at least one real in-progress queue state has been observed with progress/speed-or-ETA/cancel affordances when supplied, focused tests pass, and any remaining mismatch is explicitly documented rather than silently treated as complete.
 
 #### M11 Current Execution Slice: Foreground Queue Evidence Recovery (2026-07-10)
 
-**Goal:** Recover reliable Computer Use control of the existing API37 window, then produce one rate-limited, no-subtitle real-download queue capture without compromising the Gboard-only URL-entry requirement.
+**Goal:** Recover reliable Computer Use control of the existing API37 window, then observe one rate-limited, no-subtitle real-download queue state without compromising the Gboard-only URL-entry requirement.
 
 **Files:**
 - Update: `docs/qa/android-mvp-smoke.md`
 - Update: `docs/qa/android-full-visual-test-plan.md`
 - Update: `docs/qa/android-visual-fidelity-20260709-m11/audit.md`
-- Create: `docs/qa/android-visual-fidelity-20260709-m11/36-queue-real-progress-*.png` and matching XML only after the screenshot visibly shows an active task.
 - Modify only if the captured foreground UI reveals a reproducible mismatch: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt` and its focused test under `android/app/src/test/java/com/garyapp/ytdl/ui/`.
 
 - [x] Re-run the environment script and confirm one online API37 `hw.keyboard=no` emulator with Gboard is available.
 - [x] Reconnect Computer Use with the required smoke and foreground-raise the emulator; frontally inspect Download, Format, Queue, History, and Settings, including the `基准图配色` / `Codex 风格` controls above bottom navigation.
 - [ ] Before any URL input, recover a stable foreground window after any activation failure using Computer Use window discovery and visible `Raise`; do not use adb text injection, clipboard, hardware keyboard, or PowerShell/SendKeys as an alternate input route.
 - [ ] Use the visible Gboard to enter the approved real URL exactly, observe the complete value in the field, analyze once, leave subtitles unselected, and start one video+audio download only after the configured real-download interval permits it.
-- [ ] Capture an active Queue page only while it visibly shows the real title, non-placeholder progress, byte/speed-or-ETA data when supplied by the pipeline, cancel affordance, safe area, and bottom navigation. Reject empty, completed, or blocked captures.
-- [ ] If a foreground screenshot exposes a new stable visual defect, write a failing focused Compose/JVM test first, implement the smallest `YtdlApp.kt` correction, then run focused test, related UI tests, full `:app:testDebugUnitTest`, and `:app:assembleDebug` sequentially.
-- [ ] Record the exact foreground evidence and any remaining mismatch in all three QA documents. Do not mark M11 complete until the acceptance paragraph above is satisfied.
+- [ ] Observe the active Queue page only while it visibly shows the real title, non-placeholder progress, byte/speed-or-ETA data when supplied by the pipeline, cancel affordance, safe area, and bottom navigation. Reject empty, completed, or blocked states as functional evidence.
+- [ ] If a foreground observation exposes a new stable visual defect, write a failing focused Compose/JVM test first, implement the smallest `YtdlApp.kt` correction, then run focused test, related UI tests, full `:app:testDebugUnitTest`, and `:app:assembleDebug` sequentially.
+- [ ] Record the exact foreground observation and any remaining mismatch in all three QA documents. Do not mark M11 complete until the acceptance paragraph above is satisfied.
 
 #### M11 Capacity and Test-Cleanup Correction (2026-07-10)
 
@@ -648,7 +646,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 已修复并验证：合并器现在在写输出前检查输入流总大小加 `1 MiB` 缓冲所需的可用空间，并映射为可操作的存储不足提示；下载管线失败时清理未纳入最终输出的任务文件，同时保留已经完成的媒体输出。focused 回归、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均已通过，当前 APK 已在可见 API37 模拟器前台确认空历史和空队列。
 
-后续真实请求只使用本计划已列主/备用/Shorts 地址；旧 `tkxzMEfp49Q` 不得再用于新的真实验收。每次真实测试完成或失败后，必须前台删除对应历史记录并辅助核验 `files/gui-downloads` 没有遗留测试文件。该修复不替代 M11 的新地址前台真实下载、截图留存和五页视觉验收。
+后续真实请求只使用本计划已列主/备用/Shorts 地址；旧 `tkxzMEfp49Q` 不得再用于新的真实验收。每次真实测试完成或失败后，必须前台删除对应历史记录并辅助核验 `files/gui-downloads` 没有遗留测试文件。该修复不替代 M11 的新地址前台真实下载和五页视觉验收。
 
 #### M11 Format-Availability Visibility Correction (2026-07-10)
 
@@ -680,7 +678,23 @@ fresh audit 的 P2 指出上述目录目标单测未覆盖真实 muxer 成功路
 
 #### M11 Current Primary URL Foreground Run (2026-07-10)
 
-Computer Use 在可见 API37 模拟器中以完整底部 Gboard 逐键输入当前主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs`，辅助 UIAutomator 树核验完整字段。真实分析成功，格式页显示当前视频实际提供的 `1080p/720p/480p/360p/240p/144p`，字幕不可选且未选择。默认无字幕视频+音频下载的队列前台显示真实视频字节进度 `39.2 MB / 187.9 MB`、`6%` 和 `107.1 MB / 187.9 MB`、`19%`，最终完成 `196.3 MB / 196.3 MB`、视频/音频/原生合并三阶段勾选、绿色完成和右下 `1080p`。前台删除按应用语义仅移除 Room 历史记录；按用户授权，辅助命令删除已核验的 `files/gui-downloads/task-1783691348285-1`，删除后目录只剩根目录。重启应用后队列/历史为空，这是运行态 UI 复核，不作为文件删除原因的证明。该运行补足 M11 的新主地址真实队列与清理证据；截图未形成落盘包，因此 M11 仍未通过。
+Computer Use 在可见 API37 模拟器中以完整底部 Gboard 逐键输入当前主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs`，辅助 UIAutomator 树核验完整字段。真实分析成功，格式页显示当前视频实际提供的 `1080p/720p/480p/360p/240p/144p`，字幕不可选且未选择。默认无字幕视频+音频下载的队列前台显示真实视频字节进度 `39.2 MB / 187.9 MB`、`6%` 和 `107.1 MB / 187.9 MB`、`19%`，最终完成 `196.3 MB / 196.3 MB`、视频/音频/原生合并三阶段勾选、绿色完成和右下 `1080p`。前台删除按应用语义仅移除 Room 历史记录；按用户授权，辅助命令删除已核验的 `files/gui-downloads/task-1783691348285-1`，删除后目录只剩根目录。重启应用后队列/历史为空，这是运行态 UI 复核，不作为文件删除原因的证明。该运行补足 M11 的新主地址真实队列与清理观察；Computer Use 前台观察是主证据，不要求截图或 XML 文件。
+
+### 2026-07-10 后续交付推进清单
+
+这份清单是当前 Android 交付主线；按顺序逐项推进，每项完成后先验证，再提交并推送，再进入下一项。Computer Use 前台操作与观察是 Android GUI 验收依据；不为留档重复真实下载。
+
+- [x] D0：移除截图/XML作为 M11 功能验收门槛，删除本轮新增的辅助文件，并把相关计划和 QA 口径统一为 Computer Use 前台观察。
+- [x] D1：完成 M11 当前五页前台复核：下载、格式、队列、历史、设置；确认 `基准图配色` 与 `Codex 风格` 可切换并影响页面配色，记录实际剩余 UI 差异。
+- [x] D1.1：本轮 Computer Use 未发现需要立即修复的稳定视觉或交互缺陷，因此没有新增代码变更；既有 focused、全量单测和 debug 打包结果保持有效。
+- [x] D1.2：不再为 M11 重复发起 YouTube 下载；已经完成的真实队列、合并、历史删除和自动清理结果作为当前功能观察依据。
+
+#### D1 完成记录（2026-07-10）
+
+Computer Use 在可见 API37 模拟器中完成下载、格式、队列、历史、设置五页前台检查，并滚动设置页确认外观区域不被底部导航遮挡。随后在设置页切换到 `Codex 风格`，前台可见选中状态和页面强调色从基准图配色切换为 Codex 配色；本轮未发现新的稳定 UI 缺陷。D0/D1 完成后暂停后续真机和 Play 发布任务。
+- [ ] D2：M10 真机门槛：仅在检测到 Xiaomi 14 或同级 `arm64-v8a` 真机后，安装 APK，完成五页 GUI、真实分析/下载/原生合并、通知、后台、打开/导出/分享和失败恢复检查；未连接真机时不反复跑模拟器替代。
+- [ ] D3：Play 发布准备：核对 release 构建和 AAB、签名配置边界、隐私政策最终 URL、Data safety 字段映射、第三方许可证和商店材料清单；密钥和用户隐私内容不得提交仓库。
+- [ ] D4：最终交付复核：按本清单逐项检查代码、测试、可见 GUI、真机和发布材料，确认工作树干净，提交并推送 Android 分支。
 
 After each task commit:
 
@@ -693,7 +707,3 @@ After each task commit:
 ## Completion Gate
 
 The API37 emulator GUI release gate for M9/T12 passed on 2026-07-09 with fresh Computer Use evidence. The broader Android MVP goal remains open until the post-M9 requirements are also resolved: M11 visual fidelity/Codex appearance audit, M10 real-device validation when a Xiaomi 14 or equivalent `arm64-v8a` phone is connected, and the still-unstarted Play signing, privacy-policy URL, Data safety, and store-material decisions. Passing unit tests alone is never enough for a user-visible Android acceptance claim.
-
-#### M11 Current Five-Page Empty-State Recheck (2026-07-10)
-
-Computer Use 在同一可见 API37 模拟器中完成下载、格式、队列、历史、设置五页切换，并滚动设置页复核 `外观与颜色`、`基准图配色`、`Codex 风格` 和颜色方案均不被底栏遮挡。当前队列和历史已按授权清理为空；设备 `screencap` 辅助截图及同页 UIAutomator XML 保存于 `docs/qa/android-visual-fidelity-20260709-m11/37-download-current-aux-adb.png/.xml` 至 `42-settings-appearance-current-aux-adb.png/.xml`，六张 PNG 签名和六个 XML 均已校验，仅用于后续对照，不能替代 Computer Use 前台证据。真实进行中队列截图和完整落盘视觉对照仍缺，M11 未完成。
