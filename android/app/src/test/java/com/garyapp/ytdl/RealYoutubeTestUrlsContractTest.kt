@@ -2,7 +2,6 @@ package com.garyapp.ytdl
 
 import java.io.File
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,12 +13,17 @@ class RealYoutubeTestUrlsContractTest {
             "src/androidTest/java/com/garyapp/ytdl/RealYoutubeTestSupport.kt",
         ).readText()
 
-        assertTrue(source.contains("https://www.youtube.com/watch?v=PqQNXB6hhUs"))
-        assertTrue(source.contains("https://www.youtube.com/shorts/oXFad1nt6v0"))
-        assertTrue(source.contains("https://www.youtube.com/watch?v=svoD582Pas4"))
-        assertFalse(source.contains("lcFR2mFSmSs"))
-        assertFalse(source.contains("auNezUzwCZg"))
-        assertFalse(source.contains("jWTrleK2_MU"))
+        val expectedUrls = listOf(
+            "https://www.youtube.com/watch?v=PqQNXB6hhUs",
+            "https://www.youtube.com/watch?v=svoD582Pas4",
+            "https://www.youtube.com/shorts/oXFad1nt6v0",
+        )
+        val urls = Regex("\\\"(https://[^\\\"]+)\\\"")
+            .findAll(source)
+            .map { it.groupValues[1] }
+            .toList()
+
+        assertEquals(expectedUrls, urls)
     }
 
     @Test
@@ -67,17 +71,13 @@ class RealYoutubeTestUrlsContractTest {
         assertHistoricalBlock(
             smokeLedger,
             "### 2026-07-10 容量修正前台复验与测试清理（历史记录，旧地址证据）",
-            "",
+            "## 2026-07-10 后续执行边界",
         )
     }
 
     private fun assertCurrentUrlPolicy(document: String, start: String, end: String) {
         val startIndex = document.indexOf(start)
-        val endIndex = if (end.isEmpty()) {
-            document.length
-        } else {
-            document.indexOf(end, startIndex + start.length)
-        }
+        val endIndex = document.indexOf(end, startIndex + start.length)
         assertTrue("当前策略起止标记缺失或顺序错误：$start -> $end", startIndex >= 0 && endIndex > startIndex)
         val policy = document.substring(startIndex, endIndex)
         val expectedUrls = setOf(
@@ -98,11 +98,7 @@ class RealYoutubeTestUrlsContractTest {
 
     private fun assertHistoricalBlock(document: String, start: String, end: String) {
         val startIndex = document.indexOf(start)
-        val endIndex = if (end.isEmpty()) {
-            document.length
-        } else {
-            document.indexOf(end, startIndex + start.length)
-        }
+        val endIndex = document.indexOf(end, startIndex + start.length)
         assertTrue("历史块起止标记缺失或顺序错误：$start -> $end", startIndex >= 0 && endIndex > startIndex)
         val block = document.substring(startIndex, endIndex)
         val historicalUrls = listOf(

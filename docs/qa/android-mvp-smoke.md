@@ -1606,3 +1606,7 @@ API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboar
 历史页随后暴露完成记录的删除 chip 在窄卡内不可见。按 TDD 在 `DownloadUiBridgeTest.historyActionsRenderAsIconTextChipsWithoutLosingCallbacks` 加入可见删除行约束，旧布局红灯后，将删除 chip 置于主要操作行下方并保留原确认对话和测试 tag。focused、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。最新版 APK 的可见历史页显示“删除”，确认对话后历史为空；辅助仅删除已核验的 `files/gui-downloads/task-1783666522520-1` 测试目录并确认 `files/gui-downloads` 为空。此会话截图为前台可见证据但未另存为审计包，M11 仍未完成五页截图级审计。
 
 提交后补跑 API37 `YtdlAppUiTest#historyDeleteRequiresConfirmationForInsertedTestRecord`，`connectedDebugAndroidTest` 成功：测试记录在取消后保留、再次确认后删除。该本地 connected 回归补足删除回调和确认流程的运行时辅助证据。
+
+## 2026-07-10 后续执行边界
+
+本文件此前的旧地址段落均为历史/证据记录；后续 Android 真实测试只按文首“2026-07-10 测试地址替换”中的三条完整 URL 执行。不要从历史段落复制地址发起新的分析或下载。
