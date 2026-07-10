@@ -35,7 +35,7 @@ class NativeMuxerMediaProcessorInstrumentedTest {
         val videoInput = File(workspace, "video-only.mp4")
         val audioInput = File(workspace, "audio-only.m4a")
         val outputRoot = File(workspace, "outputs").apply { mkdirs() }
-        val outputFile = File(outputRoot, "merged.mp4")
+        val outputFile = File(outputRoot, "new-task/merged.mp4")
 
         writeVideoOnlyMp4(videoInput)
         writeAudioOnlyM4a(audioInput)
@@ -55,6 +55,7 @@ class NativeMuxerMediaProcessorInstrumentedTest {
         Log.i("NativeMuxerT8B", evidence)
 
         assertTrue("输出文件不存在：${merged.outputFile}", merged.outputFile.isFile)
+        assertTrue("输出目录未创建：${outputFile.parentFile}", outputFile.parentFile?.isDirectory == true)
         assertTrue("输出文件为空：${merged.outputFile}", merged.bytesWritten > 0L)
         assertEquals(1, merged.videoTrackCount)
         assertEquals(1, merged.audioTrackCount)

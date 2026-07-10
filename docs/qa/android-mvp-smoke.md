@@ -1596,3 +1596,5 @@ API37 可见模拟器已安装当前 APK。Computer Use 通过完整底部 Gboar
 上述新主地址任务失败后，辅助检查显示 API37 `/data` 约有 `550 MB` 可用空间，而本次视频、音频输入约为 `87.4 MB + 13.9 MB`。这说明前台的“存储空间不足”并非真实容量不足。根因是 `NativeMuxerMediaProcessor` 把尚未创建的 `merged-*.mp4` 输出文件传给 `usableSpace`；Android 对不存在文件可返回 `0`，从而产生假拒绝。
 
 已新增 `MediaProcessorContractTest.mergeMeasuresAvailableSpaceAtExistingOutputDirectory`，先证明旧实现把未创建的输出文件作为探测目标；实现改为先取得并创建受控输出目录，再在该已存在目录上测量可用空间。`:app:testDebugUnitTest` 与 `:app:assembleDebug` 均已通过，debug APK 已重新安装到可见 API37 模拟器并能前台启动。因完整真实下载尚在 30 分钟节流窗口内，本条修复暂只有单测/打包/安装证据，不能把它写成新的前台合并成功或 M11 通过。
+
+提交 `023539d` 的独立审计提出 P2：目录目标单测本身没有证明真实 muxer 合并。已将 API37 本地生成媒体 instrumentation 的成功输出改到原本不存在的 `new-task/merged.mp4`，断言目录创建、输出非空以及各一条视频轨和音频轨；`NativeMuxerMediaProcessorInstrumentedTest` 的 2 项均通过。随后全量 `:app:testDebugUnitTest` 与 `:app:assembleDebug` 再次通过。该本地设备测试不触发 YouTube 请求，也仍不替代节流窗口后的前台真实下载复验。

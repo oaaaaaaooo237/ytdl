@@ -668,6 +668,8 @@ Computer Use 已在 API37 可见窗口重新执行新主地址的完整软键盘
 
 按 TDD 新增 `MediaProcessorContractTest.mergeMeasuresAvailableSpaceAtExistingOutputDirectory`，旧实现失败后，修复为创建并使用受控的现有输出目录做可用空间探测。全量 `:app:testDebugUnitTest`、`:app:assembleDebug` 均通过，debug APK 已安装并在可见 API37 模拟器前台启动。完整真实下载受 30 分钟节流约束尚未重跑，因此不能将本修复视作新的前台原生合并成功或 M11 完成；下次允许的真实主/备用地址下载必须复核该路径。
 
+fresh audit 的 P2 指出上述目录目标单测未覆盖真实 muxer 成功路径。已把 API37 本地生成媒体 instrumentation 的输出改为原本不存在的受控子目录 `new-task/merged.mp4`，并断言目录创建、非空输出与一条视频轨/一条音频轨。`NativeMuxerMediaProcessorInstrumentedTest` 2 项通过，随后全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 再次通过；该无网络设备测试关闭了该 P2，但不替代后续前台真实下载复验。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.
