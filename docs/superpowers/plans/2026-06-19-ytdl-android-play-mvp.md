@@ -19,7 +19,7 @@
   - primary normal video: `https://www.youtube.com/watch?v=PqQNXB6hhUs`
   - backup normal video: `https://www.youtube.com/watch?v=svoD582Pas4`
   - Shorts sample: `https://www.youtube.com/shorts/oXFad1nt6v0`
-  - old `tkxzMEfp49Q` / `QBwpO9f0oAw` URLs are historical evidence only.
+  - old `tkxzMEfp49Q` / `QBwpO9f0oAw` / `lcFR2mFSmSs` / `auNezUzwCZg` / `jWTrleK2_MU` URLs are historical evidence only.
 - Real YouTube connected tests are skipped by default; run them only as single targeted checks with `-Pandroid.testInstrumentationRunnerArguments.realYoutube=true`. Real subtitle download remains paused unless the user explicitly restores it, and then also requires `-Pandroid.testInstrumentationRunnerArguments.realYoutubeSubtitle=true`.
 - Keep 429-safe spacing for real YouTube requests: at least 10 minutes between analysis/short samples, at least 30 minutes between full downloads, and stop YouTube real requests for the day if 429 appears.
 - Do not mark a task complete until its tests and required real runtime check have fresh output.
@@ -124,7 +124,7 @@
 - [ ] Ensure startup performs no network or parser update check.
 - [ ] Add Kotlin format mapping tests for supported/unsupported resolutions and merge-required labeling.
 - [ ] Verify `.\gradlew.bat :app:testDebugUnitTest` and `.\gradlew.bat :app:assembleDebug`.
-- [ ] Real check: run a targeted instrumentation or debug helper against `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` on API37 with `realYoutube=true` and confirm non-empty title/formats.
+- [ ] Real check: run a targeted instrumentation or debug helper against `https://www.youtube.com/watch?v=PqQNXB6hhUs` on API37 with `realYoutube=true` and confirm non-empty title/formats.
 - [ ] Commit with message `android: bridge yt-dlp analysis`.
 
 ### Task 4.5: Five-Page Visible GUI Shell
@@ -247,7 +247,7 @@
 - [ ] Run Android unit tests: `cd android; .\gradlew.bat :app:testDebugUnitTest`.
 - [ ] Run Android build: `cd android; .\gradlew.bat :app:assembleDebug`.
 - [ ] Run connected tests: `cd android; .\gradlew.bat :app:connectedDebugAndroidTest`. This should not trigger real YouTube by default; run real network checks separately and with spacing.
-- [ ] Use Computer Use or equivalent real emulator control on API37 to complete: launch app, input `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`, analyze, choose a supported format, start download, observe real queue progress, complete, inspect history, export/open file.
+- [ ] Use Computer Use or equivalent real emulator control on API37 to complete: launch app, input `https://www.youtube.com/watch?v=PqQNXB6hhUs`, analyze, choose a supported format, start download, observe real queue progress, complete, inspect history, export/open file.
 - [ ] Save evidence to `docs/qa/android-mvp-smoke.md`, including commands, timestamps, emulator name, app version, output path, and known gaps.
 - [ ] Commit with message `android: document MVP smoke evidence`.
 - [ ] Push `feature/android-play-mvp-1`.
@@ -558,7 +558,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 **M9.10 temporary test boundary, 2026-07-07:** 用户要求暂时不测试下载字幕文件，防止再次触发 YouTube 429。后续下载测试默认不选择字幕，不运行真实字幕下载、轻量字幕探针或前台字幕下载流程；T12 主路径只覆盖真实分析、视频/音频分离下载、原生合并、队列、历史、导出、通知、设置和失败恢复。字幕相关只保留“无字幕不可选、有字幕才可选但默认不选”的 UI/请求校验，以及既有历史能力证据。恢复字幕下载测试必须等用户明确同意。
 
-**M9.11 smoke helper, 2026-07-09:** 按用户要求，后续真实测试地址已切换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`；旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新增 `scripts/android_real_smoke.ps1` 作为辅助验证入口，默认只运行环境、单测、打包和无真实 YouTube 请求的 connected 安全集；真实分析/下载必须显式开关并遵守 10 分钟分析间隔、30 分钟下载间隔，字幕真实下载继续暂停。字幕暂停期间即使传入 `-RunRealSubtitleDownload` 也会被脚本拒绝，除非用户明确恢复后额外传入 `-AllowRealSubtitleDownload`。2026-07-09 默认脚本已通过；connected 设置页颜色测试的可见性假失败已修复为滚到 `ytdl-settings-appearance-summary` 后再断言；新主地址真实分析单项已通过并写入节流状态。
+**M9.11 smoke helper, 2026-07-09（历史记录，已由 2026-07-10 地址集替代）:** 按当时用户要求，后续真实测试地址曾切换为 `lcFR2mFSmSs`、`auNezUzwCZg` 和 Shorts `jWTrleK2_MU`；旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` 只保留为历史证据。新增 `scripts/android_real_smoke.ps1` 作为辅助验证入口，默认只运行环境、单测、打包和无真实 YouTube 请求的 connected 安全集；真实分析/下载必须显式开关并遵守 10 分钟分析间隔、30 分钟下载间隔，字幕真实下载继续暂停。字幕暂停期间即使传入 `-RunRealSubtitleDownload` 也会被脚本拒绝，除非用户明确恢复后额外传入 `-AllowRealSubtitleDownload`。2026-07-09 默认脚本已通过；connected 设置页颜色测试的可见性假失败已修复为滚到 `ytdl-settings-appearance-summary` 后再断言；新主地址真实分析单项已通过并写入节流状态。
 
 **M9.12 input-environment correction, 2026-07-09:** Computer Use remains available and can control the visible API37 emulator. A foreground reproduction showed that the matrix AVD setting `hw.keyboard=yes` can put Gboard into a physical-keyboard toolbar mode that blocks reliable long-URL soft-keyboard entry. The environment route is corrected to phone-like input: `scripts/android_env.ps1` now writes `hw.keyboard=no` for matrix AVDs while keeping `show_ime_with_hard_keyboard=1` and Gboard enabled on online emulators. Added `tests/test_android_env_script.py` to keep this contract. API37 was restarted with `hw.keyboard=no`; Computer Use then showed the full Gboard on-screen keyboard without the large `Emulator` floating input panel. This is input-environment progress only; it does not count as new YouTube GUI analysis or download acceptance.
 
@@ -587,7 +587,7 @@ Checkboxes before this section are historical scope inventory and must not be us
 - [ ] Connect Xiaomi 14 or equivalent `arm64-v8a` phone with USB debugging enabled and verify `adb devices -l` shows a physical device model, not only `emulator-*`.
 - [ ] Install the current `android/app/build/outputs/apk/debug/app-debug.apk` on the physical device.
 - [ ] Launch the app and verify the five pages render without cutouts, clipping, bottom-nav overlap, or unreadable status/navigation bars.
-- [ ] Run the current primary normal video URL `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` through real GUI analysis, 1080p-or-best-supported video+audio format selection, real download, native merge, queue completion, and history landing.
+- [ ] Run the current primary normal video URL `https://www.youtube.com/watch?v=PqQNXB6hhUs` through real GUI analysis, 1080p-or-best-supported video+audio format selection, real download, native merge, queue completion, and history landing.
 - [ ] Verify device-specific behavior that the emulator cannot prove: notification visibility/permission behavior, background download survival, app-private output open/export, share sheet appearance without sending data, and storage permission denial recovery.
 - [ ] 字幕下载测试当前暂停；不要选择字幕或触发字幕文件下载。只在用户明确恢复后，再验证 "merged video+audio file plus separate subtitle file"。
 - [ ] Record device model, Android version, ABI, build fingerprint if available, screenshots, output file sizes, and observed gaps in `docs/qa/android-mvp-smoke.md`.

@@ -6,7 +6,7 @@
 
 Android Play MVP 的 API37 模拟器前台 M9/T12 验收已有新鲜通过证据；真机 M10、Play 签名/商店素材和正式上架交付仍未完成。
 
-截至 2026-07-09，真实测试地址已切换为新三条链接。新主地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` 已完成 Computer Use 前台可见完整 GUI 路径：点击地址框直接弹出完整 Gboard、逐键输入完整分享 URL、真实分析、格式页 MP4 原生合并兼容复核、无字幕下载、队列视频/音频/原生合并完成、历史落地和系统播放器打开。通知拒权设置页前台复核已完成。新 Shorts 地址 `jWTrleK2_MU` 已完成前台软键盘输入、真实分析、格式页竖屏高度修复复核、无字幕短下载、原生合并、队列完成和历史落地。真实字幕下载按用户要求暂停，不再作为默认 T12 阻塞项；后续真机验收阶段尚未开始。当前输入环境已改为更拟真手机的 `hw.keyboard=no`，并已通过可见 Gboard 设置修正为点击 URL 输入框后直接从底部弹出完整键盘；最终前台验收不得再依赖先显示工具条、再点 `Show on-screen keyboard` 的路径。
+截至 2026-07-09（历史记录，已由 2026-07-10 地址集替代），真实测试地址曾切换为三条链接。当时主地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G` 已完成 Computer Use 前台可见完整 GUI 路径：点击地址框直接弹出完整 Gboard、逐键输入完整分享 URL、真实分析、格式页 MP4 原生合并兼容复核、无字幕下载、队列视频/音频/原生合并完成、历史落地和系统播放器打开。通知拒权设置页前台复核已完成。当时 Shorts 地址 `jWTrleK2_MU` 已完成前台软键盘输入、真实分析、格式页竖屏高度修复复核、无字幕短下载、原生合并、队列完成和历史落地。真实字幕下载按用户要求暂停，不再作为默认 T12 阻塞项；后续真机验收阶段尚未开始。当前输入环境已改为更拟真手机的 `hw.keyboard=no`，并已通过可见 Gboard 设置修正为点击 URL 输入框后直接从底部弹出完整键盘；最终前台验收不得再依赖先显示工具条、再点 `Show on-screen keyboard` 的路径。
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
@@ -1571,7 +1571,7 @@ Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: tr
 
 修复：`NativeMuxerMediaProcessor` 现在会在创建合并输出前要求“视频流大小 + 音频流大小 + 1 MiB”可用空间，不足时输出“设备存储空间不足，请清理空间后重试。”；`DownloadPipeline` 在失败分支清理未纳入最终输出的任务文件，保留已完成媒体文件以兼容字幕后续失败。新增容量不足、失败合并清理和用户提示映射单测；相关 focused 测试、全量 `:app:testDebugUnitTest` 与 `:app:assembleDebug` 均通过，debug APK 已重新安装，并由 Computer Use 前台确认历史和队列均为空。
 
-测试地址与清理纪律：后续真实测试只使用当前主地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`、备用 `https://youtu.be/auNezUzwCZg?si=wBLppn7aAimNzXTW` 和短视频 `https://www.youtube.com/shorts/jWTrleK2_MU`；旧链接只保留历史证据。每次真实测试收尾都要在前台删除对应历史记录，并辅助核验 App 私有下载目录无遗留测试文件。未因本轮再发起新地址下载，因此这不是新的 M11 最终验收通过。
+测试地址与清理纪律：后续真实测试只使用当前主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs`、备用 `https://www.youtube.com/watch?v=svoD582Pas4` 和短视频 `https://www.youtube.com/shorts/oXFad1nt6v0`；旧链接只保留历史证据。每次真实测试收尾都要在前台删除对应历史记录，并辅助核验 App 私有下载目录无遗留测试文件。未因本轮再发起新地址下载，因此这不是新的 M11 最终验收通过。
 
 ### 2026-07-10 M11 格式行只显示当前视频提供的高度
 
