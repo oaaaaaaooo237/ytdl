@@ -1583,9 +1583,9 @@ TDD：`FormatSelectionModelTest.missingResolutionIsHiddenInsteadOfShownAsUnavail
 
 对提交 `93991c4` 的独立只读审计发现一个 P1：视频流下载成功后、进入下一阶段前若用户取消，`DownloadPipeline` 的取消分支此前没有执行失败分支已有的未跟踪文件清理，可能留下 App 私有中间视频流。已新增 `DownloadRequestRoutingTest.cancellationStopsBeforeNextRouteAndDoesNotComplete` 的目录为空断言，先复现红灯，再在 `DownloadPipelineCanceledException` 分支调用同一受控清理方法。该清理仍只删除未纳入最终输出的文件，不删除已经完成的媒体输出。focused 回归、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。
 
-### 2026-07-10 M11 前台格式过滤与容量失败恢复复核
+### 2026-07-10 M11 前台格式过滤与容量失败恢复复核（历史记录，旧地址证据）
 
-API37 可见模拟器已安装当前 APK。Computer Use 通过完整底部 Gboard 逐键输入新主分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；辅助 UIAutomator 只用于确认完整字段值。真实分析显示标题 `KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥`、时长 `15:04` 和 `1080p MP4 需原生合并`。
+API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboard 逐键输入历史主分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；辅助 UIAutomator 只用于确认完整字段值。真实分析显示标题 `KISSING YOUR BEST FRIEND tiktok challenge ! Part 5 🔥`、时长 `15:04` 和 `1080p MP4 需原生合并`。
 
 前台格式页确认：没有实际流的 `2160p/1440p` 已隐藏；实际存在但非原生 MP4 合并兼容的 `1920p/1280p/854p/640p/426p/256p` 仍显示原因；`1080p/720p/480p/240p` 显示 `需原生合并`，`360p` 显示 `单文件`。随后以默认视频+音频、无字幕启动一条真实下载：队列可见视频阶段 `51.2 MB / 87.4 MB`、右下实际 `1080p` 和取消动作，随后可见音频阶段 `9.9 MB / 13.9 MB`。任务在合并前因容量预检进入失败，前台消息准确为“设备存储空间不足，请清理空间后重试”，并在队列/历史维持右上红色 `失败`、右下 `1080p`。
 
@@ -1599,9 +1599,9 @@ API37 可见模拟器已安装当前 APK。Computer Use 通过完整底部 Gboar
 
 提交 `023539d` 的独立审计提出 P2：目录目标单测本身没有证明真实 muxer 合并。已将 API37 本地生成媒体 instrumentation 的成功输出改到原本不存在的 `new-task/merged.mp4`，断言目录创建、输出非空以及各一条视频轨和音频轨；`NativeMuxerMediaProcessorInstrumentedTest` 的 2 项均通过。随后全量 `:app:testDebugUnitTest` 与 `:app:assembleDebug` 再次通过。该本地设备测试不触发 YouTube 请求，也仍不替代节流窗口后的前台真实下载复验。
 
-### 2026-07-10 容量修正前台复验与测试清理
+### 2026-07-10 容量修正前台复验与测试清理（历史记录，旧地址证据）
 
-30 分钟节流窗口后，Computer Use 在可见 API37 模拟器通过完整底部 Gboard 逐键输入主分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；辅助 UIAutomator 仅核对最终字段值。真实分析成功后，以默认“视频+音频”、未选择字幕启动下载。队列先显示视频阶段 `19.3 MB / 87.4 MB`、`7%`、取消动作和实际 `1080p`，随后完成视频/音频阶段并进入“原生合并”；最终前台显示 `下载视频 ✓ / 下载音频 ✓ / 原生合并 ✓`、`101.5 MB / 101.5 MB` 和绿色“完成”。这证明容量探测已不再对不存在输出文件作假拒绝。
+30 分钟节流窗口后，Computer Use 在可见 API37 模拟器通过完整底部 Gboard 逐键输入历史主分享地址 `https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G`；辅助 UIAutomator 仅核对最终字段值。真实分析成功后，以默认“视频+音频”、未选择字幕启动下载。队列先显示视频阶段 `19.3 MB / 87.4 MB`、`7%`、取消动作和实际 `1080p`，随后完成视频/音频阶段并进入“原生合并”；最终前台显示 `下载视频 ✓ / 下载音频 ✓ / 原生合并 ✓`、`101.5 MB / 101.5 MB` 和绿色“完成”。这证明容量探测已不再对不存在输出文件作假拒绝。
 
 历史页随后暴露完成记录的删除 chip 在窄卡内不可见。按 TDD 在 `DownloadUiBridgeTest.historyActionsRenderAsIconTextChipsWithoutLosingCallbacks` 加入可见删除行约束，旧布局红灯后，将删除 chip 置于主要操作行下方并保留原确认对话和测试 tag。focused、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。最新版 APK 的可见历史页显示“删除”，确认对话后历史为空；辅助仅删除已核验的 `files/gui-downloads/task-1783666522520-1` 测试目录并确认 `files/gui-downloads` 为空。此会话截图为前台可见证据但未另存为审计包，M11 仍未完成五页截图级审计。
 
