@@ -299,7 +299,7 @@ Shorts Computer Use 历史证据：2026-06-20 已用 Computer Use 在前台可�
 
 操作步骤：
 
-1. 使用 `tkxzMEfp49Q` 完成分析。
+1. 使用当前普通视频主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs` 完成分析。
 2. 打开 `格式` 页。
 3. 检查分辨率、帧率、编码、音频码率、容器、字幕行为。
 4. 选择支持格式并应用。
@@ -405,7 +405,7 @@ M6 本轮证据（核心/单元/构建层，不是 GUI 验收）：
 
 测试项：
 
-- 使用 `https://www.youtube.com/watch?v=tkxzMEfp49Q`。
+- 使用当前普通视频主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs`。
 - 从真实 `VideoAnalysis.formats` 选择一个 video-only format id 和一个 audio-only format id。
 - 用 Android APK 内置 Chaquopy/yt-dlp 分别下载两个明确 format id。
 

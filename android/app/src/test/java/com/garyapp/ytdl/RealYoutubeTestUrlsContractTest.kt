@@ -67,32 +67,50 @@ class RealYoutubeTestUrlsContractTest {
         assertHistoricalBlock(
             smokeLedger,
             "### 2026-07-10 容量修正前台复验与测试清理（历史记录，旧地址证据）",
-            "### 2026-07-10 M11 格式行只显示当前视频提供的高度",
+            "",
         )
     }
 
     private fun assertCurrentUrlPolicy(document: String, start: String, end: String) {
-        val policy = document.substringAfter(start).substringBefore(end)
+        val startIndex = document.indexOf(start)
+        val endIndex = if (end.isEmpty()) {
+            document.length
+        } else {
+            document.indexOf(end, startIndex + start.length)
+        }
+        assertTrue("当前策略起止标记缺失或顺序错误：$start -> $end", startIndex >= 0 && endIndex > startIndex)
+        val policy = document.substring(startIndex, endIndex)
         val expectedUrls = setOf(
             "https://www.youtube.com/watch?v=PqQNXB6hhUs",
             "https://www.youtube.com/watch?v=svoD582Pas4",
             "https://www.youtube.com/shorts/oXFad1nt6v0",
         )
-        expectedUrls.forEach { url ->
-            assertTrue("当前策略缺少完整地址：$url", policy.contains(url))
-        }
-        val urls = Regex("https://www\\.youtube\\.com/(?:watch\\?v=|shorts/)[A-Za-z0-9_-]+")
+        val urls = Regex("https://[^\\s`，。；）)]+")
             .findAll(policy)
-            .map { it.value }
-            .toSet()
+            .map { it.value.trimEnd('`', '，', '。', '；', '）', ')') }
+            .toList()
 
-        assertEquals(expectedUrls, urls)
+        assertEquals(expectedUrls.sorted(), urls.sorted())
+        expectedUrls.forEach { url ->
+            assertEquals("当前策略中的完整地址必须只出现一次：$url", 1, urls.count { it == url })
+        }
     }
 
     private fun assertHistoricalBlock(document: String, start: String, end: String) {
-        assertTrue(document.contains(start))
-        val block = document.substringAfter(start).substringBefore(end)
-        assertTrue(block.contains("https://youtu.be/lcFR2mFSmSs"))
+        val startIndex = document.indexOf(start)
+        val endIndex = if (end.isEmpty()) {
+            document.length
+        } else {
+            document.indexOf(end, startIndex + start.length)
+        }
+        assertTrue("历史块起止标记缺失或顺序错误：$start -> $end", startIndex >= 0 && endIndex > startIndex)
+        val block = document.substring(startIndex, endIndex)
+        val historicalUrls = listOf(
+            "https://youtu.be/lcFR2mFSmSs?si=FqJ3ZTdKRq6NAt6G",
+        )
+        historicalUrls.forEach { url ->
+            assertTrue("历史块缺少历史完整地址：$url", block.contains(url))
+        }
     }
 
     private fun sourceFile(vararg candidates: String): File {
