@@ -151,3 +151,20 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 结果：环境脚本、队列空态 focused 测试、两个相关 UI 测试类、全量 debug 单测和 debug APK 打包均通过。APK 已重新安装并启动到可见 API37 模拟器作为辅助运行证据。
 
 Computer Use 边界：本轮按要求重新执行 `nodeRepl.write(JSON.stringify({ ok: true, cwd: nodeRepl.cwd }))` 和 `sky.list_apps()`，均成功并识别 `Android Emulator - ytdl_api37_play_x86_64:5554`；但 Windows 仍显示“是否允许网络访问此应用？”安全提示，且 `PickerHost` 透明层拦截模拟器底部点击。按安全规则未点击该系统安全提示，因此本轮没有新增队列空态前台截图，不能把该切片写成新的前台可见通过，也不能声明 M11 通过。M11 仍缺真实进行中队列截图和安全提示解除后的五页前台复核。
+
+## 顶部安全区与暂停点
+
+本轮继续按基准图补齐顶部挖孔安全区：所有页面内容列表开头增加独立的 `16dp` 顶部安全区和居中的 `7dp` 灰色挖孔标记，位于页面标题之前。新增 `DownloadGuiBindingTest.appScreensStartWithDedicatedPunchHoleSafeArea` 保护节点存在、顺序、尺寸、居中和标题位于安全区下方。
+
+新鲜验证：
+
+```powershell
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest.appScreensStartWithDedicatedPunchHoleSafeArea
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest --tests com.garyapp.ytdl.ui.DownloadGuiBindingTest --tests com.garyapp.ytdl.ui.DownloadUiBridgeTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:testDebugUnitTest
+D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
+```
+
+结果：以上 focused 测试、相关 UI 测试组、全量 debug 单测和 debug APK 打包均 `BUILD SUCCESSFUL`。当前 APK 已安装并启动到 API37 模拟器，Computer Use 重新执行 `nodeRepl.write(JSON.stringify({ ok: true, cwd: nodeRepl.cwd }))` 和 `sky.list_apps()` 成功；前台可见截图 `35-top-safe-area-punch-hole.png` 显示顶部居中挖孔标记已出现。
+
+暂停点：用户最新反馈要求继续调整队列/历史下载框右侧徽标，状态大小需与分辨率一致，完成为绿色、失败为红色，状态放右上角，分辨率放右下角，并避免把分辨率写死为 `1080p`。该反馈尚未实现；后续恢复时从此处继续。M11 仍未通过：仍需完成上述徽标复核、真实进行中队列截图和完整五页前台复核。

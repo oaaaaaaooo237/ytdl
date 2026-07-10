@@ -152,6 +152,8 @@ private val CardPillBadgeMinWidth = 64.dp
 private val CardPillBadgeMinHeight = 30.dp
 private val BottomBarGestureBuffer = 32.dp
 private val SettingsAppearanceBottomBuffer = 96.dp
+private val TopSafeAreaHeight = 16.dp
+private val TopPunchHoleSize = 7.dp
 
 private fun tabIcon(name: String, draw: PathBuilder.() -> Unit): ImageVector =
     ImageVector.Builder(
@@ -977,6 +979,7 @@ fun YtdlApp() {
                     contentPadding = PaddingValues(start = 16.dp, top = 22.dp, end = 16.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    item { TopPunchHoleSafeArea() }
                     item { PageHeader(selected) }
                     when (selected.route) {
                         "download" -> downloadPageItems(
@@ -1396,9 +1399,33 @@ private fun YtdlBottomBar(
 }
 
 @Composable
+private fun TopPunchHoleSafeArea() {
+    val palette = LocalYtdlAppPalette.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(TopSafeAreaHeight)
+            .semantics { testTagsAsResourceId = true }
+            .testTag("ytdl-top-safe-area"),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(TopPunchHoleSize)
+                .clip(CircleShape)
+                .background(palette.neutralText.copy(alpha = 0.28f))
+                .testTag("ytdl-top-punch-hole"),
+        )
+    }
+}
+
+@Composable
 private fun PageHeader(destination: YtdlDestination) {
     val palette = LocalYtdlAppPalette.current
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(
+        modifier = Modifier.testTag("ytdl-page-header"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

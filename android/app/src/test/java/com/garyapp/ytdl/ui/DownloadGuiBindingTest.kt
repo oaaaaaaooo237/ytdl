@@ -146,6 +146,45 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun appScreensStartWithDedicatedPunchHoleSafeArea() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("private fun TopPunchHoleSafeArea("))
+        assertTrue(source.contains("item { TopPunchHoleSafeArea() }"))
+        assertTrue(source.contains(".testTag(\"ytdl-top-safe-area\")"))
+        assertTrue(source.contains(".testTag(\"ytdl-top-punch-hole\")"))
+        assertTrue(source.contains(".testTag(\"ytdl-page-header\")"))
+        assertTrue(source.indexOf("item { TopPunchHoleSafeArea() }") < source.indexOf("item { PageHeader(selected) }"))
+
+        composeRule.setContent { YtdlApp() }
+
+        composeRule.onNodeWithTag("ytdl-top-safe-area").assertExists()
+        composeRule.onNodeWithTag("ytdl-top-punch-hole").assertExists()
+        composeRule.onNodeWithTag("ytdl-page-header").assertExists()
+        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-top-safe-area"))
+
+        val safeBounds = composeRule.onNodeWithTag("ytdl-top-safe-area").getUnclippedBoundsInRoot()
+        val punchBounds = composeRule.onNodeWithTag("ytdl-top-punch-hole").getUnclippedBoundsInRoot()
+        val headerBounds = composeRule.onNodeWithTag("ytdl-page-header").getUnclippedBoundsInRoot()
+        val safeHeight = safeBounds.bottom.value - safeBounds.top.value
+        val punchWidth = punchBounds.right.value - punchBounds.left.value
+        val punchHeight = punchBounds.bottom.value - punchBounds.top.value
+        val safeCenterX = (safeBounds.left.value + safeBounds.right.value) / 2f
+        val punchCenterX = (punchBounds.left.value + punchBounds.right.value) / 2f
+
+        assertTrue(kotlin.math.abs(safeHeight - 16f) < 0.5f)
+        assertTrue(kotlin.math.abs(punchWidth - 7f) < 0.5f)
+        assertTrue(kotlin.math.abs(punchHeight - 7f) < 0.5f)
+        assertTrue(kotlin.math.abs(safeCenterX - punchCenterX) < 1.5f)
+        assertTrue(punchBounds.top >= safeBounds.top)
+        assertTrue(punchBounds.bottom <= safeBounds.bottom)
+        assertTrue(safeBounds.bottom <= headerBounds.top)
+    }
+
+    @Test
     fun queueProgressUsesPlainBarForFrequentStageUpdates() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",

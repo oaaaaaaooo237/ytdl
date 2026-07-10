@@ -681,3 +681,5 @@ docs/qa/android-visual-fidelity-20260709-m11/audit.md
 本节是 M11 的截图审计启动记录，不代表 M11 已通过。M11 通过仍需要完成 scoped UI 修复、focused 测试、`testDebugUnitTest`、`assembleDebug`、Computer Use 前台五页复核、基准/Codex 配色复核、至少一张真实进行中队列截图，以及剩余偏差说明。
 
 2026-07-09 M11 增量更新：设置页底部留白和底部导航 vector icon 已完成首轮修复；历史页已补右侧筛选 icon、icon+text 动作 chip，并通过前台种子截图确认完成/失败状态徽标在右上角、分辨率在右下角且尺寸一致；格式页无分析空态已补禁用的分辨率列表、设置行、summary 和禁用按钮，不伪造真实格式。证据见 `docs/qa/android-visual-fidelity-20260709-m11/32-format-empty-state-density.jpg`、`33-format-empty-state-summary-disabled.jpg`、`34-history-status-resolution-badges.jpg` 和同目录 `audit.md`。随后队列页空态已补禁用的任务阶段骨架、`正在下载（0）` / `等待中（0）` / `已完成（0）` / `失败（0）` 分组和输出信息卡，并用 focused Compose 测试保护“不出现真实任务卡、取消动作、真实阶段条、分辨率徽标或假进度”。该队列空态切片已通过环境脚本、相关 UI 测试组、全量 debug 单测和 debug 打包；但 Windows 安全提示 `PickerHost` 仍拦截模拟器底部点击，未新增前台截图。M11 仍未通过：真实下载进行中队列截图和安全提示解除后的完整五页视觉复核仍待补齐。
+
+2026-07-09 M11 暂停点：顶部挖孔安全区已补齐并通过单测、全量 debug 单测、debug 打包和 Computer Use 可见截图 `35-top-safe-area-punch-hole.png` 复核。下一步按用户反馈继续调整队列/历史下载框右侧徽标：状态与分辨率同尺寸，完成绿色、失败红色，状态右上角、分辨率右下角，分辨率必须来自真实格式摘要而非写死。M11 仍未通过。

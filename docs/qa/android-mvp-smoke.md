@@ -1550,3 +1550,9 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat -p android :app:assembleDebug
 结果：队列空态 focused 测试先按 TDD 红灯后转绿；环境脚本、相关 UI 测试组、全量 debug 单测和 debug 打包均通过。当前 debug APK 已重新安装并启动到 API37 模拟器作为辅助运行证据。
 
 Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: true, cwd: nodeRepl.cwd }))` 和 `sky.list_apps()`，均成功；Computer Use 可看到 `Android Emulator - ytdl_api37_play_x86_64:5554`。但 Windows 仍弹出“是否允许网络访问此应用？”安全提示，`PickerHost` 透明层拦截模拟器底部点击。按安全边界未点击该系统提示，因此本轮没有新增队列空态前台截图，不能算新的 Android 前台 GUI 验收通过。M11 仍未通过：仍缺真实进行中队列截图，以及安全提示解除后的五页前台复核。
+
+### 2026-07-09 M11 顶部安全区暂停点
+
+顶部挖孔安全区已补到五页公共内容开头，新增单测覆盖安全区/挖孔节点、尺寸、居中和标题顺序；focused 测试、相关 UI 测试组、全量 debug 单测和 debug 打包均通过。Computer Use 已重新完成 node_repl smoke 与 `sky.list_apps()`，并在可见 API37 模拟器截图 `docs/qa/android-visual-fidelity-20260709-m11/35-top-safe-area-punch-hole.png` 中确认顶部居中挖孔标记出现。
+
+用户随后要求继续调整下载队列/历史右侧徽标：状态与分辨率同尺寸，完成绿色、失败红色，状态右上角、分辨率右下角，且分辨率不能写死为 `1080p`。该反馈尚未实现；M11 仍未通过。
