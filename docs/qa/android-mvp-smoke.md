@@ -1578,3 +1578,7 @@ Computer Use 边界：本轮重新执行 `nodeRepl.write(JSON.stringify({ ok: tr
 用户确认格式页不再把固定分辨率表与分析结果混排。已有分析结果时，格式列表固定保留 `自动（推荐）`，其余只显示当前视频真实视频流提供的高度，并按高度降序排列；完全不存在的 `2160p`、`1440p`、`720p` 等高度不再显示“当前视频未提供”。实际存在但不适用于 Android 原生 MP4 合并的格式仍保留在列表中，继续显示具体不兼容原因。无分析空态仍维持禁用结构，不伪造可下载格式。
 
 TDD：`FormatSelectionModelTest.missingResolutionIsHiddenInsteadOfShownAsUnavailable` 和对应 GUI 绑定断言先按旧固定高度行为失败，随后仅收紧 `resolutionHeightsFor` 为真实 `hasVideo` 高度后转绿。`FormatSelectionModelTest`、`DownloadGuiBindingTest`、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。用户此前以 `Esc` 停止 Computer Use，因此本轮尚未安装并以前台可见模拟器复核这项新布局，不能作为新的 M11 前台验收。
+
+### 2026-07-10 提交审计：取消任务的中间流清理
+
+对提交 `93991c4` 的独立只读审计发现一个 P1：视频流下载成功后、进入下一阶段前若用户取消，`DownloadPipeline` 的取消分支此前没有执行失败分支已有的未跟踪文件清理，可能留下 App 私有中间视频流。已新增 `DownloadRequestRoutingTest.cancellationStopsBeforeNextRouteAndDoesNotComplete` 的目录为空断言，先复现红灯，再在 `DownloadPipelineCanceledException` 分支调用同一受控清理方法。该清理仍只删除未纳入最终输出的文件，不删除已经完成的媒体输出。focused 回归、全量 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均通过。

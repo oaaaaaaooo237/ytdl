@@ -654,6 +654,10 @@ Checkboxes before this section are historical scope inventory and must not be us
 
 用户将格式页口径收敛为“只显示当前视频提供的格式”。分析后保留 `自动（推荐）`，分辨率行只来自实际 `hasVideo` 格式高度；没有任何当前流的固定高度不再显示。真实存在但不兼容原生 MP4 合并的行仍显示并保留明确原因，避免把兼容性限制伪装成视频没有该高度；无分析时的禁用空态不变。回归、全量单测和 debug 打包已通过，前台复核等待用户恢复 Computer Use 后执行。
 
+#### M11 Commit Audit Follow-up: Cancellation Cleanup (2026-07-10)
+
+对 `93991c4` 的 fresh audit 发现取消分支会漏清已下载但尚未成为最终输出的中间流。已按 TDD 修复：取消分支复用失败分支的 `cleanupUntrackedTaskFiles`，并由取消视频流后的任务目录为空断言保护。修复不删除已完成媒体输出；focused 回归、全量单测和 debug 打包均通过。该行为仍待未来恢复 Computer Use 后随真实取消路径前台复核。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.

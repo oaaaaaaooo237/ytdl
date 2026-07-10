@@ -442,6 +442,10 @@ class DownloadRequestRoutingTest {
         assertEquals(DownloadStage.Canceled, result.state.stage)
         assertEquals(listOf("format:video:137"), engine.calls)
         assertFalse(stages.contains(DownloadStage.Completed))
+        assertFalse(
+            "取消前已下载的中间视频流不应遗留。",
+            temp.root.walkTopDown().any { it.isFile },
+        )
     }
 
     @Test

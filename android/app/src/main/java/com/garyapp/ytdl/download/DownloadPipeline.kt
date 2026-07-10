@@ -231,6 +231,7 @@ class DownloadPipeline(
             emit(completed)
             DownloadPipelineResult(state = state, outputs = finalOutputs)
         } catch (_: DownloadPipelineCanceledException) {
+            cleanupUntrackedTaskFiles(taskOutputDirectory, finalOutputs)
             emit(state.canceled())
             DownloadPipelineResult(state = state, outputs = finalOutputs)
         } catch (exc: Exception) {
