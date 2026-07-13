@@ -17,11 +17,17 @@ public abstract class HistoryDao {
     @Query("SELECT * FROM history_items ORDER BY completedAt DESC, id DESC LIMIT :limit")
     public abstract List<HistoryItemEntity> listRecent(int limit);
 
+    @Query("SELECT * FROM history_items ORDER BY completedAt DESC, id DESC")
+    public abstract List<HistoryItemEntity> listAll();
+
     @Query("DELETE FROM history_items WHERE id = :id")
     public abstract int deleteById(long id);
 
     @Query("DELETE FROM history_items WHERE title LIKE :titlePrefix || '%'")
     public abstract int deleteByTitlePrefix(String titlePrefix);
+
+    @Query("DELETE FROM history_items WHERE id IN (:ids)")
+    public abstract int deleteByIds(List<Long> ids);
 
     public long insert(HistoryItemEntity item) {
         return insertRaw(item.sanitizedCopy());

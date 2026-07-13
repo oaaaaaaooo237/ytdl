@@ -14,6 +14,9 @@ import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -113,8 +116,14 @@ import com.garyapp.ytdl.core.storage.StorageTargets
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import com.garyapp.ytdl.core.ytdlp.ParserUpdateChecker
+import com.garyapp.ytdl.core.ytdlp.ParserUpdateCoordinator
+import com.garyapp.ytdl.core.ytdlp.ParserUpdateHttpClient
+import com.garyapp.ytdl.core.ytdlp.ParserUpdateResult
+import com.garyapp.ytdl.core.ytdlp.ParserUpdateState
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
+import com.garyapp.ytdl.download.IdleDownloadActionResult
 import com.garyapp.ytdl.download.DownloadOutputKind
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
@@ -122,6 +131,10 @@ import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
 import com.garyapp.ytdl.download.NotificationController
 import com.garyapp.ytdl.storage.ExportController
+import com.garyapp.ytdl.storage.CacheClearResult
+import com.garyapp.ytdl.storage.CacheStats
+import com.garyapp.ytdl.storage.DownloadCacheControl
+import com.garyapp.ytdl.storage.PrivateDownloadCache
 import com.garyapp.ytdl.ui.theme.LocalYtdlAppPalette
 import com.garyapp.ytdl.ui.theme.YtdlAppPalette
 import com.garyapp.ytdl.ui.theme.YtdlTheme
@@ -135,8 +148,10 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
 private val HistoryFailureRed = Color(0xFFFF5B63)
@@ -156,6 +171,42 @@ private val BottomBarGestureBuffer = 32.dp
 private val SettingsAppearanceBottomBuffer = 96.dp
 private val TopSafeAreaHeight = 16.dp
 private val TopPunchHoleSize = 7.dp
+private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
+    checker = ParserUpdateChecker(),
+    executor = Executor { command ->
+        Thread(command, "ytdl-parser-update").apply { isDaemon = true }.start()
+    },
+)
+private val ProcessDownloadCacheExecutor = Executor { command ->
+    Thread(command, "ytdl-cache-settings").apply { isDaemon = true }.start()
+}
+
+private fun createDownloadCacheControl(context: Context): DownloadCacheControl {
+    val database = YtdlDatabaseProvider.get(context.applicationContext)
+    return PrivateDownloadCache(
+        rootDirectory = File(context.filesDir, "gui-downloads"),
+        queueDao = database.queueDao(),
+        historyDao = database.historyDao(),
+    )
+}
+
+private data class SettingsExplanation(
+    val title: String,
+    val body: String,
+)
+
+private val MediaProcessorExplanation = SettingsExplanation(
+    title = "媒体处理能力",
+    body = "当前使用 Android 原生 MediaExtractor + MediaMuxer，将已下载的分离视频流和音频流封装合并。" +
+        "它不进行转码，也不嵌入或烧录字幕；带字幕任务会输出合并后的媒体文件和独立字幕文件。" +
+        "源轨道或容器不兼容时可能无法合并。",
+)
+
+private val UrlValidationExplanation = SettingsExplanation(
+    title = "地址校验提示",
+    body = "当前只检查三类问题：地址为空、地址格式无效（包括缺少有效主机名），以及协议不是 http 或 https。" +
+        "此校验不判断站点是否受支持、内容权限、登录状态或网络是否可用。",
+)
 
 private fun tabIcon(name: String, draw: PathBuilder.() -> Unit): ImageVector =
     ImageVector.Builder(
@@ -426,6 +477,43 @@ internal class UrlInputTextChangeGuard {
     }
 }
 
+internal const val UrlSelectionDeleteActionId = 0x7954646c
+
+internal class UrlSelectionActionModeCallback(
+    private val editText: EditText,
+) : ActionMode.Callback {
+    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+        if (menu.findItem(UrlSelectionDeleteActionId) == null) {
+            menu.add(Menu.NONE, UrlSelectionDeleteActionId, Menu.NONE, "删除")
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+        }
+        return true
+    }
+
+    override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+
+    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+        if (item.itemId != UrlSelectionDeleteActionId) return false
+        val start = minOf(editText.selectionStart, editText.selectionEnd).coerceAtLeast(0)
+        val end = maxOf(editText.selectionStart, editText.selectionEnd).coerceAtLeast(0)
+        if (start < end) {
+            editText.text.delete(start, end)
+        } else {
+            editText.text.clear()
+        }
+        mode.finish()
+        return true
+    }
+
+    override fun onDestroyActionMode(mode: ActionMode) = Unit
+}
+
+internal fun EditText.installUrlSelectionActionModeCallbacks() {
+    val selectionActions = UrlSelectionActionModeCallback(this)
+    customSelectionActionModeCallback = selectionActions
+    customInsertionActionModeCallback = selectionActions
+}
+
 @Immutable
 data class YtdlDestination(
     val route: String,
@@ -553,7 +641,11 @@ fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
 )
 
 @Composable
-fun YtdlApp() {
+fun YtdlApp(
+    parserUpdateCoordinator: ParserUpdateCoordinator = ProcessParserUpdateCoordinator,
+    downloadCacheFactory: (Context) -> DownloadCacheControl = ::createDownloadCacheControl,
+    downloadCacheExecutor: Executor = ProcessDownloadCacheExecutor,
+) {
     val context = LocalContext.current
     var selectedRoute by rememberSaveable { mutableStateOf("download") }
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
@@ -565,8 +657,15 @@ fun YtdlApp() {
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
     var pendingExportOutput by remember { mutableStateOf<ExportController.AppPrivateOutput?>(null) }
     var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
+    var parserVersionSubtitle by remember { mutableStateOf(settingsParserVersionLabel()) }
+    var pendingParserUpdateVersion by remember { mutableStateOf<String?>(null) }
+    var settingsExplanation by remember { mutableStateOf<SettingsExplanation?>(null) }
+    var downloadCacheStats by remember { mutableStateOf(CacheStats(0, 0)) }
+    var showDownloadCacheConfirmation by remember { mutableStateOf(false) }
     var showStorageTargetDialog by rememberSaveable { mutableStateOf(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val downloadCache = remember { downloadCacheFactory(context.applicationContext) }
+    val downloadCacheRefreshGeneration = remember { AtomicLong(0) }
     val bridge = remember { YtdlpBridge() }
     val notificationController = remember { NotificationController(context.applicationContext) }
     val notificationRuntimePermissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -585,10 +684,24 @@ fun YtdlApp() {
         }.start()
     }
 
+    fun refreshDownloadCacheStats() {
+        val generation = downloadCacheRefreshGeneration.incrementAndGet()
+        downloadCacheExecutor.execute {
+            val stats = runCatching(downloadCache::inspect).getOrDefault(CacheStats(0, 0))
+            mainHandler.post {
+                if (generation == downloadCacheRefreshGeneration.get()) {
+                    downloadCacheStats = stats
+                }
+            }
+        }
+    }
+
     fun selectRoute(route: String) {
         selectedRoute = route
         if (route == "history") {
             refreshHistory()
+        } else if (route == "settings") {
+            refreshDownloadCacheStats()
         }
     }
 
@@ -606,6 +719,73 @@ fun YtdlApp() {
             }
         }
         appSettings = settingsRepository.setDefaultStorageTarget(target)
+    }
+
+    fun requestParserUpdateCheck(manual: Boolean) {
+        if (manual) {
+            parserUpdateCoordinator.requestManualCheck()
+        } else {
+            parserUpdateCoordinator.requestStartupCheck()
+        }
+    }
+
+    fun applyParserUpdateState(state: ParserUpdateState) {
+        parserVersionSubtitle = when {
+            state.isRunning && state.manualResultRequested -> "正在检查解析器更新..."
+            state.isRunning -> settingsParserVersionLabel()
+            state.result == ParserUpdateResult.AlreadyLatest && state.manualResultRequested -> {
+                "已是最新版本：${YtdlpBridge.PINNED_YTDLP_VERSION}"
+            }
+            state.result is ParserUpdateResult.UpdateAvailable -> {
+                "发现新版本：${state.result.latestVersion}"
+            }
+            state.result == ParserUpdateResult.Failed && state.manualResultRequested -> {
+                "检查失败，请稍后重试"
+            }
+            else -> settingsParserVersionLabel()
+        }
+        pendingParserUpdateVersion = state.promptVersion
+    }
+
+    fun dismissParserUpdatePrompt(version: String) {
+        pendingParserUpdateVersion = null
+        parserUpdateCoordinator.dismissUpdatePrompt(version)
+    }
+
+    fun clearDownloadCache() {
+        downloadCacheExecutor.execute {
+            val result = runCatching {
+                when (val cleanup = DownloadCoordinator.runWhenIdle(downloadCache::clear)) {
+                    IdleDownloadActionResult.ActiveDownload -> CacheClearResult.BlockedByActiveDownload
+                    is IdleDownloadActionResult.Executed -> cleanup.value
+                }
+            }
+            if (result.getOrNull() is CacheClearResult.Success) {
+                refreshDownloadCacheStats()
+            }
+            mainHandler.post {
+                settingsExplanation = result.fold(
+                    onSuccess = { clearResult ->
+                        when (clearResult) {
+                            CacheClearResult.BlockedByActiveDownload -> SettingsExplanation(
+                                title = "无法清理缓存",
+                                body = "当前有下载任务正在运行。为避免删除任务仍在使用的文件，请等待下载结束后再清理。",
+                            )
+                            is CacheClearResult.Success -> SettingsExplanation(
+                                title = "清理完成",
+                                body = "已释放 ${formatBytes(clearResult.freedBytes)}，删除 ${clearResult.deletedFileCount} 个文件。",
+                            )
+                        }
+                    },
+                    onFailure = {
+                        SettingsExplanation(
+                            title = "清理失败",
+                            body = "无法清理 App 私有下载缓存，请稍后重试。",
+                        )
+                    },
+                )
+            }
+        }
     }
 
     val cookiesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -682,15 +862,30 @@ fun YtdlApp() {
     }
 
     DisposableEffect(Unit) {
+        refreshDownloadCacheStats()
+        var disposed = false
+        val parserSubscription = parserUpdateCoordinator.addListener { state ->
+            mainHandler.post {
+                if (!disposed) applyParserUpdateState(state)
+            }
+        }
+        requestParserUpdateCheck(manual = false)
         val subscription = DownloadCoordinator.addListener { state ->
             mainHandler.post {
                 runtimeState = runtimeState.withPipelineState(state)
+                if (state.stage in TerminalDownloadStages) {
+                    refreshDownloadCacheStats()
+                }
                 if (state.stage in TerminalDownloadStages && selectedRoute == "history") {
                     refreshHistory()
                 }
             }
         }
-        onDispose { subscription.close() }
+        onDispose {
+            disposed = true
+            parserSubscription.close()
+            subscription.close()
+        }
     }
 
     DisposableEffect(lifecycleOwner, notificationRuntimePermissionRequired) {
@@ -1091,12 +1286,18 @@ fun YtdlApp() {
                         )
                         "settings" -> settingsPageItems(
                             settings = appSettings,
+                            parserVersionSubtitle = parserVersionSubtitle,
+                            downloadCacheSubtitle = "${formatBytes(downloadCacheStats.bytes)} · ${downloadCacheStats.fileCount} 个文件",
                             notificationsAllowed = notificationsAllowed,
                             notificationRuntimePermissionRequired = notificationRuntimePermissionRequired,
                             onSelectCookies = {
                                 cookiesPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
                             },
                             onSelectStorageTarget = ::openStorageTargetChooser,
+                            onCheckParserUpdate = { requestParserUpdateCheck(manual = true) },
+                            onShowMediaProcessorExplanation = { settingsExplanation = MediaProcessorExplanation },
+                            onShowUrlValidationExplanation = { settingsExplanation = UrlValidationExplanation },
+                            onRequestDownloadCacheClear = { showDownloadCacheConfirmation = true },
                             onRequestNotifications = {
                                 notificationsAllowed = notificationController.canPostNotifications()
                                 if (!notificationRuntimePermissionRequired) {
@@ -1167,6 +1368,82 @@ fun YtdlApp() {
                         ) {
                             Text("取消")
                         }
+                    }
+                },
+            )
+        }
+        if (showDownloadCacheConfirmation) {
+            AlertDialog(
+                modifier = Modifier
+                    .semantics { testTagsAsResourceId = true }
+                    .testTag("ytdl-cache-clear-dialog"),
+                onDismissRequest = { showDownloadCacheConfirmation = false },
+                title = { Text("确认清理私有下载缓存") },
+                text = { Text("只会删除 App 私有下载缓存中的文件，不会删除已通过系统文件夹保存的副本。") },
+                confirmButton = {
+                    TextButton(
+                        modifier = Modifier.testTag("ytdl-cache-clear-confirm"),
+                        onClick = {
+                            showDownloadCacheConfirmation = false
+                            clearDownloadCache()
+                        },
+                    ) {
+                        Text("清理")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDownloadCacheConfirmation = false }) {
+                        Text("取消")
+                    }
+                },
+            )
+        }
+        val parserUpdateVersion = pendingParserUpdateVersion
+        if (parserUpdateVersion != null) {
+            AlertDialog(
+                modifier = Modifier
+                    .semantics { testTagsAsResourceId = true }
+                    .testTag("ytdl-parser-update-dialog"),
+                onDismissRequest = { dismissParserUpdatePrompt(parserUpdateVersion) },
+                title = { Text("发现新版解析器") },
+                text = {
+                    Text("发现 yt-dlp $parserUpdateVersion。请更新应用以使用新版解析器，应用不会在内部下载或热更新解析器代码。")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            dismissParserUpdatePrompt(parserUpdateVersion)
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(ParserUpdateHttpClient.ReleasePage)),
+                                )
+                            }.onFailure {
+                                runtimeState = runtimeState.copy(userMessage = "无法打开应用发布页。")
+                            }
+                        },
+                    ) {
+                        Text("打开发布页")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { dismissParserUpdatePrompt(parserUpdateVersion) }) {
+                        Text("稍后")
+                    }
+                },
+            )
+        }
+        val explanation = settingsExplanation
+        if (explanation != null) {
+            AlertDialog(
+                modifier = Modifier
+                    .semantics { testTagsAsResourceId = true }
+                    .testTag("ytdl-settings-explanation-dialog"),
+                onDismissRequest = { settingsExplanation = null },
+                title = { Text(explanation.title) },
+                text = { Text(explanation.body) },
+                confirmButton = {
+                    TextButton(onClick = { settingsExplanation = null }) {
+                        Text("知道了")
                     }
                 },
             )
@@ -1783,6 +2060,7 @@ private fun UrlInputField(
                         InputType.TYPE_TEXT_VARIATION_URI or
                         InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                     imeOptions = EditorInfo.IME_ACTION_DONE
+                    installUrlSelectionActionModeCallbacks()
                     setShowSoftInputOnFocus(showKeyboardOnFocus)
                     setOnFocusChangeListener { view, hasFocus ->
                         if (hasFocus && showKeyboardOnFocus) {
@@ -2725,10 +3003,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     settings: AppSettings,
+    parserVersionSubtitle: String,
+    downloadCacheSubtitle: String,
     notificationsAllowed: Boolean,
     notificationRuntimePermissionRequired: Boolean,
     onSelectCookies: () -> Unit,
     onSelectStorageTarget: () -> Unit,
+    onCheckParserUpdate: () -> Unit,
+    onShowMediaProcessorExplanation: () -> Unit,
+    onShowUrlValidationExplanation: () -> Unit,
+    onRequestDownloadCacheClear: () -> Unit,
     onRequestNotifications: () -> Unit,
     onThemeModeChange: (String) -> Unit,
     onColorPresetChange: (String) -> Unit,
@@ -2747,6 +3031,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     }
     item {
         SettingLineCard(
+            "清理下载缓存",
+            downloadCacheSubtitle,
+            "⌫",
+            "›",
+            LocalYtdlAppPalette.current.settingsAccent,
+            modifier = Modifier
+                .clickable(onClick = onRequestDownloadCacheClear)
+                .testTag("ytdl-settings-cache-clear"),
+        )
+    }
+    item {
+        SettingLineCard(
             "Cookies 文件",
             settingsCookiesSubtitle(settings),
             "▤",
@@ -2757,8 +3053,30 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
                 .testTag("ytdl-settings-cookies-picker"),
         )
     }
-    item { SettingLineCard("解析器版本", settingsParserVersionLabel(), "◇", "›", Color(0xFFE7A600)) }
-    item { SettingLineCard("媒体处理能力", settingsMediaProcessorLabel(), "⚙", "›", LocalYtdlAppPalette.current.settingsAccent, modifier = Modifier.testTag("ytdl-settings-media-processor")) }
+    item {
+        SettingLineCard(
+            "解析器版本",
+            parserVersionSubtitle,
+            "◇",
+            "›",
+            Color(0xFFE7A600),
+            modifier = Modifier
+                .clickable(onClick = onCheckParserUpdate)
+                .testTag("ytdl-settings-parser-version"),
+        )
+    }
+    item {
+        SettingLineCard(
+            "媒体处理能力",
+            settingsMediaProcessorLabel(),
+            "⚙",
+            "›",
+            LocalYtdlAppPalette.current.settingsAccent,
+            modifier = Modifier
+                .clickable(onClick = onShowMediaProcessorExplanation)
+                .testTag("ytdl-settings-media-processor"),
+        )
+    }
     item {
         SettingLineCard(
             "通知权限",
@@ -2783,7 +3101,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
             }
         }
     }
-    item { SettingLineCard("地址校验提示", "仅校验空地址、非法地址和非 http/https", "!", "›", LocalYtdlAppPalette.current.downloadAccent) }
+    item {
+        SettingLineCard(
+            "地址校验提示",
+            "仅校验空地址、非法地址和非 http/https",
+            "!",
+            "›",
+            LocalYtdlAppPalette.current.downloadAccent,
+            modifier = Modifier
+                .clickable(onClick = onShowUrlValidationExplanation)
+                .testTag("ytdl-settings-url-validation"),
+        )
+    }
     item {
         val palette = LocalYtdlAppPalette.current
         val presets = ytdlColorPresets()

@@ -10,6 +10,11 @@ data class DownloadLaunch(
     val outputDirectory: File,
 )
 
+sealed interface IdleDownloadActionResult<out T> {
+    data object ActiveDownload : IdleDownloadActionResult<Nothing>
+    data class Executed<T>(val value: T) : IdleDownloadActionResult<T>
+}
+
 object DownloadCoordinator {
     private val lock = Any()
     private val listeners = linkedSetOf<(DownloadTaskState) -> Unit>()
@@ -67,15 +72,27 @@ object DownloadCoordinator {
         outputDirectory: File,
     ): Result<DownloadTaskState> {
         return runCatching {
-            outputDirectory.mkdirs()
-            val waiting = DownloadTaskState.waiting(request)
             synchronized(lock) {
+                outputDirectory.mkdirs()
+                val waiting = DownloadTaskState.waiting(request)
                 pendingLaunch = DownloadLaunch(request, outputDirectory)
                 cancellationRequested = false
                 currentState = waiting
+                waiting
             }
-            publish(waiting)
-            waiting
+                .also(::publish)
+        }
+    }
+
+    fun <T> runWhenIdle(action: () -> T): IdleDownloadActionResult<T> {
+        return synchronized(lock) {
+            val hasActiveDownload = pendingLaunch != null ||
+                currentState?.stage?.let { it !in TerminalStages } == true
+            if (hasActiveDownload) {
+                IdleDownloadActionResult.ActiveDownload
+            } else {
+                IdleDownloadActionResult.Executed(action())
+            }
         }
     }
 

@@ -22,6 +22,9 @@ public abstract class QueueDao {
     @Query("SELECT * FROM queue_items ORDER BY updatedAt DESC, id DESC")
     public abstract List<QueueItemEntity> listAll();
 
+    @Query("DELETE FROM queue_items WHERE id IN (:ids)")
+    public abstract int deleteByIds(List<Long> ids);
+
     public long insert(QueueItemEntity item) {
         return insertRaw(item.sanitizedCopy());
     }

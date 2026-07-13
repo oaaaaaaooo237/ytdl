@@ -2,8 +2,10 @@ package com.garyapp.ytdl.download
 
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
+import com.garyapp.ytdl.testing.ProjectTestPaths
 import com.garyapp.ytdl.ui.FormatMode
 import com.garyapp.ytdl.ui.FormatSelection
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -11,18 +13,28 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class DownloadCoordinatorTest {
-    @get:Rule
-    val temp = TemporaryFolder()
+    private lateinit var tempRoot: File
 
     @Before
     fun resetCoordinator() {
+        tempRoot = ProjectTestPaths.createTempDirectory("task-4-coordinator-").toFile()
+        guardProjectTempPath(tempRoot.toPath())
         DownloadCoordinator.resetForTests()
+    }
+
+    @After
+    fun removeProjectTempDirectory() {
+        tempRoot.deleteRecursively()
+        assertFalse("测试临时目录必须自动清理", tempRoot.exists())
     }
 
     @Test
@@ -31,7 +43,7 @@ class DownloadCoordinatorTest {
         val close = DownloadCoordinator.addListener { observed += it }
 
         val request = request()
-        val outputDir = temp.newFolder("downloads")
+        val outputDir = newProjectTempFolder("downloads")
         val waiting = DownloadCoordinator.enqueueForServiceStart(request, outputDir).getOrThrow()
         val launch = DownloadCoordinator.consumePendingLaunch()
 
@@ -48,7 +60,7 @@ class DownloadCoordinatorTest {
     @Test
     fun cancelBeforeServiceAttachesCancellationIsRemembered() {
         val request = request()
-        DownloadCoordinator.enqueueForServiceStart(request, temp.newFolder("downloads")).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(request, newProjectTempFolder("downloads")).getOrThrow()
 
         DownloadCoordinator.cancelActive()
         val launch = DownloadCoordinator.consumePendingLaunch()
@@ -57,6 +69,91 @@ class DownloadCoordinatorTest {
 
         assertNotNull(launch)
         assertTrue("早取消请求应传递给刚 attach 的任务", cancellation.isCancellationRequested)
+    }
+
+    @Test
+    fun cleanupOwnsCoordinatorBoundaryUntilActionFinishes() {
+        val cleanupEntered = CountDownLatch(1)
+        val releaseCleanup = CountDownLatch(1)
+        val launchAttempted = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        val outputDirectory = newProjectTempFolder("task-4-coordinator-cleanup")
+        val launchFailure = AtomicReference<Throwable?>()
+        try {
+            val cleanup = executor.submit<IdleDownloadActionResult<String>> {
+                DownloadCoordinator.runWhenIdle {
+                    cleanupEntered.countDown()
+                    assertTrue(releaseCleanup.await(2, TimeUnit.SECONDS))
+                    "cleared"
+                }
+            }
+            assertTrue(cleanupEntered.await(2, TimeUnit.SECONDS))
+
+            val launchThread = Thread {
+                launchAttempted.countDown()
+                runCatching {
+                    DownloadCoordinator.enqueueForServiceStart(request(), outputDirectory).getOrThrow()
+                }.onFailure(launchFailure::set)
+            }.apply { start() }
+            assertTrue(launchAttempted.await(2, TimeUnit.SECONDS))
+            assertThreadBlocked(launchThread)
+
+            releaseCleanup.countDown()
+            assertEquals(IdleDownloadActionResult.Executed("cleared"), cleanup.get(2, TimeUnit.SECONDS))
+            launchThread.join(2_000)
+            assertFalse(launchThread.isAlive)
+            assertNull(launchFailure.get())
+        } finally {
+            releaseCleanup.countDown()
+            executor.shutdownNow()
+            outputDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun activeOrPendingDownloadRejectsCleanupWithoutRunningAction() {
+        val nonTerminalStages = DownloadStage.entries.filterNot {
+            it in setOf(
+                DownloadStage.Completed,
+                DownloadStage.Failed,
+                DownloadStage.Canceled,
+                DownloadStage.Idle,
+            )
+        }
+
+        nonTerminalStages.forEach { stage ->
+            DownloadCoordinator.resetForTests()
+            DownloadCoordinator.publish(DownloadTaskState(stage = stage))
+            var cleanupRan = false
+
+            val result = DownloadCoordinator.runWhenIdle {
+                cleanupRan = true
+                "cleared"
+            }
+
+            assertEquals("stage=$stage", IdleDownloadActionResult.ActiveDownload, result)
+            assertFalse("stage=$stage", cleanupRan)
+        }
+
+        DownloadCoordinator.resetForTests()
+        val pendingDirectory = newProjectTempFolder("task-4-coordinator-pending")
+        DownloadCoordinator.enqueueForServiceStart(
+            request(),
+            pendingDirectory,
+        ).getOrThrow()
+
+        assertEquals(
+            IdleDownloadActionResult.ActiveDownload,
+            DownloadCoordinator.runWhenIdle { "cleared" },
+        )
+        pendingDirectory.deleteRecursively()
+    }
+
+    @Test
+    fun projectTempGuardRejectsNormalizedEscape() {
+        val escaped = ProjectTestPaths.qaDataRoot.resolve("..").resolve("outside").normalize()
+
+        assertTrue(runCatching { ProjectTestPaths.requireInsideQaData(escaped) }.isFailure)
     }
 
     @Test
@@ -149,5 +246,24 @@ class DownloadCoordinatorTest {
             .map(::File)
             .firstOrNull { it.isFile }
             ?: error("source file not found: ${candidates.joinToString()}")
+    }
+
+    private fun newProjectTempFolder(name: String): File {
+        return File(tempRoot, name).also { directory ->
+            check(directory.mkdirs())
+            guardProjectTempPath(directory.toPath())
+        }
+    }
+
+    private fun guardProjectTempPath(path: Path) {
+        ProjectTestPaths.requireInsideQaData(path)
+    }
+
+    private fun assertThreadBlocked(thread: Thread) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (thread.state != Thread.State.BLOCKED && thread.isAlive && System.nanoTime() < deadline) {
+            Thread.onSpinWait()
+        }
+        assertEquals(Thread.State.BLOCKED, thread.state)
     }
 }
