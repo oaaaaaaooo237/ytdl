@@ -1,6 +1,6 @@
 # Android 开发与测试环境
 
-日期：2026-06-19；状态复核：2026-07-09
+日期：2026-06-19；状态复核：2026-07-13
 
 本文件记录 Android Play 版本机环境状态。Android 产品需求与设计仍以 `docs/superpowers/specs/2026-06-19-ytdl-android-play-design.md` 为准，GUI 基准图以 `docs/android-gui-reference-v3.png` 为准。应用实现进度以 `docs/superpowers/plans/2026-06-19-ytdl-android-play-mvp.md` 和 `docs/qa/android-mvp-smoke.md` 为准；本文件不再作为功能完成度账本。
 
@@ -13,14 +13,15 @@
 - JDK 17、Android SDK、adb、emulator、sdkmanager、avdmanager 可用。
 - Android 12/API 31、Android 15/API 35、Android 16/API 36.1、Android 17/API 37.0 的 x86_64 Google Play AVD 均能启动到 `sys.boot_completed=1`。
 - API 37 AVD 可安装并启动临时探针 APK。
+- Computer Use 操作模拟器或 scrcpy 真机窗口前，当前 Codex 任务必须启用“完全访问权限”。权限不足时应记录为前台操控环境阻断，不得用 adb、UIAutomator、后台脚本或其他非前台方式替代 GUI 验收。
 - 矩阵 AVD 当前配置 `hw.keyboard=no`，用于更接近真机的系统软键盘输入验收。API37 已实测：`hw.keyboard=yes` 会让 Gboard 进入实体键盘工具栏模式，影响完整 URL 前台输入；`hw.keyboard=no` 配合 `settings put secure show_ime_with_hard_keyboard 1` 和 Gboard 可消除原先的大型 `Emulator` 输入浮层。2026-07-09 进一步确认：如果 Gboard 自身 `Physical keyboard -> Show on-screen keyboard` 关闭、`Show toolbar` 开启，点击地址框仍会先显示物理键盘工具条；如果 `Write in text fields -> Use stylus to write in text fields` 开启，还会干扰普通文本输入。当前 API37 已通过可见 Gboard 设置关闭 `Use stylus to write in text fields`、开启 `Physical keyboard -> Show on-screen keyboard`、关闭 `Show toolbar`，随后实测点击 URL 输入框会直接从底部弹出完整 Gboard。前台验收时必须用 Computer Use 观察并确认“点击地址框后直接显示完整 Gboard 按键区域”；只显示工具条再手动点 `Show on-screen keyboard` 不再计作最终拟真输入通过。旧的“压制软键盘/硬件键输入”证据只作为历史支持。
 - 临时 Android 探针工程已成功构建：Gradle 9.4.1、AGP 9.2.1、`compileSdk = 37`、`targetSdk = 37`、Chaquopy 17.0.0、Room 2.8.4、Compose BOM 2026.06.00、activity-compose 1.13.0、Compose Compiler plugin 2.3.0。
 - Chaquopy 构建已显式使用项目 venv Python：`D:\garyapp\ytdl\.venv\Scripts\python.exe`，版本为 Python 3.12.13。系统 PATH 中没有 `python`，后续 Android 工程不得依赖 PATH 自动发现 Python。
 
 环境之外仍未完成，但边界明确：
 
-- 尚未准备真实 `arm64-v8a` 手机；按 2026-07-05 用户澄清，小米 14 或同级设备只在后续真机验收阶段使用，不是当前 M9 模拟器验收的前置条件。
-- API37 模拟器 Computer Use 前台 M9/T12 验收已通过；当前仍未开始的是后续 M10 真机验收和 Play 发布交付项，详见 `docs/qa/android-mvp-smoke.md`。
+- 小米 14 真机已连接并完成首轮 M10 前台检查：设备序列号 `a73e29a3`，机型 `23127PN0CC`，代号 `houji`，Android API 36，ABI `arm64-v8a`；scrcpy 4.0 可提供 Computer Use 可见且可点击的 Windows 真机窗口。M10 尚未完成，暂停点和遗留问题详见 `docs/qa/android-mvp-smoke.md`。
+- API37 模拟器 Computer Use 前台 M9/T12 验收已通过；Play 发布准备已按用户 2026-07-13 指示暂缓，不作为当前 M10 真机检查的阻塞项。
 - 尚未确认 Google Play 发布签名、隐私政策 URL、Data safety 最终填写口径和商店截图素材；这些商店交付项不作为当前阶段任务。
 - MVP2 若加入字幕嵌入、字幕烧录或三合一输出，仍需重新审计媒体处理链、许可证、ABI、16KB page size 和包体积。
 

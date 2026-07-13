@@ -694,9 +694,21 @@ Computer Use 在可见 API37 模拟器中以完整底部 Gboard 逐键输入当�
 Computer Use 在可见 API37 模拟器中完成下载、格式、队列、历史、设置五页前台检查，并滚动设置页确认外观区域不被底部导航遮挡。随后在设置页切换到 `Codex 风格`，前台可见选中状态和页面强调色从基准图配色切换为 Codex 配色；本轮未发现新的稳定 UI 缺陷。
 
 当前差异记录：格式页未分析时保持真实空态，不填充假格式；分析后只显示当前视频真实提供的高度。队列/历史页使用真实任务和真实空态，不保留示例下载数据。设置页外观控件需要滚动后查看，但当前未遮挡底部导航；Codex 选中后页面强调色已联动。以上是当前已观察到的 intentional 差异或已确认行为，M11 总验收仍需后续统一收敛，不因本次 D1 前台复核直接宣称完成。
-- [ ] D2：M10 真机门槛：仅在检测到 Xiaomi 14 或同级 `arm64-v8a` 真机后，安装 APK，完成五页 GUI、真实分析/下载/原生合并、通知、后台、打开/导出/分享和失败恢复检查；未连接真机时不反复跑模拟器替代。
-- [ ] D3：Play 发布准备：核对 release 构建和 AAB、签名配置边界、隐私政策最终 URL、Data safety 字段映射、第三方许可证和商店材料清单；密钥和用户隐私内容不得提交仓库。
+- [ ] D2：M10 真机门槛（进行中）：已在 Xiaomi 14 `arm64-v8a` 真机完成安装、五页 GUI、通知授权、真实分析/下载/原生合并和后台完成观察；仍需处理本节暂停记录中的三个产品问题，并继续历史完成记录、打开、导出、分享和清理检查。恢复时沿用现有完成任务，不重复真实下载。
+- [ ] D3：Play 发布准备（按用户 2026-07-13 指示暂时取消）：当前不推进 release/AAB、签名、隐私政策 URL、Data safety、第三方许可证和商店材料，不作为 D2 真机验收的阻塞项；以后仅在用户明确恢复时重新纳入计划。
 - [ ] D4：最终交付复核：按本清单逐项检查代码、测试、可见 GUI、真机和发布材料，确认工作树干净并提交当前 Android 分支。
+
+#### D2 小米 14 真机暂停记录（2026-07-13）
+
+- 环境：小米 14，序列号 `a73e29a3`，机型 `23127PN0CC`，代号 `houji`，Android API 36，ABI `arm64-v8a`；scrcpy 4.0 提供 Computer Use 可见且可点击的 Windows 真机窗口。Computer Use 必须在当前 Codex 任务启用“完全访问权限”后使用；权限不足属于前台操控环境阻断，不能用后台工具替代验收。
+- 已通过：新鲜 `:app:assembleDebug`、APK 真机安装和启动；下载、格式、队列、历史、设置五页前台浏览；HyperOS 通知权限系统弹窗和“始终允许”；VPN 开启后完整主地址 `https://www.youtube.com/watch?v=PqQNXB6hhUs` 的真实分析；实际 `1080p/720p/480p/360p/240p/144p` 格式展示；默认 `1080p` 视频+音频下载、视频/音频阶段完成、原生合并、队列真实进度和后台下载完成通知。未选择或测试字幕。
+- 环境插曲：首次分析失败时 VPN 未开启；用户开启 VPN 并在地址栏粘贴完整地址后，Computer Use 核对可见地址并继续，真实分析和下载成功。该次失败记为网络环境问题，不记为应用失败恢复验收。
+- 用户认可上述已完成测试，不再为证明或留档重复真实下载。恢复时直接使用当前已完成任务继续检查。
+- 未解决问题 1：保存位置不可选。
+- 未解决问题 2：软件没有正式图标，通知栏仍显示默认占位图标。
+- 未解决问题 3：点击 `YTDL 下载任务 / 下载完成` 通知不能返回软件。
+- 剩余检查：修复并复核上述三个问题；确认本次完成记录进入历史；打开合并视频；导出和分享；最后删除本次测试历史并精确清理 App 私有测试输出目录。当前未清理，关机后恢复时先保留该任务供后续检查。
+- 状态：D2/M10 尚未完成；本次按用户要求暂停，不继续操作真机。
 
 After each task commit:
 
@@ -708,4 +720,4 @@ After each task commit:
 
 ## Completion Gate
 
-The API37 emulator GUI release gate for M9/T12 passed on 2026-07-09 with fresh Computer Use evidence. The broader Android MVP goal remains open until the post-M9 requirements are also resolved: M11 visual fidelity/Codex appearance audit, M10 real-device validation when a Xiaomi 14 or equivalent `arm64-v8a` phone is connected, and the still-unstarted Play signing, privacy-policy URL, Data safety, and store-material decisions. Passing unit tests alone is never enough for a user-visible Android acceptance claim.
+The API37 emulator GUI release gate for M9/T12 passed on 2026-07-09 with fresh Computer Use evidence. The broader Android MVP goal remains open until the post-M9 requirements are also resolved: M11 visual fidelity/Codex appearance audit and the remaining M10 Xiaomi 14 real-device items recorded above. Play signing, privacy-policy URL, Data safety, and store-material work is temporarily deferred by the user and is not a blocker for the current D2 checkpoint. Passing unit tests alone is never enough for a user-visible Android acceptance claim.
