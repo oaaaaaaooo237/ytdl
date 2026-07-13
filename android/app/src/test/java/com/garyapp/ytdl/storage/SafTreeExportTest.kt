@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.OutputStream
 import java.lang.reflect.InvocationTargetException
+import java.util.concurrent.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -77,6 +78,44 @@ class SafTreeExportTest {
         assertFalse(message.contains(media.absolutePath))
     }
 
+    @Test
+    fun canceledTreeExportDeletesDestinationAndDoesNotCreateTheNextFile() {
+        val root = temp.newFolder("private-canceled")
+        val outputs = listOf(
+            File(root, "video.mp4").apply { writeText("media") },
+            File(root, "subtitle.vtt").apply { writeText("subtitle") },
+        ).map { ExportController.discoverAppPrivateOutput(it, root).getOrThrow() }
+        val created = mutableListOf<String>()
+        val deleted = mutableListOf<String>()
+        var cancellationRequested = false
+
+        val failure = runCatching {
+            invokeCancelableTreeExport(
+                treeUri = TreeUri,
+                outputs = outputs,
+                createDocument = { _, _, _ ->
+                    "content://com.android.externalstorage.documents/document/export-${created.size + 1}"
+                        .also(created::add)
+                },
+                openOutputStream = {
+                    object : ByteArrayOutputStream() {
+                        override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                            super.write(buffer, offset, length)
+                            cancellationRequested = true
+                        }
+                    }
+                },
+                deleteDocument = { deleted += it },
+                isCancellationRequested = { cancellationRequested },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        assertEquals(1, created.size)
+        assertEquals(created, deleted)
+        assertTrue(outputs.all { File(root, it.displayName).isFile })
+    }
+
     private fun invokeTreeExport(
         treeUri: String,
         outputs: List<ExportController.AppPrivateOutput>,
@@ -96,6 +135,33 @@ class SafTreeExportTest {
                 createDocument,
                 openOutputStream,
                 deleteDocument,
+            ) as Long
+        } catch (error: InvocationTargetException) {
+            throw error.targetException
+        }
+    }
+
+    private fun invokeCancelableTreeExport(
+        treeUri: String,
+        outputs: List<ExportController.AppPrivateOutput>,
+        createDocument: (String, String, String) -> String?,
+        openOutputStream: (String) -> OutputStream?,
+        deleteDocument: (String) -> Unit,
+        isCancellationRequested: () -> Boolean,
+    ): Long {
+        val method = ExportController::class.java.methods.firstOrNull {
+            it.name == "copyToSafTree" && it.parameterCount == 6
+        }
+        assertNotNull("缺少可取消的 SAF tree 自动导出入口", method)
+        return try {
+            method!!.invoke(
+                null,
+                treeUri,
+                outputs,
+                createDocument,
+                openOutputStream,
+                deleteDocument,
+                isCancellationRequested,
             ) as Long
         } catch (error: InvocationTargetException) {
             throw error.targetException

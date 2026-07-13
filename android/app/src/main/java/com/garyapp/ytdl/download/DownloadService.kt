@@ -12,6 +12,7 @@ import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.media.NativeMuxerMediaProcessor
 import com.garyapp.ytdl.storage.ExportController
 import java.io.File
+import java.util.concurrent.CancellationException
 
 class DownloadService : Service() {
     private lateinit var notificationController: NotificationController
@@ -76,7 +77,7 @@ class DownloadService : Service() {
                     publishForegroundState(state)
                 }
             }
-            val terminalState = exportCompletedOutputs(result, storageTarget)
+            val terminalState = exportCompletedOutputs(result, storageTarget, cancellation)
             val finalState = applyHistoryRecordingResult(
                 state = terminalState,
                 recordResult = historyRecorder.recordTerminal(terminalState),
@@ -92,6 +93,7 @@ class DownloadService : Service() {
     private fun exportCompletedOutputs(
         result: DownloadPipelineResult,
         storageTarget: StorageTarget,
+        cancellation: DownloadCancellation,
     ): DownloadTaskState {
         if (result.state.stage != DownloadStage.Completed || storageTarget !is StorageTarget.SafTree) {
             return result.state
@@ -108,15 +110,19 @@ class DownloadService : Service() {
                 contentResolver = contentResolver,
                 treeUri = storageTarget.treeUri,
                 outputs = outputs,
+                isCancellationRequested = { cancellation.isCancellationRequested },
             ).getOrThrow()
         }
         return exportResult.fold(
             onSuccess = { result.state },
-            onFailure = {
-                result.state.failed(
-                    message = ExportController.treeExportFailureMessage(),
-                    outputs = result.outputs,
-                )
+            onFailure = { error ->
+                when (error) {
+                    is CancellationException -> result.state.canceled()
+                    else -> result.state.failed(
+                        message = ExportController.treeExportFailureMessage(),
+                        outputs = result.outputs,
+                    )
+                }
             },
         )
     }

@@ -12,6 +12,7 @@ import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 
 object ExportController {
     class AppPrivateOutput internal constructor(
@@ -121,23 +122,44 @@ object ExportController {
         openOutputStream: (documentUri: String) -> OutputStream?,
         deleteDocument: (documentUri: String) -> Unit,
     ): Long {
+        return copyToSafTree(
+            treeUri = treeUri,
+            outputs = outputs,
+            createDocument = createDocument,
+            openOutputStream = openOutputStream,
+            deleteDocument = deleteDocument,
+            isCancellationRequested = { false },
+        )
+    }
+
+    @JvmStatic
+    fun copyToSafTree(
+        treeUri: String,
+        outputs: List<AppPrivateOutput>,
+        createDocument: (parentDocumentUri: String, mimeType: String, displayName: String) -> String?,
+        openOutputStream: (documentUri: String) -> OutputStream?,
+        deleteDocument: (documentUri: String) -> Unit,
+        isCancellationRequested: () -> Boolean,
+    ): Long {
         val createdDocuments = mutableListOf<String>()
         return try {
             val parentDocumentUri = treeDocumentUri(treeUri)
             outputs.sumOf { output ->
+                throwIfExportCanceled(isCancellationRequested)
                 val documentUri = createDocument(parentDocumentUri, output.mimeType, output.displayName)
                     ?: throw IllegalStateException("无法创建导出文件。")
                 createdDocuments += documentUri
                 val destination = openOutputStream(documentUri)
                     ?: throw IllegalStateException("无法打开导出文件。")
                 destination.use { stream ->
-                    copyToStream(output, stream).getOrThrow()
+                    copyToStream(output, stream, isCancellationRequested)
                 }
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             createdDocuments.asReversed().forEach { documentUri ->
                 runCatching { deleteDocument(documentUri) }
             }
+            if (error is CancellationException) throw error
             throw IllegalStateException(treeExportFailureMessage())
         }
     }
@@ -146,6 +168,7 @@ object ExportController {
         contentResolver: ContentResolver,
         treeUri: String,
         outputs: List<AppPrivateOutput>,
+        isCancellationRequested: () -> Boolean = { false },
     ): Result<Long> {
         return runCatching {
             copyToSafTree(
@@ -165,6 +188,7 @@ object ExportController {
                 deleteDocument = { documentUri ->
                     DocumentsContract.deleteDocument(contentResolver, Uri.parse(documentUri))
                 },
+                isCancellationRequested = isCancellationRequested,
             )
         }
     }
@@ -213,6 +237,32 @@ object ExportController {
         val treeId = rawPath.substringAfter(marker, "").substringBefore('/').takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("无效的保存位置。")
         return "content://${parsed.rawAuthority}$marker$treeId/document/$treeId"
+    }
+
+    private fun copyToStream(
+        output: AppPrivateOutput,
+        destination: OutputStream,
+        isCancellationRequested: () -> Boolean,
+    ): Long {
+        var copiedBytes = 0L
+        output.sourceFile.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                throwIfExportCanceled(isCancellationRequested)
+                val bytesRead = input.read(buffer)
+                if (bytesRead < 0) break
+                destination.write(buffer, 0, bytesRead)
+                copiedBytes += bytesRead
+            }
+        }
+        throwIfExportCanceled(isCancellationRequested)
+        return copiedBytes
+    }
+
+    private fun throwIfExportCanceled(isCancellationRequested: () -> Boolean) {
+        if (isCancellationRequested()) {
+            throw CancellationException("SAF export canceled")
+        }
     }
 
     private fun String.safeDisplayName(): String {

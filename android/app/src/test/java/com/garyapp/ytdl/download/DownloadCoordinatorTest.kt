@@ -101,6 +101,19 @@ class DownloadCoordinatorTest {
         assertTrue(source.contains("ExportController.treeExportFailureMessage()"))
     }
 
+    @Test
+    fun servicePassesCancellationIntoSafTreeExportAndRecordsCanceledState() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
+            "src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
+        ).readText()
+
+        assertTrue(source.contains("exportCompletedOutputs(result, storageTarget, cancellation)"))
+        assertTrue(source.contains("isCancellationRequested = { cancellation.isCancellationRequested }"))
+        assertTrue(source.contains("is CancellationException -> result.state.canceled()"))
+        assertTrue(source.indexOf("val terminalState = exportCompletedOutputs") < source.indexOf("historyRecorder.recordTerminal"))
+    }
+
     private fun request(): DownloadRequest {
         return DownloadRequest.fromAnalysis(
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
