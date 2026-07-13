@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -403,6 +404,53 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun selecting240pPersistsToDownloadSummaryAcrossNavigation() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "720-direct", height = 720),
+            progressiveFormat(id = "240-direct", height = 240),
+        )
+        val state = mutableStateOf(RuntimeDownloadState().withAnalysisForUiTest(analysis))
+        val showDownloadPage = mutableStateOf(false)
+        composeRule.setContent {
+            YtdlTheme {
+                if (showDownloadPage.value) {
+                    LazyColumn {
+                        downloadPageItems(
+                            state = state.value,
+                            storageTarget = StorageTarget.AppPrivate,
+                            hasUserConfirmed = false,
+                            onUrlChange = {},
+                            onAnalyze = {},
+                            onStartDownload = {},
+                            onUserConfirmedChange = {},
+                            onModeSelected = {},
+                            onSelectStorageTarget = {},
+                        )
+                    }
+                } else {
+                    LazyColumn {
+                        formatPageItems(
+                            analysis = analysis,
+                            selection = state.value.formatSelection,
+                            selectedSubtitles = emptyList(),
+                            onSelectionChange = { selection ->
+                                state.value = state.value.withFormatSelection(selection)
+                            },
+                            onSubtitleSelectionChange = {},
+                            onFinishSelection = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("ytdl-format-row-240").performClick()
+        composeRule.runOnIdle { showDownloadPage.value = true }
+
+        composeRule.onNodeWithText("240p MP4 单文件").assertExists()
+    }
+
+    @Test
     fun singleFileAnalysisGreysVideoAndAudioModeOnFormatPage() {
         val analysis = analysisWith(unknownSingleFileFormat(id = "single-file", height = 1080))
         val state = RuntimeDownloadState().withAnalysisForUiTest(analysis)
@@ -443,9 +491,20 @@ class DownloadGuiBindingTest {
         scrollFormatsTo("ytdl-format-subtitle-toggle")
         scrollFormatsTo("ytdl-format-summary")
         composeRule.onNodeWithText("分析后显示真实格式").assertExists()
-        composeRule.onNodeWithText("请先在下载页完成分析，再应用格式选择。").assertExists()
-        scrollFormatsTo("ytdl-format-apply")
-        composeRule.onNodeWithTag("ytdl-format-apply").assertIsNotEnabled()
+        composeRule.onNodeWithText("请先在下载页完成分析，再选择真实格式。").assertExists()
+        scrollFormatsTo("ytdl-format-done")
+        composeRule.onNodeWithTag("ytdl-format-done").assertIsNotEnabled()
+    }
+
+    @Test
+    fun immediateFormatSelectionUsesReturnNavigationCopy() {
+        composeRule.setContent { YtdlApp() }
+
+        composeRule.onNodeWithTag("ytdl-tab-formats").performClick()
+        scrollFormatsTo("ytdl-format-done")
+
+        composeRule.onNodeWithText("返回下载页").assertExists()
+        composeRule.onAllNodesWithText("应用选择").assertCountEquals(0)
     }
 
     @Test
@@ -889,7 +948,7 @@ class DownloadGuiBindingTest {
                         selectedSubtitles = emptyList(),
                         onSelectionChange = {},
                         onSubtitleSelectionChange = {},
-                        onApplySelection = {},
+                        onFinishSelection = {},
                     )
                 }
             }

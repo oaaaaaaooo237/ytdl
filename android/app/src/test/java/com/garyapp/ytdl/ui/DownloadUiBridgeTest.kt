@@ -186,7 +186,7 @@ class DownloadUiBridgeTest {
         ).readText()
 
         assertFalse(source.contains("requestResult.isFailure") && source.contains("downloadStatus = \"下载失败\""))
-        assertTrue(source.contains("DownloadCoordinator.startForegroundDownload"))
+        assertTrue(source.contains("DownloadCoordinator::startForegroundDownload"))
     }
 
     @Test
@@ -246,6 +246,28 @@ class DownloadUiBridgeTest {
         assertTrue(result.exceptionOrNull()?.message.orEmpty(), result.isSuccess)
         assertEquals(DownloadRoute.DirectSingleFile(formatId = "18"), result.getOrThrow().route)
         assertTrue(result.getOrThrow().selectedSubtitles.isEmpty())
+    }
+
+    @Test
+    fun selectedDirectFormatIdIsCarriedFromUiStateIntoRequest() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "720-direct", height = 720),
+            progressiveFormat(id = "240-direct", height = 240),
+        )
+        val initialState = RuntimeDownloadState().withAnalysisForUiTest(analysis)
+        val selected240p = buildFormatResolutionRows(analysis, initialState.formatSelection)
+            .single { it.height == 240 }
+        val selectedState = initialState.withFormatSelection(
+            selectionFromRow(initialState.formatSelection.mode, selected240p),
+        )
+
+        val request = buildAppliedDownloadRequest(
+            url = "https://example.com/video",
+            analysis = analysis,
+            appliedSelection = selectedState.appliedFormatSelection,
+        ).getOrThrow()
+
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "240-direct"), request.route)
     }
 
     @Test

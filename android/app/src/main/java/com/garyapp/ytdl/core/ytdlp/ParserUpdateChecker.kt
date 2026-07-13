@@ -105,6 +105,10 @@ class ParserUpdateCoordinator(
     private var startupRequested = false
 
     fun addListener(listener: (ParserUpdateState) -> Unit): AutoCloseable {
+        return addVersionedListener { snapshot -> listener(snapshot.state) }
+    }
+
+    internal fun addVersionedListener(listener: (VersionedParserUpdateState) -> Unit): AutoCloseable {
         val registration = ParserUpdateListener(listener)
         val snapshot = synchronized(lock) {
             listeners += registration
@@ -199,13 +203,13 @@ class ParserUpdateCoordinator(
     }
 }
 
-private data class VersionedParserUpdateState(
+internal data class VersionedParserUpdateState(
     val revision: Long,
     val state: ParserUpdateState,
 )
 
 private class ParserUpdateListener(
-    private val callback: (ParserUpdateState) -> Unit,
+    private val callback: (VersionedParserUpdateState) -> Unit,
 ) {
     private var latestRevision = -1L
     private var active = true
@@ -214,7 +218,7 @@ private class ParserUpdateListener(
     fun deliver(snapshot: VersionedParserUpdateState) {
         if (!active || snapshot.revision <= latestRevision) return
         latestRevision = snapshot.revision
-        callback(snapshot.state)
+        callback(snapshot)
     }
 
     @Synchronized

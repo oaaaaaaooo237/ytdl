@@ -180,6 +180,7 @@ private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
 private val ProcessDownloadCacheExecutor = Executor { command ->
     Thread(command, "ytdl-cache-settings").apply { isDaemon = true }.start()
 }
+private val ImmediateParserUiStateExecutor = Executor(Runnable::run)
 
 private fun createDownloadCacheControl(context: Context): DownloadCacheControl {
     val database = YtdlDatabaseProvider.get(context.applicationContext)
@@ -557,6 +558,23 @@ internal data class RuntimeDownloadState(
             isDownloading
 }
 
+internal fun RuntimeDownloadState.withFormatSelection(selection: FormatSelection): RuntimeDownloadState {
+    return copy(
+        formatSelection = selection,
+        appliedFormatSelection = selection,
+    )
+}
+
+private fun parserUpdateStatusLabel(state: ParserUpdateState): String {
+    return when {
+        state.isRunning -> "正在检查解析器更新..."
+        state.result == ParserUpdateResult.AlreadyLatest -> "已是最新版本"
+        state.result is ParserUpdateResult.UpdateAvailable -> "发现新版本 ${state.result.latestVersion}"
+        state.result == ParserUpdateResult.Failed -> "检查失败，请稍后重试"
+        else -> "尚未检查"
+    }
+}
+
 internal enum class QueueStageStatus {
     Pending,
     Current,
@@ -643,8 +661,12 @@ fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
 @Composable
 fun YtdlApp(
     parserUpdateCoordinator: ParserUpdateCoordinator = ProcessParserUpdateCoordinator,
+    parserUiStateDeliveryExecutor: Executor = ImmediateParserUiStateExecutor,
     downloadCacheFactory: (Context) -> DownloadCacheControl = ::createDownloadCacheControl,
     downloadCacheExecutor: Executor = ProcessDownloadCacheExecutor,
+    analysisProvider: ((String, String?) -> Result<VideoAnalysis>)? = null,
+    downloadStarter: (Context, DownloadRequest, File) -> Result<DownloadTaskState> =
+        DownloadCoordinator::startForegroundDownload,
 ) {
     val context = LocalContext.current
     var selectedRoute by rememberSaveable { mutableStateOf("download") }
@@ -657,8 +679,11 @@ fun YtdlApp(
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
     var pendingExportOutput by remember { mutableStateOf<ExportController.AppPrivateOutput?>(null) }
     var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
+    var parserUpdateRevision by remember { mutableStateOf(-1L) }
+    var parserUpdateState by remember { mutableStateOf(ParserUpdateState()) }
     var parserVersionSubtitle by remember { mutableStateOf(settingsParserVersionLabel()) }
     var pendingParserUpdateVersion by remember { mutableStateOf<String?>(null) }
+    var showParserStatusDialog by remember { mutableStateOf(false) }
     var settingsExplanation by remember { mutableStateOf<SettingsExplanation?>(null) }
     var downloadCacheStats by remember { mutableStateOf(CacheStats(0, 0)) }
     var showDownloadCacheConfirmation by remember { mutableStateOf(false) }
@@ -730,6 +755,7 @@ fun YtdlApp(
     }
 
     fun applyParserUpdateState(state: ParserUpdateState) {
+        parserUpdateState = state
         parserVersionSubtitle = when {
             state.isRunning && state.manualResultRequested -> "正在检查解析器更新..."
             state.isRunning -> settingsParserVersionLabel()
@@ -864,9 +890,14 @@ fun YtdlApp(
     DisposableEffect(Unit) {
         refreshDownloadCacheStats()
         var disposed = false
-        val parserSubscription = parserUpdateCoordinator.addListener { state ->
-            mainHandler.post {
-                if (!disposed) applyParserUpdateState(state)
+        val parserSubscription = parserUpdateCoordinator.addVersionedListener { snapshot ->
+            parserUiStateDeliveryExecutor.execute {
+                mainHandler.post {
+                    if (!disposed && snapshot.revision > parserUpdateRevision) {
+                        parserUpdateRevision = snapshot.revision
+                        applyParserUpdateState(snapshot.state)
+                    }
+                }
             }
         }
         requestParserUpdateCheck(manual = false)
@@ -950,7 +981,8 @@ fun YtdlApp(
             }
             val temporaryCookies = temporaryCookiesResult.getOrNull()
             val result = try {
-                bridge.analyze(url, temporaryCookies?.file?.absolutePath)
+                analysisProvider?.invoke(url, temporaryCookies?.file?.absolutePath)
+                    ?: bridge.analyze(url, temporaryCookies?.file?.absolutePath)
             } finally {
                 temporaryCookies?.delete()
             }
@@ -1006,7 +1038,7 @@ fun YtdlApp(
         if (requestResult.isFailure) {
             temporaryCookies?.delete()
             val message = requestResult.exceptionOrNull()?.message.orEmpty()
-                .ifBlank { "格式选择错误，请重新分析或应用格式。" }
+                .ifBlank { "格式选择错误，请重新分析或选择格式。" }
             runtimeState = runtimeState.copy(
                 isDownloading = false,
                 userMessage = if (message.contains("请先")) message else "格式选择错误：$message",
@@ -1016,11 +1048,7 @@ fun YtdlApp(
         val request = requestResult.getOrThrow()
 
         val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
-        val startResult = DownloadCoordinator.startForegroundDownload(
-            context = context.applicationContext,
-            request = request,
-            outputDirectory = outputDir,
-        )
+        val startResult = downloadStarter(context.applicationContext, request, outputDir)
         runtimeState = startResult.fold(
             onSuccess = { waiting ->
                 runtimeState.withForegroundStartState(waiting)
@@ -1243,25 +1271,12 @@ fun YtdlApp(
                             selection = runtimeState.formatSelection,
                             selectedSubtitles = runtimeState.selectedSubtitles,
                             onSelectionChange = { selection ->
-                                runtimeState = runtimeState.copy(formatSelection = selection)
+                                runtimeState = runtimeState.withFormatSelection(selection)
                             },
                             onSubtitleSelectionChange = { subtitles ->
                                 runtimeState = runtimeState.copy(selectedSubtitles = subtitles)
                             },
-                            onApplySelection = {
-                                val summary = formatSelectionSummaryWithSubtitles(
-                                    runtimeState.analysis,
-                                    runtimeState.formatSelection,
-                                    runtimeState.selectedSubtitles,
-                                )
-                                mainHandler.post {
-                                    runtimeState = runtimeState.copy(
-                                        appliedFormatSelection = runtimeState.formatSelection,
-                                        userMessage = "已应用格式选择：$summary",
-                                    )
-                                    selectedRoute = "download"
-                                }
-                            },
+                            onFinishSelection = { selectedRoute = "download" },
                         )
                         "queue" -> queuePageItems(
                             state = runtimeState,
@@ -1294,7 +1309,7 @@ fun YtdlApp(
                                 cookiesPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
                             },
                             onSelectStorageTarget = ::openStorageTargetChooser,
-                            onCheckParserUpdate = { requestParserUpdateCheck(manual = true) },
+                            onShowParserStatus = { showParserStatusDialog = true },
                             onShowMediaProcessorExplanation = { settingsExplanation = MediaProcessorExplanation },
                             onShowUrlValidationExplanation = { settingsExplanation = UrlValidationExplanation },
                             onRequestDownloadCacheClear = { showDownloadCacheConfirmation = true },
@@ -1398,8 +1413,36 @@ fun YtdlApp(
                 },
             )
         }
+        if (showParserStatusDialog) {
+            AlertDialog(
+                modifier = Modifier
+                    .semantics { testTagsAsResourceId = true }
+                    .testTag("ytdl-parser-status-dialog"),
+                onDismissRequest = { showParserStatusDialog = false },
+                title = { Text("解析器版本") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("内置版本：${settingsParserVersionLabel()}")
+                        Text(parserUpdateStatusLabel(parserUpdateState))
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !parserUpdateState.isRunning,
+                        onClick = { requestParserUpdateCheck(manual = true) },
+                    ) {
+                        Text("重新检查")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showParserStatusDialog = false }) {
+                        Text("关闭")
+                    }
+                },
+            )
+        }
         val parserUpdateVersion = pendingParserUpdateVersion
-        if (parserUpdateVersion != null) {
+        if (parserUpdateVersion != null && !showParserStatusDialog) {
             AlertDialog(
                 modifier = Modifier
                     .semantics { testTagsAsResourceId = true }
@@ -2240,7 +2283,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     selectedSubtitles: List<SubtitleInfo>,
     onSelectionChange: (FormatSelection) -> Unit,
     onSubtitleSelectionChange: (List<SubtitleInfo>) -> Unit,
-    onApplySelection: () -> Unit,
+    onFinishSelection: () -> Unit,
 ) {
     val modeAvailability = FormatMode.entries.map { mode -> isFormatModeAvailable(analysis, mode) }
     item {
@@ -2354,7 +2397,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
         val summaryBody = if (hasAnalysis) {
             "开始下载会按当前格式选择进入真实任务队列。"
         } else {
-            "请先在下载页完成分析，再应用格式选择。"
+            "请先在下载页完成分析，再选择真实格式。"
         }
         Surface(
             modifier = Modifier.testTag("ytdl-format-summary"),
@@ -2371,16 +2414,16 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     item {
         val palette = LocalYtdlAppPalette.current
         Button(
-            onClick = onApplySelection,
+            onClick = onFinishSelection,
             enabled = hasAnalysis,
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("ytdl-format-apply"),
+                .testTag("ytdl-format-done"),
             colors = ButtonDefaults.buttonColors(containerColor = palette.formatAccent),
             shape = RoundedCornerShape(16.dp),
             contentPadding = PaddingValues(vertical = 15.dp),
         ) {
-            Text("应用选择", fontWeight = FontWeight.Bold)
+            Text("返回下载页", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -3009,7 +3052,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     notificationRuntimePermissionRequired: Boolean,
     onSelectCookies: () -> Unit,
     onSelectStorageTarget: () -> Unit,
-    onCheckParserUpdate: () -> Unit,
+    onShowParserStatus: () -> Unit,
     onShowMediaProcessorExplanation: () -> Unit,
     onShowUrlValidationExplanation: () -> Unit,
     onRequestDownloadCacheClear: () -> Unit,
@@ -3061,7 +3104,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
             "›",
             Color(0xFFE7A600),
             modifier = Modifier
-                .clickable(onClick = onCheckParserUpdate)
+                .clickable(onClick = onShowParserStatus)
                 .testTag("ytdl-settings-parser-version"),
         )
     }
