@@ -87,6 +87,20 @@ class DownloadCoordinatorTest {
         assertTrue(source.contains("stopSelf(startId)"))
     }
 
+    @Test
+    fun serviceExportsAllCompletedOutputsBeforeRecordingTerminalHistory() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
+            "src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
+        ).readText()
+
+        assertTrue(source.contains("DownloadStage.Exporting"))
+        assertTrue(source.contains("ExportController.copyToSafTree"))
+        assertTrue(source.contains("result.outputs.map"))
+        assertTrue(source.indexOf("val terminalState = exportCompletedOutputs") < source.indexOf("historyRecorder.recordTerminal"))
+        assertTrue(source.contains("ExportController.treeExportFailureMessage()"))
+    }
+
     private fun request(): DownloadRequest {
         return DownloadRequest.fromAnalysis(
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",

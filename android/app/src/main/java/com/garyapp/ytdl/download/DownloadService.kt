@@ -5,9 +5,13 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import com.garyapp.ytdl.core.settings.SettingsRepository
+import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.media.NativeMuxerMediaProcessor
+import com.garyapp.ytdl.storage.ExportController
+import java.io.File
 
 class DownloadService : Service() {
     private lateinit var notificationController: NotificationController
@@ -41,16 +45,21 @@ class DownloadService : Service() {
         val state = DownloadTaskState.waiting(launch.request)
         startTypedForeground(state)
         DownloadCoordinator.publish(state)
+        val storageTarget = SettingsRepository.fromContext(this).getSettings().defaultStorageTarget
 
         Thread {
-            runLaunch(launch, startId)
+            runLaunch(launch, storageTarget, startId)
         }.start()
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun runLaunch(launch: DownloadLaunch, startId: Int) {
+    private fun runLaunch(
+        launch: DownloadLaunch,
+        storageTarget: StorageTarget,
+        startId: Int,
+    ) {
         val cancellation = MutableDownloadCancellation()
         DownloadCoordinator.attachCancellation(cancellation)
         try {
@@ -63,11 +72,14 @@ class DownloadService : Service() {
                 outputDirectory = launch.outputDirectory,
                 cancellation = cancellation,
             ) { state ->
-                publishForegroundState(state)
+                if (state.stage != DownloadStage.Completed || storageTarget !is StorageTarget.SafTree) {
+                    publishForegroundState(state)
+                }
             }
+            val terminalState = exportCompletedOutputs(result, storageTarget)
             val finalState = applyHistoryRecordingResult(
-                state = result.state,
-                recordResult = historyRecorder.recordTerminal(result.state),
+                state = terminalState,
+                recordResult = historyRecorder.recordTerminal(terminalState),
             )
             publishForegroundState(finalState)
         } finally {
@@ -75,6 +87,38 @@ class DownloadService : Service() {
             stopForegroundAfterTerminalState()
             stopSelf(startId)
         }
+    }
+
+    private fun exportCompletedOutputs(
+        result: DownloadPipelineResult,
+        storageTarget: StorageTarget,
+    ): DownloadTaskState {
+        if (result.state.stage != DownloadStage.Completed || storageTarget !is StorageTarget.SafTree) {
+            return result.state
+        }
+
+        publishForegroundState(result.state.atStage(DownloadStage.Exporting))
+        val exportResult = runCatching {
+            val outputs = result.outputs.map { output ->
+                val root = output.appPrivateRootPath?.let(::File)
+                    ?: throw IllegalStateException("缺少私有输出目录。")
+                ExportController.discoverAppPrivateOutput(File(output.path), root).getOrThrow()
+            }
+            ExportController.copyToSafTree(
+                contentResolver = contentResolver,
+                treeUri = storageTarget.treeUri,
+                outputs = outputs,
+            ).getOrThrow()
+        }
+        return exportResult.fold(
+            onSuccess = { result.state },
+            onFailure = {
+                result.state.failed(
+                    message = ExportController.treeExportFailureMessage(),
+                    outputs = result.outputs,
+                )
+            },
+        )
     }
 
     private fun publishForegroundState(state: DownloadTaskState) {

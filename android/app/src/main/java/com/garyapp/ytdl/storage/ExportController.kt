@@ -1,7 +1,10 @@
 package com.garyapp.ytdl.storage
 
 import android.content.ContentValues
+import android.content.ContentResolver
 import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import java.io.File
 import java.io.OutputStream
@@ -111,6 +114,62 @@ object ExportController {
     }
 
     @JvmStatic
+    fun copyToSafTree(
+        treeUri: String,
+        outputs: List<AppPrivateOutput>,
+        createDocument: (parentDocumentUri: String, mimeType: String, displayName: String) -> String?,
+        openOutputStream: (documentUri: String) -> OutputStream?,
+        deleteDocument: (documentUri: String) -> Unit,
+    ): Long {
+        val createdDocuments = mutableListOf<String>()
+        return try {
+            val parentDocumentUri = treeDocumentUri(treeUri)
+            outputs.sumOf { output ->
+                val documentUri = createDocument(parentDocumentUri, output.mimeType, output.displayName)
+                    ?: throw IllegalStateException("无法创建导出文件。")
+                createdDocuments += documentUri
+                val destination = openOutputStream(documentUri)
+                    ?: throw IllegalStateException("无法打开导出文件。")
+                destination.use { stream ->
+                    copyToStream(output, stream).getOrThrow()
+                }
+            }
+        } catch (_: Exception) {
+            createdDocuments.asReversed().forEach { documentUri ->
+                runCatching { deleteDocument(documentUri) }
+            }
+            throw IllegalStateException(treeExportFailureMessage())
+        }
+    }
+
+    fun copyToSafTree(
+        contentResolver: ContentResolver,
+        treeUri: String,
+        outputs: List<AppPrivateOutput>,
+    ): Result<Long> {
+        return runCatching {
+            copyToSafTree(
+                treeUri = treeUri,
+                outputs = outputs,
+                createDocument = { parentDocumentUri, mimeType, displayName ->
+                    DocumentsContract.createDocument(
+                        contentResolver,
+                        Uri.parse(parentDocumentUri),
+                        mimeType,
+                        displayName,
+                    )?.toString()
+                },
+                openOutputStream = { documentUri ->
+                    contentResolver.openOutputStream(Uri.parse(documentUri), "w")
+                },
+                deleteDocument = { documentUri ->
+                    DocumentsContract.deleteDocument(contentResolver, Uri.parse(documentUri))
+                },
+            )
+        }
+    }
+
+    @JvmStatic
     fun appPrivateOutputUri(path: String?): String {
         return appPrivateOutputUri(path, null)
     }
@@ -133,6 +192,10 @@ object ExportController {
         return "未获得保存位置授权，导出已取消。请重新选择保存位置。"
     }
 
+    fun treeExportFailureMessage(): String {
+        return "保存到所选文件夹失败，App 私有文件已保留；请重新选择文件夹后从历史导出。"
+    }
+
     private fun isInside(file: File, root: File): Boolean {
         var current: File? = file
         while (current != null) {
@@ -140,6 +203,16 @@ object ExportController {
             current = current.parentFile
         }
         return false
+    }
+
+    private fun treeDocumentUri(treeUri: String): String {
+        val parsed = URI(treeUri)
+        require(parsed.scheme.equals("content", ignoreCase = true) && !parsed.rawAuthority.isNullOrBlank())
+        val marker = "/tree/"
+        val rawPath = parsed.rawPath.orEmpty()
+        val treeId = rawPath.substringAfter(marker, "").substringBefore('/').takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("无效的保存位置。")
+        return "content://${parsed.rawAuthority}$marker$treeId/document/$treeId"
     }
 
     private fun String.safeDisplayName(): String {

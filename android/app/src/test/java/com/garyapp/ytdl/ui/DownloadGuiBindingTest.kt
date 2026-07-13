@@ -20,6 +20,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.settings.AppearanceSettings
 import com.garyapp.ytdl.core.settings.SettingsRepository
+import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.ytdlp.DownloadProgress
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.SubtitleSource
@@ -77,6 +78,72 @@ class DownloadGuiBindingTest {
         } finally {
             repository.setColorPreset(AppearanceSettings.ColorPresetReferenceV3)
         }
+    }
+
+    @Test
+    fun downloadAndSettingsStorageRowsShareClickablePersistedTreeSelection() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = SettingsRepository.fromContext(context)
+        repository.setDefaultStorageTarget(
+            StorageTarget.SafTree(
+                treeUri = "content://com.android.externalstorage.documents/tree/primary%3AMovies",
+                displayName = "视频导出",
+            ),
+        )
+
+        try {
+            composeRule.setContent { YtdlApp() }
+
+            composeRule.onNodeWithTag("ytdl-screen-download")
+                .performScrollToNode(hasTestTag("ytdl-download-storage-target"))
+            composeRule.onNodeWithText("视频导出 · 完成后自动复制，私有文件保留").assertExists()
+            composeRule.onNodeWithTag("ytdl-download-storage-target")
+                .performClick()
+            composeRule.onNodeWithTag("ytdl-storage-target-dialog").assertExists()
+            composeRule.onNodeWithTag("ytdl-storage-target-dialog-cancel").performClick()
+
+            composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+            composeRule.onNodeWithTag("ytdl-screen-settings")
+                .performScrollToNode(hasTestTag("ytdl-settings-storage-target"))
+            composeRule.onNodeWithText("视频导出 · 完成后自动复制，私有文件保留").assertExists()
+            composeRule.onNodeWithTag("ytdl-settings-storage-target")
+                .performClick()
+            composeRule.onNodeWithTag("ytdl-storage-target-dialog").assertExists()
+        } finally {
+            repository.setDefaultStorageTarget(StorageTarget.AppPrivate)
+        }
+    }
+
+    @Test
+    fun storagePickerBindingUsesOpenDocumentTreeAndPersistableReadWriteGrant() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+
+        assertTrue(source.contains("ActivityResultContracts.OpenDocumentTree()"))
+        assertTrue(source.contains("Intent.FLAG_GRANT_READ_URI_PERMISSION"))
+        assertTrue(source.contains("Intent.FLAG_GRANT_WRITE_URI_PERMISSION"))
+        assertTrue(source.contains("takePersistableUriPermission"))
+        assertTrue(source.contains("releasePersistableUriPermission"))
+        assertTrue(source.contains("onSelectStorageTarget = ::openStorageTargetChooser"))
+    }
+
+    @Test
+    fun replacingStorageTargetReleasesOnlyThePreviousTreePermission() {
+        val oldTarget = StorageTarget.SafTree(
+            treeUri = "content://com.android.externalstorage.documents/tree/primary%3AOld",
+            displayName = "旧目录",
+        )
+        val newTarget = StorageTarget.SafTree(
+            treeUri = "content://com.android.externalstorage.documents/tree/primary%3ANew",
+            displayName = "新目录",
+        )
+
+        assertEquals(oldTarget.treeUri, storagePermissionUriToReleaseForUiTest(oldTarget, newTarget))
+        assertEquals(oldTarget.treeUri, storagePermissionUriToReleaseForUiTest(oldTarget, StorageTarget.AppPrivate))
+        assertEquals(null, storagePermissionUriToReleaseForUiTest(oldTarget, oldTarget.copy(displayName = "旧目录新名称")))
+        assertEquals(null, storagePermissionUriToReleaseForUiTest(StorageTarget.AppPrivate, newTarget))
     }
 
     @Test

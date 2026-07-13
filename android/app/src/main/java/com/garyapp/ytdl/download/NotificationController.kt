@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import com.garyapp.ytdl.MainActivity
+import com.garyapp.ytdl.R
 
 class NotificationController(
     private val context: Context,
@@ -42,9 +44,11 @@ class NotificationController(
         }
 
         return builder
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_stat_ytdl_download)
             .setContentTitle("YTDL 下载任务")
             .setContentText(state.stage.notificationText())
+            .setContentIntent(contentPendingIntent())
+            .setAutoCancel(state.stage in TerminalStages)
             .setOngoing(state.stage !in TerminalStages)
             .setOnlyAlertOnce(true)
             .apply {
@@ -88,6 +92,14 @@ class NotificationController(
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         return PendingIntent.getService(context, 2, intent, flags)
+    }
+
+    private fun contentPendingIntent(): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        return PendingIntent.getActivity(context, 1, intent, flags)
     }
 
     companion object {

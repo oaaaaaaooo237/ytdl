@@ -149,7 +149,7 @@ class AppSettingsStorageTest {
         )
         repository.setDefaultStorageTarget(
             StorageTarget.SafTree(
-                treeUri = "content://tree/user-selected",
+                treeUri = "content://com.android.externalstorage.documents/tree/primary%3AMovies",
                 displayName = "用户选择目录",
             ),
         )

@@ -108,6 +108,8 @@ import com.garyapp.ytdl.core.settings.AppSettings
 import com.garyapp.ytdl.core.settings.AppearanceSettings
 import com.garyapp.ytdl.core.settings.CookiesReference as SettingsCookiesReference
 import com.garyapp.ytdl.core.settings.SettingsRepository
+import com.garyapp.ytdl.core.storage.StorageTarget
+import com.garyapp.ytdl.core.storage.StorageTargets
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
@@ -563,6 +565,7 @@ fun YtdlApp() {
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
     var pendingExportOutput by remember { mutableStateOf<ExportController.AppPrivateOutput?>(null) }
     var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
+    var showStorageTargetDialog by rememberSaveable { mutableStateOf(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val bridge = remember { YtdlpBridge() }
     val notificationController = remember { NotificationController(context.applicationContext) }
@@ -589,6 +592,22 @@ fun YtdlApp() {
         }
     }
 
+    fun openStorageTargetChooser() {
+        showStorageTargetDialog = true
+    }
+
+    fun persistStorageTarget(target: StorageTarget) {
+        storagePermissionUriToRelease(appSettings.defaultStorageTarget, target)?.let { treeUri ->
+            runCatching {
+                context.contentResolver.releasePersistableUriPermission(
+                    Uri.parse(treeUri),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+        }
+        appSettings = settingsRepository.setDefaultStorageTarget(target)
+    }
+
     val cookiesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         runCatching {
@@ -596,13 +615,33 @@ fun YtdlApp() {
         }
         val reference = SettingsCookiesReference.fromUserReference(
             reference = uri.toString(),
-            displayName = displayNameForUri(context, uri),
+            displayName = displayNameForUri(context, uri, "cookies 文件"),
         )
         if (reference == null) {
             runtimeState = runtimeState.copy(userMessage = "cookies 文件引用无效，请重新选择 cookies.txt。")
         } else {
             appSettings = settingsRepository.setCookiesReference(reference)
             runtimeState = runtimeState.copy(userMessage = "已保存 cookies 文件引用，仅任务运行时临时读取。")
+        }
+    }
+
+    val storageTreePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val permissionFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        val permissionResult = runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, permissionFlags)
+        }
+        val target = StorageTargets.sanitizeDefault(
+            StorageTarget.SafTree(
+                treeUri = uri.toString(),
+                displayName = displayNameForUri(context, uri, "所选文件夹"),
+            ),
+        )
+        if (permissionResult.isFailure || target !is StorageTarget.SafTree) {
+            runtimeState = runtimeState.copy(userMessage = "无法保存该文件夹授权，请重新选择保存位置。")
+        } else {
+            persistStorageTarget(target)
+            runtimeState = runtimeState.copy(userMessage = "已选择保存位置：${StorageTargets.displayName(target)}。")
         }
     }
 
@@ -984,6 +1023,7 @@ fun YtdlApp() {
                     when (selected.route) {
                         "download" -> downloadPageItems(
                             state = runtimeState,
+                            storageTarget = appSettings.defaultStorageTarget,
                             hasUserConfirmed = hasUserConfirmed,
                             onUrlChange = {
                                 hasUserConfirmed = false
@@ -1001,6 +1041,7 @@ fun YtdlApp() {
                             onStartDownload = ::startRealDownload,
                             onUserConfirmedChange = { hasUserConfirmed = it },
                             onModeSelected = ::selectDownloadMode,
+                            onSelectStorageTarget = ::openStorageTargetChooser,
                         )
                         "formats" -> formatPageItems(
                             analysis = runtimeState.analysis,
@@ -1055,6 +1096,7 @@ fun YtdlApp() {
                             onSelectCookies = {
                                 cookiesPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
                             },
+                            onSelectStorageTarget = ::openStorageTargetChooser,
                             onRequestNotifications = {
                                 notificationsAllowed = notificationController.canPostNotifications()
                                 if (!notificationRuntimePermissionRequired) {
@@ -1087,6 +1129,47 @@ fun YtdlApp() {
                     )
                 }
             }
+        }
+        if (showStorageTargetDialog) {
+            AlertDialog(
+                modifier = Modifier
+                    .semantics { testTagsAsResourceId = true }
+                    .testTag("ytdl-storage-target-dialog"),
+                onDismissRequest = { showStorageTargetDialog = false },
+                title = { Text("选择保存位置") },
+                text = { Text("下载和合并仍在 App 私有目录完成。选择文件夹后，完成的媒体和独立字幕会自动复制过去。") },
+                confirmButton = {
+                    TextButton(
+                        modifier = Modifier.testTag("ytdl-storage-target-dialog-tree"),
+                        onClick = {
+                            showStorageTargetDialog = false
+                            storageTreePicker.launch(null)
+                        },
+                    ) {
+                        Text("选择文件夹")
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(
+                            modifier = Modifier.testTag("ytdl-storage-target-dialog-private"),
+                            onClick = {
+                                showStorageTargetDialog = false
+                                persistStorageTarget(StorageTarget.AppPrivate)
+                                runtimeState = runtimeState.copy(userMessage = "已选择 App 私有目录。")
+                            },
+                        ) {
+                            Text("App 私有目录")
+                        }
+                        TextButton(
+                            modifier = Modifier.testTag("ytdl-storage-target-dialog-cancel"),
+                            onClick = { showStorageTargetDialog = false },
+                        ) {
+                            Text("取消")
+                        }
+                    }
+                },
+            )
         }
         val deleteTarget = pendingDeleteHistoryItem
         if (deleteTarget != null) {
@@ -1318,7 +1401,7 @@ private object HistoryThumbnailLoader {
     }
 }
 
-private fun displayNameForUri(context: android.content.Context, uri: Uri): String {
+private fun displayNameForUri(context: android.content.Context, uri: Uri, fallback: String): String {
     val queriedName = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
@@ -1331,7 +1414,7 @@ private fun displayNameForUri(context: android.content.Context, uri: Uri): Strin
     return queriedName
         ?.takeIf { it.isNotBlank() }
         ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-        ?: "cookies 文件"
+        ?: fallback
 }
 
 @Composable
@@ -1489,12 +1572,14 @@ private fun QueueScrollIndicator(modifier: Modifier = Modifier) {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     state: RuntimeDownloadState,
+    storageTarget: StorageTarget,
     hasUserConfirmed: Boolean,
     onUrlChange: (String) -> Unit,
     onAnalyze: () -> Unit,
     onStartDownload: () -> Unit,
     onUserConfirmedChange: (Boolean) -> Unit,
     onModeSelected: (FormatMode) -> Unit,
+    onSelectStorageTarget: () -> Unit,
 ) {
     val modeSelections = downloadModeSelections(state)
     item {
@@ -1527,7 +1612,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
             RuntimeMessageCard(state.userMessage)
         }
     }
-    item { SettingLineCard(title = "保存位置", subtitle = "App 私有目录 · 导出名：标题+时间；重名加序号", leading = "□", trailing = "›") }
+    item {
+        SettingLineCard(
+            title = "保存位置",
+            subtitle = storageTargetSummary(storageTarget),
+            leading = "□",
+            trailing = "›",
+            modifier = Modifier
+                .clickable(onClick = onSelectStorageTarget)
+                .testTag("ytdl-download-storage-target"),
+        )
+    }
     item {
         SectionTitle("下载模式")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2409,6 +2504,30 @@ private fun settingsCookiesSubtitle(settings: AppSettings): String {
     return "${reference.displayName ?: "cookies 文件"} · 仅保存引用"
 }
 
+private fun storageTargetSummary(target: StorageTarget): String {
+    return when (val safeTarget = StorageTargets.sanitizeDefault(target)) {
+        StorageTarget.AppPrivate -> "App 私有目录 · 完成后保留在应用内"
+        is StorageTarget.SafTree -> "${StorageTargets.displayName(safeTarget)} · 完成后自动复制，私有文件保留"
+        else -> "App 私有目录 · 完成后保留在应用内"
+    }
+}
+
+internal fun storageTargetSummaryForUiTest(target: StorageTarget): String = storageTargetSummary(target)
+
+private fun storagePermissionUriToRelease(
+    previous: StorageTarget,
+    next: StorageTarget,
+): String? {
+    val previousTree = previous as? StorageTarget.SafTree ?: return null
+    val nextTreeUri = (next as? StorageTarget.SafTree)?.treeUri
+    return previousTree.treeUri.takeIf { it != nextTreeUri }
+}
+
+internal fun storagePermissionUriToReleaseForUiTest(
+    previous: StorageTarget,
+    next: StorageTarget,
+): String? = storagePermissionUriToRelease(previous, next)
+
 private data class AppearanceOption(
     val id: String,
     val label: String,
@@ -2597,11 +2716,23 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     notificationsAllowed: Boolean,
     notificationRuntimePermissionRequired: Boolean,
     onSelectCookies: () -> Unit,
+    onSelectStorageTarget: () -> Unit,
     onRequestNotifications: () -> Unit,
     onThemeModeChange: (String) -> Unit,
     onColorPresetChange: (String) -> Unit,
 ) {
-    item { SettingLineCard("默认保存位置", "App 私有目录 · 导出名：标题+时间；重名加序号", "▣", "›", LocalYtdlAppPalette.current.settingsAccent) }
+    item {
+        SettingLineCard(
+            "默认保存位置",
+            storageTargetSummary(settings.defaultStorageTarget),
+            "▣",
+            "›",
+            LocalYtdlAppPalette.current.settingsAccent,
+            modifier = Modifier
+                .clickable(onClick = onSelectStorageTarget)
+                .testTag("ytdl-settings-storage-target"),
+        )
+    }
     item {
         SettingLineCard(
             "Cookies 文件",
