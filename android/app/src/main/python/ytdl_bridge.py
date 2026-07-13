@@ -235,11 +235,16 @@ def _safe_format(item):
         "height": item.get("height"),
         "width": item.get("width"),
         "fps": item.get("fps"),
-        "vcodec": str(item.get("vcodec") or "none"),
-        "acodec": str(item.get("acodec") or "none"),
+        "vcodec": _safe_codec(item.get("vcodec")),
+        "acodec": _safe_codec(item.get("acodec")),
         "filesize": item.get("filesize") or item.get("filesize_approx"),
         "tbr": item.get("tbr"),
     }
+
+
+def _safe_codec(value):
+    normalized = str(value).strip() if value is not None else ""
+    return normalized or None
 
 
 def _safe_subtitles(subtitles):

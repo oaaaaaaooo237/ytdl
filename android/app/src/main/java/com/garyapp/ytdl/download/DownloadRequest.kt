@@ -55,9 +55,8 @@ data class DownloadRequest(
             if (!videoFormat.hasVideo) {
                 throw DownloadRequestException("所选视频格式不包含视频流。")
             }
-
             if (videoFormat.hasAudio) {
-                return DownloadRoute.DirectSingleFile(formatId = videoFormat.id)
+                throw DownloadRequestException("视频+音频模式需要明确的独立视频流和独立音频流。")
             }
 
             val audioFormat = analysis.requireFormat(selection.selectedAudioFormatId, "音频格式")
@@ -75,10 +74,14 @@ data class DownloadRequest(
             selection: FormatSelection,
         ): DownloadRoute {
             val videoFormat = analysis.requireFormat(selection.selectedVideoFormatId, "视频格式")
-            if (!videoFormat.hasVideo || videoFormat.hasAudio) {
-                throw DownloadRequestException("所选视频格式必须是明确独立视频流。")
+            if (!videoFormat.hasVideo) {
+                throw DownloadRequestException("所选格式不包含可下载的视频流。")
             }
-            return DownloadRoute.VideoOnly(videoFormatId = videoFormat.id)
+            return if (videoFormat.audioCodec.equals("none", ignoreCase = true)) {
+                DownloadRoute.VideoOnly(videoFormatId = videoFormat.id)
+            } else {
+                DownloadRoute.DirectSingleFile(formatId = videoFormat.id)
+            }
         }
 
         private fun buildAudioOnlyRoute(

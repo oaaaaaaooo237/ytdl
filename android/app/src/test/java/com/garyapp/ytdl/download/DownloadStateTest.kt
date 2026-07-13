@@ -44,7 +44,7 @@ class DownloadStateTest {
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
             analysis = analysisWith(subtitles = listOf(subtitle)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
             ),

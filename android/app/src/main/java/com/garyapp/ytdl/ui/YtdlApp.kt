@@ -1570,7 +1570,7 @@ private fun QueueScrollIndicator(modifier: Modifier = Modifier) {
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
+internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     state: RuntimeDownloadState,
     storageTarget: StorageTarget,
     hasUserConfirmed: Boolean,
@@ -1582,6 +1582,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     onSelectStorageTarget: () -> Unit,
 ) {
     val modeSelections = downloadModeSelections(state)
+    val modeAvailability = FormatMode.entries.associateWith { mode ->
+        state.analysis == null || isFormatModeAvailable(state.analysis, mode)
+    }
     item {
         val palette = LocalYtdlAppPalette.current
         val showKeyboardOnFocus = shouldShowUrlInputKeyboardOnFocus(LocalConfiguration.current.keyboard)
@@ -1630,30 +1633,33 @@ private fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
                 "♫",
                 "仅音频",
                 selected = modeSelections[FormatMode.AudioOnly] == true,
+                enabled = modeAvailability[FormatMode.AudioOnly] == true,
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(16.dp))
-                    .clickable { onModeSelected(FormatMode.AudioOnly) }
+                    .clickable(enabled = modeAvailability[FormatMode.AudioOnly] == true) { onModeSelected(FormatMode.AudioOnly) }
                     .testTag("ytdl-download-mode-audio"),
             )
             ModeCard(
                 "▣",
                 "视频+音频",
                 selected = modeSelections[FormatMode.VideoAndAudio] == true,
+                enabled = modeAvailability[FormatMode.VideoAndAudio] == true,
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(16.dp))
-                    .clickable { onModeSelected(FormatMode.VideoAndAudio) }
+                    .clickable(enabled = modeAvailability[FormatMode.VideoAndAudio] == true) { onModeSelected(FormatMode.VideoAndAudio) }
                     .testTag("ytdl-download-mode-av"),
             )
             ModeCard(
                 "▤",
-                "仅视频",
+                "视频下载",
                 selected = modeSelections[FormatMode.VideoOnly] == true,
+                enabled = modeAvailability[FormatMode.VideoOnly] == true,
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(16.dp))
-                    .clickable { onModeSelected(FormatMode.VideoOnly) }
+                    .clickable(enabled = modeAvailability[FormatMode.VideoOnly] == true) { onModeSelected(FormatMode.VideoOnly) }
                     .testTag("ytdl-download-mode-video"),
             )
         }
@@ -1950,7 +1956,7 @@ private fun formatDuration(totalSeconds: Long): String {
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
+internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     analysis: VideoAnalysis?,
     selection: FormatSelection,
     selectedSubtitles: List<SubtitleInfo>,
@@ -1958,6 +1964,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     onSubtitleSelectionChange: (List<SubtitleInfo>) -> Unit,
     onApplySelection: () -> Unit,
 ) {
+    val modeAvailability = FormatMode.entries.map { mode -> isFormatModeAvailable(analysis, mode) }
     item {
         val palette = LocalYtdlAppPalette.current
         SegmentedRow(
@@ -1965,6 +1972,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             selectedIndex = selection.mode.ordinal,
             accent = palette.formatAccent,
             testTagPrefix = "ytdl-format-mode",
+            enabledOptions = modeAvailability,
             onSelected = { index ->
                 val mode = FormatMode.entries[index]
                 onSelectionChange(
@@ -1992,15 +2000,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     item {
         AppCard(modifier = Modifier.testTag("ytdl-format-resolution-card")) {
             SectionTitle("分辨率")
-            rows.forEach { row ->
-                ResolutionRow(
-                    row = row,
-                    onSelect = {
-                        if (row.selectable) {
-                            onSelectionChange(selectionFromRow(selection.mode, row))
-                        }
-                    },
-                )
+            if (analysis != null && rows.isEmpty()) {
+                Text("当前模式没有可下载格式", color = LocalYtdlAppPalette.current.softText)
+            } else {
+                rows.forEach { row ->
+                    ResolutionRow(
+                        row = row,
+                        onSelect = {
+                            if (row.selectable) {
+                                onSelectionChange(selectionFromRow(selection.mode, row))
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -2852,12 +2864,26 @@ private fun InfoPill(label: String, value: String) {
 }
 
 @Composable
-private fun ModeCard(icon: String, label: String, selected: Boolean, modifier: Modifier = Modifier) {
+private fun ModeCard(
+    icon: String,
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val palette = LocalYtdlAppPalette.current
     Surface(
         modifier = modifier.height(64.dp),
-        color = if (selected) palette.downloadAccent else palette.cardBackground,
-        contentColor = if (selected) Color.White else palette.neutralText,
+        color = when {
+            !enabled -> palette.mutedCardBackground
+            selected -> palette.downloadAccent
+            else -> palette.cardBackground
+        },
+        contentColor = when {
+            !enabled -> palette.softText.copy(alpha = 0.55f)
+            selected -> Color.White
+            else -> palette.neutralText
+        },
         shape = RoundedCornerShape(14.dp),
         border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, palette.borderColor),
     ) {
@@ -2878,6 +2904,7 @@ private fun SegmentedRow(
     selectedIndex: Int,
     accent: Color,
     testTagPrefix: String? = null,
+    enabledOptions: List<Boolean> = List(options.size) { true },
     onSelected: ((Int) -> Unit)? = null,
 ) {
     val palette = LocalYtdlAppPalette.current
@@ -2891,12 +2918,13 @@ private fun SegmentedRow(
     ) {
         options.forEachIndexed { index, label ->
             val selected = index == selectedIndex
+            val enabled = enabledOptions.getOrElse(index) { true }
             Surface(
                 modifier = Modifier
                     .weight(1f)
                     .then(
                         if (onSelected != null) {
-                            Modifier.clickable { onSelected(index) }
+                            Modifier.clickable(enabled = enabled) { onSelected(index) }
                         } else {
                             Modifier
                         },
@@ -2908,8 +2936,16 @@ private fun SegmentedRow(
                             Modifier
                         },
                     ),
-                color = if (selected) accent else palette.cardBackground.copy(alpha = 0.7f),
-                contentColor = if (selected) Color.White else palette.neutralText,
+                color = when {
+                    !enabled -> palette.mutedCardBackground
+                    selected -> accent
+                    else -> palette.cardBackground.copy(alpha = 0.7f)
+                },
+                contentColor = when {
+                    !enabled -> palette.softText.copy(alpha = 0.55f)
+                    selected -> Color.White
+                    else -> palette.neutralText
+                },
                 shape = RoundedCornerShape(12.dp),
             ) {
                 Text(

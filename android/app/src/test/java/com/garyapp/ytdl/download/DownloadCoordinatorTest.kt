@@ -138,7 +138,7 @@ class DownloadCoordinatorTest {
                 subtitles = emptyList(),
             ),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()

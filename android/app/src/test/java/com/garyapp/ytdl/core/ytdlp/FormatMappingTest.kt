@@ -54,6 +54,89 @@ class FormatMappingTest {
     }
 
     @Test
+    fun missingCodecsRemainUnknownAndDoNotMeanStreamsAreAbsent() {
+        val format = YtdlpBridge.mapFormat(
+            mapOf(
+                "format_id" to "single-file",
+                "ext" to "mp4",
+                "height" to 1080,
+                "width" to 1920,
+            ),
+        )
+
+        assertEquals(null, format.videoCodec)
+        assertEquals(null, format.audioCodec)
+        assertTrue(format.hasVideo)
+        assertTrue(format.hasAudio)
+        assertTrue(format.isSupported)
+        assertEquals(1080, format.height)
+        assertEquals("1080p", format.label)
+    }
+
+    @Test
+    fun blankCodecsRemainUnknownWhileExplicitNoneMeansAbsent() {
+        val unknown = YtdlpBridge.mapFormat(
+            mapOf(
+                "format_id" to "blank-codecs",
+                "ext" to "mp4",
+                "height" to 720,
+                "vcodec" to "",
+                "acodec" to "   ",
+            ),
+        )
+        val videoOnly = YtdlpBridge.mapFormat(
+            mapOf(
+                "format_id" to "video-only",
+                "ext" to "mp4",
+                "height" to 1080,
+                "vcodec" to "avc1.640028",
+                "acodec" to "none",
+            ),
+        )
+
+        assertEquals(null, unknown.videoCodec)
+        assertEquals(null, unknown.audioCodec)
+        assertTrue(unknown.hasVideo)
+        assertTrue(unknown.hasAudio)
+        assertTrue(videoOnly.hasVideo)
+        assertFalse(videoOnly.hasAudio)
+    }
+
+    @Test
+    fun jsonNullCodecsRemainUnknownAfterJsonObjectMapping() {
+        val analysis = YtdlpBridge.parseAnalysisJson(
+            """
+            {
+              "ok": true,
+              "title": "单文件媒体",
+              "duration": 60,
+              "thumbnail": "",
+              "formats": [
+                {
+                  "format_id": "single-file",
+                  "ext": "mp4",
+                  "height": 1080,
+                  "width": 1920,
+                  "vcodec": null,
+                  "acodec": null
+                }
+              ],
+              "subtitles": {},
+              "automatic_captions": {}
+            }
+            """.trimIndent(),
+        ).getOrThrow()
+
+        val format = analysis.formats.single()
+        assertEquals(null, format.videoCodec)
+        assertEquals(null, format.audioCodec)
+        assertTrue(format.hasVideo)
+        assertTrue(format.hasAudio)
+        assertEquals(1080, format.height)
+        assertEquals("1080p", format.label)
+    }
+
+    @Test
     fun marksMissingHeightFormatAsUnsupported() {
         val format = YtdlpBridge.mapFormat(
             mapOf(

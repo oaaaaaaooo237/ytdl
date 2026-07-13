@@ -68,3 +68,34 @@ def test_explicit_format_id_rejects_ytdlp_selector_aliases():
         assert not bridge._is_explicit_format_id(selector), selector
 
     assert bridge._is_explicit_format_id("394")
+
+
+def test_safe_format_preserves_unknown_codecs_without_inventing_none():
+    bridge = load_android_ytdl_bridge()
+
+    missing = bridge._safe_format({"format_id": "single", "ext": "mp4", "height": 1080})
+    blank = bridge._safe_format(
+        {
+            "format_id": "blank",
+            "ext": "mp4",
+            "height": 720,
+            "vcodec": "",
+            "acodec": "   ",
+        }
+    )
+    explicit_none = bridge._safe_format(
+        {
+            "format_id": "video-only",
+            "ext": "mp4",
+            "height": 1080,
+            "vcodec": "avc1.640028",
+            "acodec": "none",
+        }
+    )
+
+    assert missing["vcodec"] is None
+    assert missing["acodec"] is None
+    assert blank["vcodec"] is None
+    assert blank["acodec"] is None
+    assert explicit_none["vcodec"] == "avc1.640028"
+    assert explicit_none["acodec"] == "none"

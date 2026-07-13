@@ -237,7 +237,7 @@ class DownloadUiBridgeTest {
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             appliedSelection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
             ),
@@ -1039,7 +1039,7 @@ class DownloadUiBridgeTest {
             url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()

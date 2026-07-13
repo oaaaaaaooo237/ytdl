@@ -167,8 +167,8 @@ class YtdlpBridge(
             val id = raw["format_id"]?.toString().orEmpty()
             val ext = raw["ext"]?.toString().orEmpty()
             val height = raw["height"].asIntOrNull()
-            val vcodec = raw["vcodec"]?.toString().orEmpty().ifBlank { "none" }
-            val acodec = raw["acodec"]?.toString().orEmpty().ifBlank { "none" }
+            val vcodec = raw["vcodec"].asCodecOrNull()
+            val acodec = raw["acodec"].asCodecOrNull()
             val hasVideo = vcodec != "none"
             val hasAudio = acodec != "none"
             val isSupported = height != null && hasVideo
@@ -422,6 +422,11 @@ class YtdlpBridge(
                 is String -> toDoubleOrNull()
                 else -> null
             }
+        }
+
+        private fun Any?.asCodecOrNull(): String? {
+            if (this == null || this == JSONObject.NULL) return null
+            return toString().trim().takeIf { it.isNotEmpty() }
         }
 
         private fun sanitizeFailureMessage(message: String): String {

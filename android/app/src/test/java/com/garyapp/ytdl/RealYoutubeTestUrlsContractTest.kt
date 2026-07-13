@@ -88,6 +88,7 @@ class RealYoutubeTestUrlsContractTest {
         val urls = Regex("https://[^\\s`，。；）)]+")
             .findAll(policy)
             .map { it.value.trimEnd('`', '，', '。', '；', '）', ')') }
+            .filter { it.startsWith("https://www.youtube.com/") }
             .toList()
 
         assertEquals(expectedUrls.sorted(), urls.sorted())

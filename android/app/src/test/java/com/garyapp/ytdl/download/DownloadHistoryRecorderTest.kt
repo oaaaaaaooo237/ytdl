@@ -261,7 +261,7 @@ class DownloadHistoryRecorderTest {
                 subtitles = emptyList(),
             ),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()
@@ -292,7 +292,7 @@ class DownloadHistoryRecorderTest {
                 subtitles = listOf(subtitle),
             ),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
             selectedSubtitles = listOf(subtitle),

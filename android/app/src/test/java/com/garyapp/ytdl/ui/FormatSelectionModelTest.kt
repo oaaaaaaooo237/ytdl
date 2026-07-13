@@ -11,7 +11,7 @@ import org.junit.Test
 
 class FormatSelectionModelTest {
     @Test
-    fun progressive360pIsDirectSelectableVideoAndAudioRow() {
+    fun singleFileMediaDoesNotCreateVideoAndAudioRows() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
                 progressiveFormat(id = "18", height = 360),
@@ -19,14 +19,8 @@ class FormatSelectionModelTest {
             selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 360),
         )
 
-        val row = rows.single { it.height == 360 }
-        assertEquals("360p", row.label)
-        assertTrue(row.selectable)
-        assertTrue(row.selected)
-        assertTrue(row.direct)
-        assertFalse(row.mergeRequired)
-        assertEquals("18", row.videoFormatId)
-        assertEquals(null, row.audioFormatId)
+        assertTrue(rows.isEmpty())
+        assertFalse(isFormatModeAvailable(analysisWith(progressiveFormat(id = "18", height = 360)), FormatMode.VideoAndAudio))
     }
 
     @Test
@@ -70,6 +64,23 @@ class FormatSelectionModelTest {
     }
 
     @Test
+    fun videoAndAudioRequiresKnownNativeCompatibleCodecs() {
+        val unknownVideoCodec = analysisWith(
+            videoOnlyFormat(id = "video", height = 1080, videoCodec = ""),
+            audioOnlyFormat(id = "audio"),
+        )
+        val unknownAudioCodec = analysisWith(
+            videoOnlyFormat(id = "video", height = 1080),
+            audioOnlyFormat(id = "audio", audioCodec = ""),
+        )
+
+        assertFalse(isFormatModeAvailable(unknownVideoCodec, FormatMode.VideoAndAudio))
+        assertFalse(isFormatModeAvailable(unknownAudioCodec, FormatMode.VideoAndAudio))
+        assertTrue(buildFormatResolutionRows(unknownVideoCodec, FormatSelection(mode = FormatMode.VideoAndAudio)).isEmpty())
+        assertTrue(buildFormatResolutionRows(unknownAudioCodec, FormatSelection(mode = FormatMode.VideoAndAudio)).isEmpty())
+    }
+
+    @Test
     fun automaticVideoAndAudioSelectionPrefersNativeMuxerCompatibleVideoOverHigherWebmVideo() {
         val selection = defaultFormatSelection(
             analysisWith(
@@ -95,23 +106,21 @@ class FormatSelectionModelTest {
             selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 1440),
         )
 
-        val row = rows.single { it.height == 1440 }
-        assertFalse(row.selectable)
-        assertEquals("当前视频未提供可原生合并的 MP4 格式", row.reason)
+        assertTrue(rows.isEmpty())
     }
 
     @Test
-    fun verticalShortsNativeMergeHeightAppearsAsSelectableResolutionRow() {
+    fun nativeMergeResolutionUsesRealHeightInsteadOfWidth() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
-                videoOnlyFormat(id = "137", height = 1920),
+                videoOnlyFormat(id = "137", height = 1080),
                 audioOnlyFormat(id = "140"),
             ),
-            selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 1920),
+            selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 1080),
         )
 
-        val row = rows.single { it.height == 1920 }
-        assertEquals("1920p", row.label)
+        val row = rows.single { it.height == 1080 }
+        assertEquals("1080p", row.label)
         assertTrue(row.selectable)
         assertTrue(row.selected)
         assertEquals("137", row.videoFormatId)
@@ -124,7 +133,7 @@ class FormatSelectionModelTest {
             analysis = analysisWith(
                 progressiveFormat(id = "18", height = 360),
             ),
-            selection = FormatSelection(mode = FormatMode.VideoAndAudio, selectedHeight = 480),
+            selection = FormatSelection(mode = FormatMode.VideoOnly, selectedHeight = 480),
         )
 
         assertEquals(listOf(null, 360), rows.map { it.height })
@@ -153,24 +162,26 @@ class FormatSelectionModelTest {
     }
 
     @Test
-    fun videoOnlyModeDoesNotSelectProgressiveFormatAtSameHeight() {
+    fun videoDownloadKeepsProgressiveAndPureVideoAtSameHeight() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
                 progressiveFormat(id = "18", height = 1080),
                 videoOnlyFormat(id = "137", height = 1080),
             ),
-            selection = FormatSelection(mode = FormatMode.VideoOnly, selectedHeight = 1080),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+            ),
         )
 
-        val row = rows.single { it.height == 1080 }
-        assertTrue(row.selectable)
-        assertTrue(row.selected)
-        assertEquals("137", row.videoFormatId)
-        assertNull(row.audioFormatId)
+        val rows1080 = rows.filter { it.height == 1080 }
+        assertEquals(listOf("18", "137"), rows1080.map { it.videoFormatId })
+        assertEquals("137", rows1080.single { it.selected }.videoFormatId)
     }
 
     @Test
-    fun videoOnlyModeDisablesProgressiveRowWhenNoStandaloneVideoExists() {
+    fun videoDownloadModeSelectsSingleFileMediaDirectly() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
                 progressiveFormat(id = "18", height = 360),
@@ -179,11 +190,69 @@ class FormatSelectionModelTest {
         )
 
         val row = rows.single { it.height == 360 }
-        assertFalse(row.selectable)
-        assertFalse(row.selected)
-        assertNull(row.videoFormatId)
+        assertTrue(row.selectable)
+        assertTrue(row.selected)
+        assertTrue(row.direct)
+        assertEquals("18", row.videoFormatId)
         assertNull(row.audioFormatId)
-        assertTrue(row.reason.orEmpty().contains("独立视频"))
+        assertEquals("360p MP4 单文件", row.summary)
+    }
+
+    @Test
+    fun unknownCodecSingleFileDefaultsToVideoDownloadMode() {
+        val analysis = analysisWith(unknownSingleFileFormat(id = "single-file", height = 1080))
+
+        val selection = defaultFormatSelection(analysis)
+
+        assertEquals("视频下载", FormatMode.VideoOnly.label)
+        assertEquals(FormatMode.VideoOnly, selection.mode)
+        assertEquals("single-file", selection.selectedVideoFormatId)
+        assertNull(selection.selectedAudioFormatId)
+        assertFalse(selection.mergeRequired)
+        assertFalse(isFormatModeAvailable(analysis, FormatMode.VideoAndAudio))
+        assertTrue(isFormatModeAvailable(analysis, FormatMode.VideoOnly))
+    }
+
+    @Test
+    fun audioOnlyFormatsDoNotAppearInVideoDownloadRows() {
+        val analysis = analysisWith(audioOnlyFormat(id = "140"))
+
+        val rows = buildFormatResolutionRows(
+            analysis = analysis,
+            selection = FormatSelection(mode = FormatMode.VideoOnly),
+        )
+
+        assertTrue(rows.isEmpty())
+        assertFalse(isFormatModeAvailable(analysis, FormatMode.VideoOnly))
+    }
+
+    @Test
+    fun videoDownloadListsEveryDownloadableVideoFormatWithoutInternalIdsInLabels() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "progressive-1080", height = 1080),
+            unknownSingleFileFormat(id = "unknown-1080", height = 1080),
+            videoOnlyFormat(id = "137", height = 1080),
+            audioOnlyFormat(id = "140"),
+        )
+
+        val rows = buildFormatResolutionRows(
+            analysis = analysis,
+            selection = FormatSelection(mode = FormatMode.VideoOnly),
+        ).filter { it.height != null }
+
+        assertEquals(listOf("progressive-1080", "unknown-1080", "137"), rows.map { it.videoFormatId })
+        assertTrue(rows.all { it.label.startsWith("1080p") })
+        assertTrue(rows.none { it.label.contains("137") || it.label.contains("140") || it.label.contains("1920p") })
+    }
+
+    @Test
+    fun noAnalysisUsesOneEmptyStateInsteadOfUnavailableFormatRows() {
+        val rows = buildFormatResolutionRows(
+            analysis = null,
+            selection = FormatSelection(mode = FormatMode.VideoOnly),
+        )
+
+        assertTrue(rows.isEmpty())
     }
 
     @Test
@@ -209,7 +278,7 @@ class FormatSelectionModelTest {
     }
 
     @Test
-    fun audioOnlyResolutionRowsAreUnsupportedAndGreyedOut() {
+    fun audioOnlyModeHidesResolutionRows() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
                 progressiveFormat(id = "18", height = 360),
@@ -218,12 +287,8 @@ class FormatSelectionModelTest {
             selection = FormatSelection(mode = FormatMode.AudioOnly, selectedHeight = 360),
         )
 
-        val row = rows.single { it.height == 360 }
-        assertFalse(row.selectable)
-        assertFalse(row.selected)
-        assertNull(row.videoFormatId)
-        assertNull(row.audioFormatId)
-        assertEquals("仅音频不使用分辨率", row.reason)
+        assertEquals(listOf(null), rows.map { it.height })
+        assertFalse(rows.any { it.height == 360 })
     }
 
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(
@@ -265,6 +330,19 @@ class FormatSelectionModelTest {
         filesizeBytes = filesizeBytes,
         videoCodec = videoCodec,
         audioCodec = "none",
+    )
+
+    private fun unknownSingleFileFormat(id: String, height: Int) = VideoFormat(
+        id = id,
+        ext = "mp4",
+        height = height,
+        label = "${height}p",
+        hasVideo = true,
+        hasAudio = true,
+        mergeRequired = false,
+        isSupported = true,
+        videoCodec = null,
+        audioCodec = null,
     )
 
     private fun audioOnlyFormat(

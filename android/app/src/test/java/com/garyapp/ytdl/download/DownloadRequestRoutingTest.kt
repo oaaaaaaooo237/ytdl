@@ -39,7 +39,7 @@ class DownloadRequestRoutingTest {
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
                 mergeRequired = false,
@@ -77,8 +77,8 @@ class DownloadRequestRoutingTest {
     }
 
     @Test
-    fun videoOnlyRouteRejectsProgressiveFormatWithAudio() {
-        val result = DownloadRequest.fromAnalysis(
+    fun videoDownloadRoutesProgressiveAndUnknownSingleFilesDirectly() {
+        val progressive = DownloadRequest.fromAnalysis(
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
@@ -86,10 +86,59 @@ class DownloadRequestRoutingTest {
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
             ),
+        ).getOrThrow()
+        val unknown = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(unknownSingleFileFormat(id = "single-file", height = 1080)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "single-file",
+            ),
+        ).getOrThrow()
+
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "18"), progressive.route)
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "single-file"), unknown.route)
+        assertFalse(progressive.formatSummary.contains("18"))
+        assertFalse(unknown.formatSummary.contains("single-file"))
+    }
+
+    @Test
+    fun videoAndAudioRejectsSingleFileMediaInsteadOfRoutingItDirectly() {
+        val result = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
         )
 
         assertTrue(result.isFailure)
         assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("独立视频流"))
+    }
+
+    @Test
+    fun selectedVideoFormatIdEntersDirectRouteWithoutFallback() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "first", height = 1080),
+            progressiveFormat(id = "chosen", height = 720),
+        )
+
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysis,
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 720,
+                selectedVideoFormatId = "chosen",
+            ),
+        ).getOrThrow()
+
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "chosen"), request.route)
+        assertFalse(request.formatSummary.contains("first"))
+        assertFalse(request.formatSummary.contains("chosen"))
     }
 
     @Test
@@ -312,7 +361,7 @@ class DownloadRequestRoutingTest {
                 subtitles = listOf(subtitle),
             ),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
             ),
@@ -339,7 +388,7 @@ class DownloadRequestRoutingTest {
                 subtitles = listOf(subtitle),
             ),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
             ),
@@ -370,7 +419,7 @@ class DownloadRequestRoutingTest {
                 subtitles = listOf(subtitle),
             ),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
             ),
@@ -394,7 +443,7 @@ class DownloadRequestRoutingTest {
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedHeight = 360,
                 selectedVideoFormatId = "18",
             ),
@@ -458,7 +507,7 @@ class DownloadRequestRoutingTest {
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()
@@ -485,7 +534,7 @@ class DownloadRequestRoutingTest {
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()
@@ -509,7 +558,7 @@ class DownloadRequestRoutingTest {
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()
@@ -557,7 +606,7 @@ class DownloadRequestRoutingTest {
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
             selection = FormatSelection(
-                mode = FormatMode.VideoAndAudio,
+                mode = FormatMode.VideoOnly,
                 selectedVideoFormatId = "18",
             ),
         ).getOrThrow()
@@ -799,6 +848,19 @@ class DownloadRequestRoutingTest {
         isSupported = true,
         videoCodec = "avc1",
         audioCodec = "none",
+    )
+
+    private fun unknownSingleFileFormat(id: String, height: Int) = VideoFormat(
+        id = id,
+        ext = "mp4",
+        height = height,
+        label = "${height}p",
+        hasVideo = true,
+        hasAudio = true,
+        mergeRequired = false,
+        isSupported = true,
+        videoCodec = null,
+        audioCodec = null,
     )
 
     private fun audioOnlyFormat(id: String) = VideoFormat(
