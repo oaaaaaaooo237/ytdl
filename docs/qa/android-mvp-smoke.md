@@ -10,7 +10,7 @@ Android Play MVP 的 API37 模拟器前台 M9/T12 验收已有新鲜通过证据
 
 2026-07-06 复查：Computer Use 已能激活 `Android Emulator - ytdl_api37_play_x86_64:5554` 并前台操作当前 APK；已用 Computer Use 点击并截图 `下载 -> 格式 -> 队列 -> 历史 -> 设置` 五页。早期为压制输入法曾使用 `Ctrl+V`、文本注入和硬件键事件；这些证据只保留为历史支持。最新测试口径改为完全拟真真机：点击 URL 输入框后允许并优先使用 Android 系统软键盘完成输入，测试重点改为确认 URL 未被候选词、自动补全、手写浮层或 Gboard 菜单改写，且流程可继续。
 
-2026-07-10 测试地址替换：后续真实测试只使用普通视频主路径 `https://www.youtube.com/watch?v=PqQNXB6hhUs`、普通视频备用 `https://www.youtube.com/watch?v=svoD582Pas4`、Shorts 抽样 `https://www.youtube.com/shorts/oXFad1nt6v0`。旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` / `lcFR2mFSmSs` / `auNezUzwCZg` / `jWTrleK2_MU` 只保留为历史证据。为降低 429 风险，真实 connected 网络测试默认跳过，只有显式 `realYoutube=true` 才单项运行；真实字幕下载继续暂停，除非用户恢复并显式 `realYoutubeSubtitle=true`。真实分析/Shorts 抽样间隔至少 10 分钟，完整下载间隔至少 30 分钟；一旦出现 429，当天停止 YouTube 真实请求，改做单元、构建或非网络 UI 验证。
+2026-07-10 测试地址替换：后续真实测试只使用普通视频主路径 `https://www.youtube.com/watch?v=PqQNXB6hhUs`、普通视频备用 `https://www.youtube.com/watch?v=svoD582Pas4`、Shorts 抽样 `https://www.youtube.com/shorts/oXFad1nt6v0`。问题 4 的单文件媒体专项另使用用户 2026-07-13 指定的两个 Eporner 地址：`https://www.eporner.com/video-cDSGZsgq7rb/transfixed-muscle-hunk-gets-buttfucked-by-two-horny-trans-girls-kasey-kei-and-bella-joie/?trx=1227735290aee694b81473a256bea12420712` 和 `https://www.eporner.com/video-Wyzh97cKNIY/bella-gets-told-do-and-spreads-em-bella-rolland-milan-ponjevic/`；它们不替换 YouTube 主路径，也不用于字幕测试。旧 `tkxzMEfp49Q` / `QBwpO9f0oAw` / `lcFR2mFSmSs` / `auNezUzwCZg` / `jWTrleK2_MU` 只保留为历史证据。为降低 429 风险，真实 connected 网络测试默认跳过，只有显式 `realYoutube=true` 才单项运行；真实字幕下载继续暂停，除非用户恢复并显式 `realYoutubeSubtitle=true`。真实分析/Shorts 抽样间隔至少 10 分钟，完整下载间隔至少 30 分钟；一旦出现 429，当天停止 YouTube 真实请求，改做单元、构建或非网络 UI 验证。
 
 ## 本轮已确认
 
@@ -1632,5 +1632,7 @@ API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboar
 - 问题 1：保存位置不可选。
 - 问题 2：软件没有正式图标，通知栏仍显示默认占位图标。
 - 问题 3：点击 `YTDL 下载任务 / 下载完成` 通知不能返回软件。
-- 未完成：确认本次完成记录进入历史；打开合并视频；导出；分享；处理并复核上述三个问题；最后删除本次测试历史并精确清理 App 私有测试输出目录。当前测试历史和输出尚未清理，恢复时保留现有完成任务继续检查，不发起新的真实下载。
+- 问题 4：当分析结果不提供可分离的独立音频流和视频流、只提供可直接下载的单文件视频时，`视频+音频` 选项目前仍可用，应改为灰色且不可选择；`视频下载` 应只显示当前结果中真实可下载的视频格式，选择后能够开始并完成下载，不能继续出现“所列格式均不可下载”。该问题只使用文首两条 Eporner 专项地址测试，并控制真实请求频率。
+- 优化 1：地址栏已有文字时，长按应弹出可用的文字快捷菜单，至少包含全选、复制、粘贴和删除，并能对当前输入内容正确执行对应操作。
+- 未完成：确认本次完成记录进入历史；打开合并视频；导出；分享；处理并复核上述四个问题和优化 1；最后删除本次测试历史并精确清理 App 私有测试输出目录。当前测试历史和输出尚未清理，恢复时保留现有完成任务继续检查；除问题 4 的两个专项地址外，不发起新的真实下载。
 - 当前结论：M10/D2 只完成了上述真机子路径，尚未整体通过。用户要求暂时停止测试并准备关机；本记录即恢复点。Play 发布准备已按用户指示暂时取消，不阻塞当前真机验收。
