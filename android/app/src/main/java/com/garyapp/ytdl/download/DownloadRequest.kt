@@ -6,6 +6,8 @@ import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.ui.FormatMode
 import com.garyapp.ytdl.ui.FormatSelection
 import com.garyapp.ytdl.ui.formatSelectionSummary
+import com.garyapp.ytdl.ui.isNativeMp4MergeAudioCompatible
+import com.garyapp.ytdl.ui.isNativeMp4MergeVideoCompatible
 
 data class DownloadRequest(
     val url: String,
@@ -62,6 +64,12 @@ data class DownloadRequest(
             val audioFormat = analysis.requireFormat(selection.selectedAudioFormatId, "音频格式")
             if (!audioFormat.hasAudio || audioFormat.hasVideo) {
                 throw DownloadRequestException("所选音频格式必须是明确的独立音频流。")
+            }
+            if (
+                !videoFormat.isNativeMp4MergeVideoCompatible() ||
+                !audioFormat.isNativeMp4MergeAudioCompatible()
+            ) {
+                throw DownloadRequestException("所选视频和音频格式不兼容当前原生 MP4 合并。")
             }
             return DownloadRoute.MergeRequired(
                 videoFormatId = videoFormat.id,

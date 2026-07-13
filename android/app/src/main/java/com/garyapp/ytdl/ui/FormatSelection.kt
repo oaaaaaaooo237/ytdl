@@ -227,7 +227,7 @@ private fun bestStandaloneAudioForNativeMp4Merge(analysis: VideoAnalysis): Video
         .maxByOrNull { it.filesizeBytes ?: 0L }
 }
 
-private fun VideoFormat.isNativeMp4MergeVideoCompatible(): Boolean {
+internal fun VideoFormat.isNativeMp4MergeVideoCompatible(): Boolean {
     val normalizedExt = ext.lowercase()
     val normalizedCodec = videoCodec.orEmpty().lowercase()
     return normalizedExt == "mp4" && (
@@ -237,7 +237,7 @@ private fun VideoFormat.isNativeMp4MergeVideoCompatible(): Boolean {
         )
 }
 
-private fun VideoFormat.isNativeMp4MergeAudioCompatible(): Boolean {
+internal fun VideoFormat.isNativeMp4MergeAudioCompatible(): Boolean {
     val normalizedExt = ext.lowercase()
     val normalizedCodec = audioCodec.orEmpty().lowercase()
     return normalizedExt in setOf("m4a", "mp4") && (

@@ -157,7 +157,28 @@ class DownloadRequestRoutingTest {
     }
 
     @Test
-    fun mergeRequiredRouteDownloadsExplicitVideoAndAudioBeforeNativeMerge() {
+    fun incompatibleWebmVp9AndOpusPairCannotCreateMergeRequiredRoute() {
+        val result = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "248", height = 1080, ext = "webm", videoCodec = "vp9"),
+                audioOnlyFormat(id = "251", ext = "webm", audioCodec = "opus"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "248",
+                selectedAudioFormatId = "251",
+                mergeRequired = true,
+            ),
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("原生 MP4 合并"))
+    }
+
+    @Test
+    fun nativeMp4CompatiblePairCreatesMergeRequiredRouteAndDownloadsBeforeMerge() {
         val request = DownloadRequest.fromAnalysis(
             url = TestUrl,
             analysis = analysisWith(
@@ -837,16 +858,21 @@ class DownloadRequestRoutingTest {
         audioCodec = "mp4a",
     )
 
-    private fun videoOnlyFormat(id: String, height: Int) = VideoFormat(
+    private fun videoOnlyFormat(
+        id: String,
+        height: Int,
+        ext: String = "mp4",
+        videoCodec: String = "avc1",
+    ) = VideoFormat(
         id = id,
-        ext = "mp4",
+        ext = ext,
         height = height,
         label = "${height}p 需合并音频",
         hasVideo = true,
         hasAudio = false,
         mergeRequired = true,
         isSupported = true,
-        videoCodec = "avc1",
+        videoCodec = videoCodec,
         audioCodec = "none",
     )
 
@@ -863,9 +889,13 @@ class DownloadRequestRoutingTest {
         audioCodec = null,
     )
 
-    private fun audioOnlyFormat(id: String) = VideoFormat(
+    private fun audioOnlyFormat(
+        id: String,
+        ext: String = "m4a",
+        audioCodec: String = "mp4a",
+    ) = VideoFormat(
         id = id,
-        ext = "m4a",
+        ext = ext,
         height = null,
         label = "音频",
         hasVideo = false,
@@ -873,7 +903,7 @@ class DownloadRequestRoutingTest {
         mergeRequired = false,
         isSupported = true,
         videoCodec = "none",
-        audioCodec = "mp4a",
+        audioCodec = audioCodec,
     )
 
     private companion object {

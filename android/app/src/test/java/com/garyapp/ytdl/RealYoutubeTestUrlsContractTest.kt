@@ -1,7 +1,9 @@
 package com.garyapp.ytdl
 
 import java.io.File
+import java.net.URI
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,6 +77,27 @@ class RealYoutubeTestUrlsContractTest {
         )
     }
 
+    @Test
+    fun currentUrlPolicyRejectsAdditionalYoutubeUrlsForEverySupportedHostSpelling() {
+        val extraUrls = listOf(
+            "https://www.youtube.com/watch?v=extra",
+            "https://youtube.com/watch?v=extra",
+            "https://youtu.be/extra",
+        )
+
+        extraUrls.forEach { extraUrl ->
+            val document = currentPolicyFixture(extraUrl)
+            assertThrows("额外 YouTube 地址必须触发唯一性失败：$extraUrl", AssertionError::class.java) {
+                assertCurrentUrlPolicy(document, PolicyStart, PolicyEnd)
+            }
+        }
+    }
+
+    @Test
+    fun currentUrlPolicyAllowsTheTwoIssue4EpornerUrls() {
+        assertCurrentUrlPolicy(currentPolicyFixture(), PolicyStart, PolicyEnd)
+    }
+
     private fun assertCurrentUrlPolicy(document: String, start: String, end: String) {
         val startIndex = document.indexOf(start)
         val endIndex = document.indexOf(end, startIndex + start.length)
@@ -88,7 +111,9 @@ class RealYoutubeTestUrlsContractTest {
         val urls = Regex("https://[^\\s`，。；）)]+")
             .findAll(policy)
             .map { it.value.trimEnd('`', '，', '。', '；', '）', ')') }
-            .filter { it.startsWith("https://www.youtube.com/") }
+            .filter { url ->
+                URI(url).host?.lowercase() in SupportedYoutubeHosts
+            }
             .toList()
 
         assertEquals(expectedUrls.sorted(), urls.sorted())
@@ -110,10 +135,29 @@ class RealYoutubeTestUrlsContractTest {
         }
     }
 
+    private fun currentPolicyFixture(extraUrl: String? = null): String {
+        return buildString {
+            appendLine(PolicyStart)
+            appendLine("https://www.youtube.com/watch?v=PqQNXB6hhUs")
+            appendLine("https://www.youtube.com/watch?v=svoD582Pas4")
+            appendLine("https://www.youtube.com/shorts/oXFad1nt6v0")
+            appendLine("https://www.eporner.com/video-cDSGZsgq7rb/transfixed-muscle-hunk-gets-buttfucked-by-two-horny-trans-girls-kasey-kei-and-bella-joie/?trx=1227735290aee694b81473a256bea12420712")
+            appendLine("https://www.eporner.com/video-Wyzh97cKNIY/bella-gets-told-do-and-spreads-em-bella-rolland-milan-ponjevic/")
+            extraUrl?.let(::appendLine)
+            appendLine(PolicyEnd)
+        }
+    }
+
     private fun sourceFile(vararg candidates: String): File {
         return candidates
             .map(::File)
             .firstOrNull(File::isFile)
             ?: error("找不到源码文件：${candidates.joinToString()}")
+    }
+
+    private companion object {
+        const val PolicyStart = "CURRENT POLICY START"
+        const val PolicyEnd = "CURRENT POLICY END"
+        val SupportedYoutubeHosts = setOf("www.youtube.com", "youtube.com", "youtu.be")
     }
 }
