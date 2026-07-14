@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -54,8 +55,10 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -119,9 +122,12 @@ import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateChecker
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateCoordinator
-import com.garyapp.ytdl.core.ytdlp.ParserUpdateHttpClient
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateResult
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateState
+import com.garyapp.ytdl.core.ytdlp.ParserRuntimeState
+import com.garyapp.ytdl.core.ytdlp.ParserVersionControl
+import com.garyapp.ytdl.core.ytdlp.ParserVersionInfo
+import com.garyapp.ytdl.core.ytdlp.ParserVersionManager
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
 import com.garyapp.ytdl.download.IdleDownloadActionResult
@@ -177,13 +183,29 @@ private val CardPillBadgeMinHeight = 30.dp
 private val BottomBarGestureBuffer = 32.dp
 private val SettingsAppearanceBottomBuffer = 96.dp
 private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
-    checker = ParserUpdateChecker(),
+    checker = ParserUpdateChecker.forCurrentVersion(
+        currentVersionProvider = { ParserRuntimeState.activeVersion },
+    ),
     executor = Executor { command ->
         Thread(command, "ytdl-parser-update").apply { isDaemon = true }.start()
     },
 )
 private val ProcessDownloadCacheExecutor = Executor { command ->
     Thread(command, "ytdl-cache-settings").apply { isDaemon = true }.start()
+}
+private val ProcessParserVersionExecutor = Executors.newSingleThreadExecutor { command ->
+    Thread(command, "ytdl-parser-version").apply { isDaemon = true }
+}
+private object ProcessParserVersionOperations {
+    private var coordinator: ParserVersionOperationCoordinator? = null
+
+    @Synchronized
+    fun get(context: Context): ParserVersionOperationCoordinator {
+        return coordinator ?: ParserVersionOperationCoordinator(
+            control = ParserVersionManager.fromContext(context.applicationContext),
+            executor = ProcessParserVersionExecutor,
+        ).also { coordinator = it }
+    }
 }
 private val ImmediateParserUiStateExecutor = Executor(Runnable::run)
 
@@ -619,6 +641,18 @@ private fun parserUpdateStatusLabel(state: ParserUpdateState): String {
     }
 }
 
+private fun parserVersionSummary(
+    currentProcessVersion: String,
+    versions: List<ParserVersionInfo>,
+): String {
+    val selectedVersion = versions.firstOrNull { it.isSelected }?.version ?: currentProcessVersion
+    return if (selectedVersion == currentProcessVersion) {
+        "本进程：$currentProcessVersion"
+    } else {
+        "本进程：$currentProcessVersion；下次启动：$selectedVersion"
+    }
+}
+
 internal enum class QueueStageStatus {
     Pending,
     Current,
@@ -706,6 +740,10 @@ fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
 fun YtdlApp(
     parserUpdateCoordinator: ParserUpdateCoordinator = ProcessParserUpdateCoordinator,
     parserUiStateDeliveryExecutor: Executor = ImmediateParserUiStateExecutor,
+    parserVersionControl: ParserVersionControl? = null,
+    parserVersionExecutor: Executor = ProcessParserVersionExecutor,
+    parserVersionOperations: ParserVersionOperationCoordinator? = null,
+    currentProcessParserVersion: String = ParserRuntimeState.activeVersion,
     downloadCacheFactory: (Context) -> DownloadCacheControl = ::createDownloadCacheControl,
     downloadCacheExecutor: Executor = ProcessDownloadCacheExecutor,
     analysisProvider: ((String, String?) -> Result<VideoAnalysis>)? = null,
@@ -713,6 +751,11 @@ fun YtdlApp(
         DownloadCoordinator::startForegroundDownload,
 ) {
     val context = LocalContext.current
+    val versionOperations = remember(parserVersionOperations, parserVersionControl, parserVersionExecutor) {
+        parserVersionOperations
+            ?: parserVersionControl?.let { ParserVersionOperationCoordinator(it, parserVersionExecutor) }
+            ?: ProcessParserVersionOperations.get(context.applicationContext)
+    }
     var selectedRoute by rememberSaveable { mutableStateOf("download") }
     val currentSelectedRoute by rememberUpdatedState(selectedRoute)
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
@@ -726,9 +769,17 @@ fun YtdlApp(
     var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
     var parserUpdateRevision by remember { mutableStateOf(-1L) }
     var parserUpdateState by remember { mutableStateOf(ParserUpdateState()) }
-    var parserVersionSubtitle by remember { mutableStateOf(settingsParserVersionLabel()) }
+    val initialParserOperationState = remember(versionOperations) { versionOperations.currentState() }
+    val initialParserVersions = initialParserOperationState.versions
+    var parserVersions by remember { mutableStateOf(initialParserVersions) }
+    var parserVersionSubtitle by remember {
+        mutableStateOf(parserVersionSummary(currentProcessParserVersion, initialParserVersions))
+    }
     var pendingParserUpdateVersion by remember { mutableStateOf<String?>(null) }
     var showParserStatusDialog by remember { mutableStateOf(false) }
+    var parserOperationMessage by remember { mutableStateOf(initialParserOperationState.message) }
+    var parserOperationRunning by remember { mutableStateOf(initialParserOperationState.isRunning) }
+    var pendingDeleteParserVersion by remember { mutableStateOf<String?>(null) }
     var settingsExplanation by remember { mutableStateOf<SettingsExplanation?>(null) }
     var downloadCacheStats by remember { mutableStateOf(CacheStats(0, 0)) }
     var showDownloadCacheConfirmation by remember { mutableStateOf(false) }
@@ -798,9 +849,9 @@ fun YtdlApp(
         parserUpdateState = state
         parserVersionSubtitle = when {
             state.isRunning && state.manualResultRequested -> "正在检查解析器更新..."
-            state.isRunning -> settingsParserVersionLabel()
+            state.isRunning -> parserVersionSummary(currentProcessParserVersion, parserVersions)
             state.result == ParserUpdateResult.AlreadyLatest && state.manualResultRequested -> {
-                "已是最新版本：${YtdlpBridge.PINNED_YTDLP_VERSION}"
+                "已是最新版本：$currentProcessParserVersion"
             }
             state.result is ParserUpdateResult.UpdateAvailable -> {
                 "发现新版本：${state.result.latestVersion}"
@@ -808,7 +859,7 @@ fun YtdlApp(
             state.result == ParserUpdateResult.Failed && state.manualResultRequested -> {
                 "检查失败，请稍后重试"
             }
-            else -> settingsParserVersionLabel()
+            else -> parserVersionSummary(currentProcessParserVersion, parserVersions)
         }
         pendingParserUpdateVersion = state.promptVersion
     }
@@ -816,6 +867,18 @@ fun YtdlApp(
     fun dismissParserUpdatePrompt(version: String) {
         pendingParserUpdateVersion = null
         parserUpdateCoordinator.dismissUpdatePrompt(version)
+    }
+
+    fun selectParserVersion(version: String) {
+        versionOperations.select(version)
+    }
+
+    fun downloadParserVersion(expectedVersion: String?) {
+        versionOperations.download(expectedVersion)
+    }
+
+    fun deleteParserVersion(version: String) {
+        versionOperations.delete(version)
     }
 
     fun clearDownloadCache() {
@@ -912,6 +975,20 @@ fun YtdlApp(
     DisposableEffect(Unit) {
         refreshDownloadCacheStats()
         var disposed = false
+        val versionOperationSubscription = versionOperations.addListener { state ->
+            mainHandler.post {
+                if (!disposed) {
+                    parserVersions = state.versions
+                    parserVersionSubtitle = parserVersionSummary(currentProcessParserVersion, state.versions)
+                    parserOperationRunning = state.isRunning
+                    parserOperationMessage = state.message
+                    if (state.explanationTitle != null && state.message != null) {
+                        runtimeState = runtimeState.copy(userMessage = state.message)
+                        settingsExplanation = SettingsExplanation(state.explanationTitle, state.message)
+                    }
+                }
+            }
+        }
         val parserSubscription = parserUpdateCoordinator.addVersionedListener { snapshot ->
             parserUiStateDeliveryExecutor.execute {
                 mainHandler.post {
@@ -936,6 +1013,7 @@ fun YtdlApp(
         }
         onDispose {
             disposed = true
+            versionOperationSubscription.close()
             parserSubscription.close()
             subscription.close()
         }
@@ -1344,7 +1422,9 @@ fun YtdlApp(
                                 persistStorageTarget(StorageTarget.AppPrivate)
                                 runtimeState = runtimeState.copy(userMessage = "已恢复默认路径：App 私有目录。")
                             },
-                            onShowParserStatus = { showParserStatusDialog = true },
+                            onShowParserStatus = {
+                                showParserStatusDialog = true
+                            },
                             onShowMediaProcessorExplanation = { settingsExplanation = MediaProcessorExplanation },
                             onShowUrlValidationExplanation = { settingsExplanation = UrlValidationExplanation },
                             onRequestDownloadCacheClear = { showDownloadCacheConfirmation = true },
@@ -1415,9 +1495,54 @@ fun YtdlApp(
                 onDismissRequest = { showParserStatusDialog = false },
                 title = { Text("解析器版本") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("内置版本：${settingsParserVersionLabel()}")
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 440.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val builtIn = parserVersions.first { it.isBuiltIn }
+                        Text("内置版本：yt-dlp ${builtIn.version}")
+                        Text("当前选择：yt-dlp ${parserVersions.first { it.isSelected }.version}")
+                        Text("本进程实际版本：yt-dlp $currentProcessParserVersion")
+                        TextButton(
+                            enabled = !parserOperationRunning && !builtIn.isSelected,
+                            modifier = Modifier.testTag("ytdl-parser-select-${builtIn.version}"),
+                            onClick = { selectParserVersion(builtIn.version) },
+                        ) {
+                            Text(if (builtIn.isSelected) "当前选择" else "使用内置版本")
+                        }
+                        parserVersions.filterNot(ParserVersionInfo::isBuiltIn).forEach { version ->
+                            Text("已下载：yt-dlp ${version.version}")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    enabled = !parserOperationRunning && !version.isSelected,
+                                    modifier = Modifier.testTag("ytdl-parser-select-${version.version}"),
+                                    onClick = { selectParserVersion(version.version) },
+                                ) {
+                                    Text(if (version.isSelected) "当前选择" else "使用")
+                                }
+                                TextButton(
+                                    enabled = !parserOperationRunning,
+                                    modifier = Modifier.testTag("ytdl-parser-delete-${version.version}"),
+                                    onClick = {
+                                        pendingDeleteParserVersion = version.version
+                                        showParserStatusDialog = false
+                                    },
+                                ) {
+                                    Text("删除")
+                                }
+                            }
+                        }
+                        TextButton(
+                            enabled = !parserOperationRunning,
+                            modifier = Modifier.testTag("ytdl-parser-download-latest"),
+                            onClick = { downloadParserVersion(expectedVersion = null) },
+                        ) {
+                            Text("下载最新版")
+                        }
                         Text(parserUpdateStatusLabel(parserUpdateState))
+                        parserOperationMessage?.let { Text(it) }
                     }
                 },
                 confirmButton = {
@@ -1435,6 +1560,42 @@ fun YtdlApp(
                 },
             )
         }
+        val deleteVersion = pendingDeleteParserVersion
+        if (deleteVersion != null) {
+            AlertDialog(
+                modifier = Modifier.testTag("ytdl-parser-delete-dialog"),
+                onDismissRequest = {
+                    pendingDeleteParserVersion = null
+                    showParserStatusDialog = true
+                },
+                title = { Text("确认删除解析器 $deleteVersion？") },
+                text = { Text("删除后不能在下次启动使用该版本；内置版本不会受影响。") },
+                confirmButton = {
+                    TextButton(
+                        enabled = !parserOperationRunning,
+                        modifier = Modifier.testTag("ytdl-parser-delete-confirm"),
+                        onClick = {
+                            pendingDeleteParserVersion = null
+                            showParserStatusDialog = true
+                            deleteParserVersion(deleteVersion)
+                        },
+                    ) {
+                        Text("删除")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !parserOperationRunning,
+                        onClick = {
+                            pendingDeleteParserVersion = null
+                            showParserStatusDialog = true
+                        },
+                    ) {
+                        Text("取消")
+                    }
+                },
+            )
+        }
         val parserUpdateVersion = pendingParserUpdateVersion
         if (parserUpdateVersion != null && !showParserStatusDialog) {
             AlertDialog(
@@ -1444,22 +1605,17 @@ fun YtdlApp(
                 onDismissRequest = { dismissParserUpdatePrompt(parserUpdateVersion) },
                 title = { Text("发现新版解析器") },
                 text = {
-                    Text("发现 yt-dlp $parserUpdateVersion。请更新应用以使用新版解析器，应用不会在内部下载或热更新解析器代码。")
+                    Text("发现 yt-dlp $parserUpdateVersion，可下载并在重启应用后使用。")
                 },
                 confirmButton = {
                     TextButton(
+                        enabled = !parserOperationRunning,
                         onClick = {
                             dismissParserUpdatePrompt(parserUpdateVersion)
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(ParserUpdateHttpClient.ReleasePage)),
-                                )
-                            }.onFailure {
-                                runtimeState = runtimeState.copy(userMessage = "无法打开应用发布页。")
-                            }
+                            downloadParserVersion(parserUpdateVersion)
                         },
                     ) {
-                        Text("打开发布页")
+                        Text("更新")
                     }
                 },
                 dismissButton = {
@@ -2041,6 +2197,8 @@ private fun UrlInputField(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalYtdlAppPalette.current
+    val inputTextColor = Color(0xFF181B17)
+    val inputHintColor = Color(0xFF5E625C)
     val currentOnValueChange = rememberUpdatedState(onValueChange)
     val textChangeGuard = remember { UrlInputTextChangeGuard() }
     val shape = RoundedCornerShape(14.dp)
@@ -2053,7 +2211,7 @@ private fun UrlInputField(
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("🔗", color = palette.softText)
+        Text("🔗", color = inputHintColor)
         Spacer(Modifier.size(8.dp))
         AndroidView(
             factory = { context ->
@@ -2104,8 +2262,8 @@ private fun UrlInputField(
             },
             update = { editText ->
                 editText.hint = "粘贴公开视频页面地址"
-                editText.setTextColor(palette.titleText.toArgb())
-                editText.setHintTextColor(palette.softText.toArgb())
+                editText.setTextColor(inputTextColor.toArgb())
+                editText.setHintTextColor(inputHintColor.toArgb())
                 editText.setShowSoftInputOnFocus(showKeyboardOnFocus)
                 if (shouldDisableUrlInputAutoHandwriting(Build.VERSION.SDK_INT)) {
                     editText.setAutoHandwritingEnabled(false)

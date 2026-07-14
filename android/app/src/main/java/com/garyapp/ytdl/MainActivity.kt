@@ -8,13 +8,38 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.garyapp.ytdl.core.ytdlp.ParserRuntimeState
+import com.garyapp.ytdl.core.ytdlp.ParserRuntimeBootstrap
+import com.garyapp.ytdl.core.ytdlp.ParserVersionManager
+import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.ui.YtdlApp
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(this))
+        }
+        ParserRuntimeBootstrap.initializeOnce {
+            val parserVersionManager = ParserVersionManager.fromContext(this)
+            val runtimeWheel = parserVersionManager.prepareSelectedRuntimeWheel(
+                File(noBackupFilesDir, ParserVersionManager.RuntimeDirectoryName),
+            )
+            if (runtimeWheel != null) {
+                val inserted = runCatching {
+                    requireNotNull(Python.getInstance().getModule("sys")["path"])
+                        .callAttr("insert", 0, runtimeWheel.absolutePath)
+                }.isSuccess
+                if (inserted) {
+                    ParserRuntimeState.activeRuntimeWheelPath = runtimeWheel.absolutePath
+                } else {
+                    parserVersionManager.select(YtdlpBridge.PINNED_YTDLP_VERSION)
+                }
+            }
+            ParserRuntimeState.activeVersion = parserVersionManager.listVersions()
+                .first { it.isSelected }
+                .version
         }
         configureLightSystemBars()
         setContent {

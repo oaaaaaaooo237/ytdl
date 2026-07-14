@@ -770,6 +770,16 @@ Computer Use 在可见 API37 模拟器中完成下载、格式、队列、历史
 
 续作完成记录（2026-07-14）：可见 API37 模拟器已完成队列 `重试`、历史 `再次下载`、单视频模式灰显、分辨率单行编码选择、精确格式恢复和前台字幕隐藏复核。历史再次下载会重新分析原地址并恢复仍有效的上次选择，不会直接创建任务。Eporner `video-5czAhpxw6bT` 当前提供并已选择 `2160p / AV1 / 单文件`；`video-EjpMHywtGhj` 当前源端解析最高为 `1080p`。Keystore 设备测试复现并修复调用方 IV 被拒绝的问题，改为保存提供器生成的 IV。fresh 审计补齐合并/纯音频原音频格式精确恢复，并阻止旧字幕失败文案进入前台。最终 33 个测试套件 `320/320`、debug 构建和 Python `7/7` 均通过；最终包版本统一为 `1.0.0`，关于页改为读取 APK 版本，不再单独写死。
 
+#### Pornhub 联网兼容与解析器版本管理完成记录（2026-07-15）
+
+- 已解决深色主题浅色地址输入框的文字对比度问题；API37 可见模拟器中正文和提示文字均清晰可读。
+- 已确认 Pornhub 差异来自 Android Chaquopy Python 联网与 Android 原生联网结果不同：前者收到 410，后者可取得 200。当前只在 Python HTTPS GET 首次收到 410 时使用一次受限 Android 原生元数据请求；Eporner 精确 `http → https` 修正规则仍独立，不受该逻辑影响。
+- 解析器版本管理方案 A 已完成：官方 PyPI JSON 和 `files.pythonhosted.org` wheel、SHA-256、`.part` 原子落盘、App 私有版本目录、内置 `2026.3.17` 最终兜底、版本列表/选择/删除/重新下载、进程级串行操作和残留临时文件清理均有测试。下载版只在重启后的首次 Python import 前加入 `sys.path`，不做运行中热切换。
+- 自动验证通过：Python `12/12`、聚焦 Android `114/114`、全量 JVM `368/368`；debug 主 APK 与测试 APK 均构建、安装成功。真实 Pornhub instrumentation 仅分析一次并为 `OK (1 test)`，没有下载媒体。
+- Computer Use 在唯一可见 API37 模拟器中完成启动“稍后 / 更新”、官方最新版下载、列表、双向选择、删除、删光后重新下载和重启实际加载验证。Pornhub URL 通过可见 Gboard 逐键输入，字段精确核对后真实分析显示标题、`08:39` 和 `1920p MP4 H.264`；未下载媒体、未测试字幕。
+- 需求与质量审查的全部 P1/P2 已闭环，最终复审为 `CLEAN`；临时 IP/UA/原始异常探针和旧发布页动作均不存在。误建的 `.qa-data/gradle-home` 已在停止后台进程并确认无锁后精确删除，释放约 1.18 GB。
+- 本记录关闭问题 6 和 2026-07-14 parser/network fallback 计划的 API37 模拟器范围；D2/M10 仍需在小米 14 上复核本轮新增行为后才能完成。Play 发布准备继续暂停，不作为当前 D2 阻塞项。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.

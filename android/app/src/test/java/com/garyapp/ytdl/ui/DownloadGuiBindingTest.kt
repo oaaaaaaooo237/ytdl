@@ -382,6 +382,27 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun urlInputKeepsDarkTextOnItsLightSurfaceInDarkTheme() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        SettingsRepository.fromContext(context)
+            .setThemeMode(AppearanceSettings.ThemeModeDark)
+
+        lateinit var hostContext: Context
+        composeRule.setContent {
+            hostContext = LocalContext.current
+            YtdlApp()
+        }
+
+        lateinit var editText: EditText
+        composeRule.runOnIdle {
+            editText = hostContext.requireActivity().findViewById(com.garyapp.ytdl.R.id.ytdl_url_input)
+        }
+
+        assertEquals(0xFF181B17.toInt(), editText.currentTextColor)
+        assertEquals(0xFF5E625C.toInt(), editText.hintTextColors.defaultColor)
+    }
+
+    @Test
     fun urlInputActivelyRequestsSoftwareKeyboardOnForegroundTouch() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",

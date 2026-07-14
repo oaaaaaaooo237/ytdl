@@ -1698,3 +1698,17 @@ API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboar
 - 为制造可控失败只在前台开启飞行模式并关闭 Wi-Fi，没有重复完成大文件下载。复核结束后使用辅助命令清除 App 测试数据；未保留本轮历史、重试草稿或私有下载文件。Computer Use 会话和 scrcpy 窗口未被主动终止。
 - fresh 只读审计发现并修复两项：合并/纯音频重试现在精确恢复仍有效的原音频 `formatId`；旧后端字幕任务的失败文案在前台收敛为通用文件处理提示，不再向队列或历史暴露字幕措辞。审计智能体完成后已关闭。
 - 最终顺序验证：33 个 debug 单测套件共 `320/320` 通过，0 失败、0 错误、0 跳过；`:app:assembleDebug --no-parallel` 成功；项目内 `.qa-data` 临时目录运行的 Python 桥接/环境脚本测试 `7/7` 通过；`git diff --check` 无空白错误。`aapt2 dump badging` 确认最终 APK 为 `versionCode=1`、`versionName=1.0.0`，关于页从同一 `BuildConfig.VERSION_NAME` 读取并在可见模拟器显示“版本 1.0.0”。最终 APK 已重新安装到 `emulator-5554`。
+
+### 2026-07-15 Pornhub Android 联网兼容与解析器版本管理验收
+
+- 环境：新鲜环境检查通过；只保留 `emulator-5554` 和一个可见 `ytdl_api37_play_x86_64` 窗口，API 37、`hw.keyboard=no`、`show_ime_with_hard_keyboard=1`、Gboard 正常。Computer Use 按规定先完成工作目录自检，再执行 `sky.list_apps()`；未重置或终止桌面控制进程。
+- 深色主题：下载页地址输入面保持浅色，正文、提示文字、边框和前导图标均为清晰深色；此前“浅色文字叠在浅色输入框上”的问题未复现。
+- Android 联网兼容：Python yt-dlp 仍是默认路径；只有 Python HTTPS GET 首次收到 410 时才调用 Android 原生联网方式取一次受限元数据。POST、Range、非 HTTPS、非白名单文本、超过 4 MiB、危险重定向均拒绝；Eporner 精确 `http → https` 修正规则保持独立。本轮未新增 IP、UA、完整 URL 或原始异常诊断接口。
+- 解析器管理前台：启动发现新版时对话框按钮为“稍后 / 更新”。设置页显示内置、当前选择和本进程实际版本；从官方 PyPI 下载 `2026.7.4` 后提示“已下载并选择，重启应用后生效”。前台切回内置版、再选择下载版均显示重启提示，本进程没有热切换。
+- 删除与重新下载：经用户在删除确认步骤明确授权，前台删除下载版 `2026.7.4` 后列表只剩不可删除的内置 `2026.3.17`，并提示下次启动使用内置版；随后“下载最新版”再次成功下载和选择 `2026.7.4`。停止应用进程后仍从可见应用列表重新启动，版本管理显示“当前选择：2026.7.4”“本进程实际版本：2026.7.4”“已是最新版本”。
+- Pornhub 前台输入：首次逐键输入因 Gboard 浮动键盘坐标变化把标点点错，应用按 URL 校验规则拒绝，未进入真实解析；该次失败不计为站点或解析器失败。清空后重新观察字母页和两页符号页，以每键 `0.21` 秒、页面切换 `0.65` 秒逐键输入给定 URL；辅助只读字段比较为 `MATCH=True`、长度 `59`，确认完全一致后才点击“分析”。
+- Pornhub 前台结果：真实分析成功，显示标题 `Edging session with ruined`、时长 `08:39`、状态“分析完成 · 公开授权内容由用户确认”，格式摘要为“自动（推荐） · 1920p MP4 H.264 单文件”。本轮只分析，没有勾选授权、没有点击开始下载、没有测试字幕。
+- 自动化与构建：Python bridge `12/12`；Task 2/3 聚焦 Android 为 7 个套件 `114/114`；全量 `:app:testDebugUnitTest --no-parallel` 为 36 个套件 `368/368`；`:app:assembleDebug --no-parallel` 和 `:app:assembleDebugAndroidTest --no-parallel` 均成功。两 APK 安装成功；真实 Pornhub instrumentation 只执行一次、未下载，结果 `OK (1 test)`。
+- 构建产物：主 APK `61,686,176` bytes，SHA-256 `9D4659C69583973C452473C5CE14367960906CBFCA919E629647F2630D57844F`；测试 APK `859,723` bytes，SHA-256 `5F168D18B245876AC81F2CA5EABA1971B9F8EC5F3DD44FD0F272A9937D9DA143`。
+- 审计与清理：未发现临时探针、发布页动作、旧“不可内部更新”文案、重复联网实现、无用导入或用户可见隐私泄露。误设 `GRADLE_USER_HOME` 产生的 `.qa-data/gradle-home` 共 `1,180,126,792` bytes；停止对应 Gradle/Kotlin 后台进程并确认 2,155 个锁均未占用后，只删除该精确目录，未清空 `.qa-data/temp` 或历史 QA 证据。最终模拟器保留已验证可启动的 `2026.7.4` 解析器版本，不保留本轮媒体下载产物。
+- 边界：本节证明 API37 模拟器的自动化、真实 instrumentation 和前台可见流程通过。它不替代小米 14 `arm64-v8a` 最终真机复核；D2/M10 仍未完成。Play 签名、隐私政策 URL、Data safety 和商店素材继续按用户要求暂停。

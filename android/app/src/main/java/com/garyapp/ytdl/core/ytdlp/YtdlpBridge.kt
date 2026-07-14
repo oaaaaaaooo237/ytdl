@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.io.File
 
 class YtdlpBridge(
+    private val androidHttpFallback: AndroidMetadataHttpFallback = AndroidMetadataHttpFallback(),
     private val pythonProvider: () -> Python = { Python.getInstance() },
 ) {
     fun analyze(url: String, cookiesPath: String? = null): Result<VideoAnalysis> {
@@ -23,7 +24,12 @@ class YtdlpBridge(
 
         return try {
             val module = pythonProvider().getModule("ytdl_bridge")
-            val json = module.callAttr("analyze", policy.rawUrlForExecution, cookiesPath).toString()
+            val json = module.callAttr(
+                "analyze",
+                policy.rawUrlForExecution,
+                cookiesPath,
+                androidHttpFallback,
+            ).toString()
             parseAnalysisJson(json)
         } catch (exc: Exception) {
             Result.failure(exc.toSafeAnalysisException())
@@ -55,6 +61,7 @@ class YtdlpBridge(
                 outputDirectory.absolutePath,
                 cookiesPath,
                 PythonProgressProxy(listener),
+                androidHttpFallback,
             ).toString()
             parseDownloadJson(json)
         } catch (exc: Exception) {
@@ -101,6 +108,7 @@ class YtdlpBridge(
                 role.pythonValue,
                 cookiesPath,
                 PythonProgressProxy(listener),
+                androidHttpFallback,
             ).toString()
             parseDownloadJson(json)
         } catch (exc: Exception) {
@@ -150,6 +158,7 @@ class YtdlpBridge(
                 source.pythonValue,
                 cookiesPath,
                 PythonProgressProxy(listener),
+                androidHttpFallback,
             ).toString()
             parseSubtitleDownloadJson(json)
         } catch (exc: Exception) {

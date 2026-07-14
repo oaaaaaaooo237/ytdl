@@ -7,6 +7,7 @@ import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.data.QueueItemEntity
 import com.garyapp.ytdl.data.YtdlDatabase
 import com.garyapp.ytdl.testing.ProjectTestPaths
+import com.garyapp.ytdl.core.ytdlp.ParserVersionManager
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -136,6 +137,25 @@ class PrivateDownloadCacheTest {
             cache.clear(),
         )
         assertTrue(privateRoot.isDirectory)
+    }
+
+    @Test
+    fun cacheClearCannotEnterParserVersionOrRuntimeDirectories() {
+        val parserWheel = File(
+            testRoot,
+            "files/${ParserVersionManager.VersionsDirectoryName}/yt_dlp-2026.4.1-py3-none-any.whl",
+        ).writeBytesAfterCreating(byteArrayOf(1, 2, 3))
+        val runtimeWheel = File(
+            testRoot,
+            "no-backup/${ParserVersionManager.RuntimeDirectoryName}/yt_dlp-2026.4.1-hash.whl",
+        ).writeBytesAfterCreating(byteArrayOf(4, 5, 6))
+        File(privateRoot, "orphan.part").writeBytesAfterCreating(byteArrayOf(7))
+        val cache = PrivateDownloadCache(privateRoot, database.queueDao(), database.historyDao())
+
+        assertEquals(CacheClearResult.Success(1, 1), cache.clear())
+
+        assertTrue(parserWheel.isFile)
+        assertTrue(runtimeWheel.isFile)
     }
 
     private fun queueItem(title: String, outputUri: String): QueueItemEntity = QueueItemEntity(

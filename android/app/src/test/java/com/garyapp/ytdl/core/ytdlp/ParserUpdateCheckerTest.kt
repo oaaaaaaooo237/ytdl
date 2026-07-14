@@ -7,6 +7,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
+import java.io.IOException
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URI
+import java.net.URL
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CopyOnWriteArrayList
@@ -22,6 +28,95 @@ class ParserUpdateCheckerTest {
         assertEquals("https://pypi.org/pypi/yt-dlp/json", ParserUpdateHttpClient.Endpoint)
         assertTrue(ParserUpdateHttpClient.ConnectTimeoutMillis in 1..5_000)
         assertTrue(ParserUpdateHttpClient.ReadTimeoutMillis in 1..5_000)
+        assertTrue(ParserUpdateHttpClient.MetadataTotalTimeoutMillis in 5_000..30_000)
+        assertTrue(ParserUpdateHttpClient.WheelTotalTimeoutMillis >= 5 * 60_000)
+        assertTrue(ParserUpdateHttpClient.MaxMetadataBytes in 1_048_576..16_777_216)
+    }
+
+    @Test
+    fun metadataReadEnforcesTotalDeadlineAndDisconnects() {
+        var nowMillis = 0L
+        val connection = FakeParserHttpConnection(
+            inputStreamProvider = {
+                ClockAdvancingInputStream("{}".toByteArray()) { nowMillis = 11L }
+            },
+        )
+
+        val result = runCatching {
+            ParserUpdateHttpClient.fetchJson(
+                connectionFactory = { connection },
+                nowMillis = { nowMillis },
+                totalTimeoutMillis = 10L,
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(connection.disconnected)
+    }
+
+    @Test
+    fun oversizedMetadataIsRejectedAndDisconnected() {
+        val connection = FakeParserHttpConnection(
+            inputStreamProvider = {
+                ByteArrayInputStream(ByteArray(ParserUpdateHttpClient.MaxMetadataBytes + 1))
+            },
+        )
+
+        val result = runCatching {
+            ParserUpdateHttpClient.fetchJson(
+                connectionFactory = { connection },
+                nowMillis = { 0L },
+                totalTimeoutMillis = 10_000L,
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(connection.disconnected)
+    }
+
+    @Test
+    fun wheelStreamEnforcesTotalDeadlineAndDisconnects() {
+        var nowMillis = 0L
+        val connection = FakeParserHttpConnection(
+            inputStreamProvider = {
+                ClockAdvancingInputStream("wheel".toByteArray()) { nowMillis = 11L }
+            },
+        )
+
+        val result = runCatching {
+            ParserUpdateHttpClient.openWheel(
+                uri = URI("https://files.pythonhosted.org/packages/yt_dlp.whl"),
+                connectionFactory = { connection },
+                nowMillis = { nowMillis },
+                totalTimeoutMillis = 10L,
+            ).use { it.readBytes() }
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(connection.disconnected)
+    }
+
+    @Test
+    fun wheelResponseAndInputStreamExceptionsAlwaysDisconnect() {
+        val responseFailure = FakeParserHttpConnection(
+            responseCodeProvider = { throw IOException("response failed") },
+        )
+        val inputFailure = FakeParserHttpConnection(
+            inputStreamProvider = { throw IOException("input failed") },
+        )
+
+        listOf(responseFailure, inputFailure).forEach { connection ->
+            val result = runCatching {
+                ParserUpdateHttpClient.openWheel(
+                    uri = URI("https://files.pythonhosted.org/packages/yt_dlp.whl"),
+                    connectionFactory = { connection },
+                    nowMillis = { 0L },
+                    totalTimeoutMillis = 10_000L,
+                )
+            }
+            assertTrue(result.isFailure)
+            assertTrue(connection.disconnected)
+        }
     }
 
     @Test
@@ -50,6 +145,16 @@ class ParserUpdateCheckerTest {
                 """{"info":{"version":"2026.2.28"}}"""
             }.check(),
         )
+    }
+
+    @Test
+    fun selectedRuntimeVersionPreventsRepeatedStartupPromptForSameDownload() {
+        val checker = ParserUpdateChecker.forCurrentVersion(
+            currentVersionProvider = { "2026.4.1" },
+            fetchJson = { """{"info":{"version":"2026.4.1"}}""" },
+        )
+
+        assertEquals(ParserUpdateResult.AlreadyLatest, checker.check())
     }
 
     @Test
@@ -187,6 +292,41 @@ class ParserUpdateCheckerTest {
         } finally {
             subscription.close()
         }
+    }
+}
+
+private class FakeParserHttpConnection(
+    private val responseCodeProvider: () -> Int = { 200 },
+    private val inputStreamProvider: () -> InputStream = { ByteArrayInputStream(byteArrayOf(1)) },
+) : HttpURLConnection(URL("https://files.pythonhosted.org/test")) {
+    var disconnected = false
+        private set
+
+    override fun disconnect() {
+        disconnected = true
+    }
+
+    override fun usingProxy(): Boolean = false
+
+    override fun connect() = Unit
+
+    override fun getResponseCode(): Int = responseCodeProvider()
+
+    override fun getInputStream(): InputStream = inputStreamProvider()
+}
+
+private class ClockAdvancingInputStream(
+    bytes: ByteArray,
+    private val onRead: () -> Unit,
+) : ByteArrayInputStream(bytes) {
+    override fun read(): Int {
+        onRead()
+        return super.read()
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        onRead()
+        return super.read(buffer, offset, length)
     }
 }
 

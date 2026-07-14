@@ -1,8 +1,12 @@
+import base64
+import io
 import json
 import os
 import re
 
 import yt_dlp
+from yt_dlp.networking.common import Response
+from yt_dlp.networking.exceptions import HTTPError
 
 
 _EPORNER_METADATA_HTTP_PREFIX = "http://www.eporner.com/xhr/video/"
@@ -15,23 +19,82 @@ def _upgrade_eporner_metadata_url(url):
 
 
 class AndroidYoutubeDL(yt_dlp.YoutubeDL):
+    def __init__(self, *args, android_http_fallback=None, **kwargs):
+        self._android_http_fallback = android_http_fallback
+        super().__init__(*args, **kwargs)
+
     def urlopen(self, request):
+        upgraded_eporner_request = False
         if isinstance(request, str):
-            request = _upgrade_eporner_metadata_url(request)
+            upgraded_url = _upgrade_eporner_metadata_url(request)
+            upgraded_eporner_request = upgraded_url != request
+            request = upgraded_url
         else:
             original_url = getattr(request, "url", None)
             upgraded_url = _upgrade_eporner_metadata_url(original_url)
             if upgraded_url != original_url:
+                upgraded_eporner_request = True
                 request = request.copy()
                 request.url = upgraded_url
-        return super().urlopen(request)
+        try:
+            return super().urlopen(request)
+        except HTTPError as exc:
+            if upgraded_eporner_request:
+                raise
+            response = self._try_android_metadata_fallback(request, exc)
+            if response is None:
+                raise
+            exc.close()
+            return response
+
+    def _try_android_metadata_fallback(self, request, error):
+        if error.status != 410 or not self._android_http_fallback:
+            return None
+
+        url = request if isinstance(request, str) else getattr(request, "url", "")
+        method = "GET" if isinstance(request, str) else str(getattr(request, "method", "GET") or "GET")
+        data = None if isinstance(request, str) else getattr(request, "data", None)
+        headers = dict(self.params.get("http_headers") or {})
+        if not isinstance(request, str):
+            headers.update(dict(getattr(request, "headers", {}) or {}))
+        if (
+            not isinstance(url, str)
+            or not url.lower().startswith("https://")
+            or method.upper() != "GET"
+            or data is not None
+            or any(str(name).lower() == "range" for name in headers)
+        ):
+            return None
+
+        try:
+            if not any(str(name).lower() == "cookie" for name in headers):
+                cookie = self.cookiejar.get_cookie_header(url)
+                if cookie:
+                    headers["Cookie"] = cookie
+
+            raw_result = self._android_http_fallback.fetch(
+                url,
+                json.dumps({str(name): str(value) for name, value in headers.items()}),
+            )
+            result = json.loads(str(raw_result))
+            if not result.get("ok"):
+                return None
+            body = base64.b64decode(result["bodyBase64"], validate=True)
+            status = int(result["status"])
+            response_url = str(result["url"])
+            response_headers = {
+                str(name): str(value) for name, value in (result.get("headers") or {}).items()
+            }
+            return Response(io.BytesIO(body), response_url, response_headers, status=status)
+        except Exception:
+            return None
 
 
 class ProgressListenerException(Exception):
     pass
 
 
-def analyze(url, cookies_path=None):
+def analyze(url, cookies_path=None, android_http_fallback=None):
     options = {
         "quiet": True,
         "no_warnings": True,
@@ -43,7 +106,7 @@ def analyze(url, cookies_path=None):
         options["cookiefile"] = cookies_path
 
     try:
-        with AndroidYoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=False)
         return json.dumps(_to_result(info), ensure_ascii=False)
     except Exception as exc:  # yt-dlp has multiple extractor/downloader exception types.
@@ -57,7 +120,13 @@ def analyze(url, cookies_path=None):
         )
 
 
-def download_single_file(url, output_dir, cookies_path=None, progress_listener=None):
+def download_single_file(
+    url,
+    output_dir,
+    cookies_path=None,
+    progress_listener=None,
+    android_http_fallback=None,
+):
     os.makedirs(output_dir, exist_ok=True)
 
     def progress_hook(event):
@@ -77,7 +146,7 @@ def download_single_file(url, output_dir, cookies_path=None, progress_listener=N
         options["cookiefile"] = cookies_path
 
     try:
-        with AndroidYoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_downloaded_file(info, output_dir)
         bytes_written = _downloaded_file_size(output_path)
@@ -104,7 +173,15 @@ def download_single_file(url, output_dir, cookies_path=None, progress_listener=N
         )
 
 
-def download_format(url, output_dir, format_id, role, cookies_path=None, progress_listener=None):
+def download_format(
+    url,
+    output_dir,
+    format_id,
+    role,
+    cookies_path=None,
+    progress_listener=None,
+    android_http_fallback=None,
+):
     try:
         normalized_format_id = str(format_id or "").strip()
         normalized_role = str(role or "").strip()
@@ -134,7 +211,7 @@ def download_format(url, output_dir, format_id, role, cookies_path=None, progres
         if cookies_path:
             options["cookiefile"] = cookies_path
 
-        with AndroidYoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_downloaded_file(info, output_dir, normalized_format_id, normalized_role)
         bytes_written = _downloaded_file_size(output_path)
@@ -170,6 +247,7 @@ def download_subtitle(
     source,
     cookies_path=None,
     progress_listener=None,
+    android_http_fallback=None,
 ):
     try:
         normalized_language = str(language or "").strip()
@@ -204,12 +282,15 @@ def download_subtitle(
         if cookies_path:
             options["cookiefile"] = cookies_path
 
-        with AndroidYoutubeDL({**options, "writesubtitles": False, "writeautomaticsub": False}) as ydl:
+        with AndroidYoutubeDL(
+            {**options, "writesubtitles": False, "writeautomaticsub": False},
+            android_http_fallback=android_http_fallback,
+        ) as ydl:
             analysis_info = ydl.extract_info(url, download=False)
         if not _subtitle_available(analysis_info, normalized_language, normalized_ext, normalized_source):
             raise ValueError("requested subtitle is not available")
 
-        with AndroidYoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_subtitle_file(info, output_dir, normalized_language, normalized_ext, normalized_source)
         bytes_written = _downloaded_file_size(output_path)

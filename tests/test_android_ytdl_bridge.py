@@ -1,4 +1,7 @@
+import base64
 import importlib.util
+import io
+import json
 import sys
 import types
 from pathlib import Path
@@ -16,16 +19,60 @@ def load_android_ytdl_bridge(youtube_dl_class=object):
     )
     spec = importlib.util.spec_from_file_location("android_ytdl_bridge", bridge_path)
     module = importlib.util.module_from_spec(spec)
-    previous_yt_dlp = sys.modules.get("yt_dlp")
-    sys.modules["yt_dlp"] = types.SimpleNamespace(YoutubeDL=youtube_dl_class)
+    module_names = (
+        "yt_dlp",
+        "yt_dlp.networking",
+        "yt_dlp.networking.common",
+        "yt_dlp.networking.exceptions",
+    )
+    previous_modules = {name: sys.modules.get(name) for name in module_names}
+    yt_dlp_module = types.ModuleType("yt_dlp")
+    yt_dlp_module.__path__ = []
+    yt_dlp_module.YoutubeDL = youtube_dl_class
+    networking_module = types.ModuleType("yt_dlp.networking")
+    networking_module.__path__ = []
+    common_module = types.ModuleType("yt_dlp.networking.common")
+    common_module.Response = FakeResponse
+    exceptions_module = types.ModuleType("yt_dlp.networking.exceptions")
+    exceptions_module.HTTPError = FakeHTTPError
+    sys.modules.update(
+        {
+            "yt_dlp": yt_dlp_module,
+            "yt_dlp.networking": networking_module,
+            "yt_dlp.networking.common": common_module,
+            "yt_dlp.networking.exceptions": exceptions_module,
+        }
+    )
     try:
         spec.loader.exec_module(module)
     finally:
-        if previous_yt_dlp is None:
-            sys.modules.pop("yt_dlp", None)
-        else:
-            sys.modules["yt_dlp"] = previous_yt_dlp
+        for name, previous in previous_modules.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
     return module
+
+
+class FakeResponse:
+    def __init__(self, fp, url, headers, status=200, reason=None):
+        self.fp = fp
+        self.url = url
+        self.headers = headers
+        self.status = status
+        self.reason = reason or "OK"
+
+    def read(self):
+        return self.fp.read()
+
+
+class FakeHTTPError(Exception):
+    def __init__(self, status):
+        super().__init__(f"HTTP Error {status}")
+        self.status = status
+
+    def close(self):
+        return None
 
 
 class RecordingYoutubeDL:
@@ -34,11 +81,64 @@ class RecordingYoutubeDL:
 
 
 class CopyableRequest:
-    def __init__(self, url):
+    def __init__(self, url, method="GET", data=None, headers=None):
         self.url = url
+        self.method = method
+        self.data = data
+        self.headers = headers or {}
 
     def copy(self):
-        return CopyableRequest(self.url)
+        return CopyableRequest(self.url, self.method, self.data, self.headers.copy())
+
+
+class EmptyCookieJar:
+    def get_cookie_header(self, _url):
+        return None
+
+
+class RaisingCookieJar:
+    def get_cookie_header(self, _url):
+        raise RuntimeError("cookie header unavailable")
+
+
+class ErroringYoutubeDL:
+    def __init__(self, params=None, *_args, **_kwargs):
+        self.params = params or {}
+        self.cookiejar = EmptyCookieJar()
+
+    def urlopen(self, _request):
+        raise FakeHTTPError(410)
+
+
+class CookieErrorYoutubeDL(ErroringYoutubeDL):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cookiejar = RaisingCookieJar()
+
+
+class NotFoundYoutubeDL:
+    def __init__(self, *_args, **_kwargs):
+        self.cookiejar = EmptyCookieJar()
+
+    def urlopen(self, _request):
+        raise FakeHTTPError(404)
+
+
+class RecordingFallback:
+    def __init__(self):
+        self.calls = []
+
+    def fetch(self, url, headers_json):
+        self.calls.append((url, json.loads(headers_json)))
+        return json.dumps(
+            {
+                "ok": True,
+                "status": 200,
+                "url": url,
+                "headers": {"Content-Type": "text/html"},
+                "bodyBase64": base64.b64encode(b"<html>native</html>").decode("ascii"),
+            }
+        )
 
 
 def test_eporner_metadata_request_uses_https_without_mutating_original_request():
@@ -54,6 +154,119 @@ def test_eporner_metadata_request_uses_https_without_mutating_original_request()
         "https://www.eporner.com/xhr/video/5czAhpxw6bT?hash=test&device=generic"
     )
     assert request.url.startswith("http://")
+
+
+def test_http_410_https_get_uses_android_metadata_fallback_once():
+    bridge = load_android_ytdl_bridge(ErroringYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+
+    response = downloader.urlopen(
+        CopyableRequest("https://example.com/page", headers={"User-Agent": "agent"})
+    )
+
+    assert response.read() == b"<html>native</html>"
+    assert fallback.calls == [("https://example.com/page", {"User-Agent": "agent"})]
+
+
+def test_android_metadata_fallback_merges_global_headers_with_request_overrides():
+    bridge = load_android_ytdl_bridge(ErroringYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(
+        {
+            "http_headers": {
+                "User-Agent": "global-agent",
+                "Accept-Language": "global-language",
+            }
+        },
+        android_http_fallback=fallback,
+    )
+
+    downloader.urlopen(
+        CopyableRequest(
+            "https://example.com/page",
+            headers={"Accept-Language": "request-language"},
+        )
+    )
+
+    assert fallback.calls == [
+        (
+            "https://example.com/page",
+            {
+                "User-Agent": "global-agent",
+                "Accept-Language": "request-language",
+            },
+        )
+    ]
+
+
+def test_cookie_header_failure_rethrows_original_http_410_without_using_fallback():
+    bridge = load_android_ytdl_bridge(CookieErrorYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+
+    try:
+        downloader.urlopen(CopyableRequest("https://example.com/page"))
+    except FakeHTTPError as exc:
+        assert exc.status == 410
+    else:
+        raise AssertionError("cookie header failure replaced the original HTTP 410")
+
+    assert fallback.calls == []
+
+
+def test_eporner_http_upgrade_410_does_not_use_android_metadata_fallback():
+    bridge = load_android_ytdl_bridge(ErroringYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+    request = CopyableRequest(
+        "http://www.eporner.com/xhr/video/5czAhpxw6bT?hash=test&device=generic"
+    )
+
+    try:
+        downloader.urlopen(request)
+    except FakeHTTPError as exc:
+        assert exc.status == 410
+    else:
+        raise AssertionError("Eporner upgrade unexpectedly used Android fallback")
+
+    assert fallback.calls == []
+    assert request.url.startswith("http://")
+
+
+def test_non_410_https_error_does_not_use_android_metadata_fallback():
+    bridge = load_android_ytdl_bridge(NotFoundYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+
+    try:
+        downloader.urlopen(CopyableRequest("https://example.com/page"))
+    except FakeHTTPError as exc:
+        assert exc.status == 404
+    else:
+        raise AssertionError("non-410 error unexpectedly used Android fallback")
+
+    assert fallback.calls == []
+
+
+def test_android_metadata_fallback_rejects_http_post_range_and_non_410():
+    bridge = load_android_ytdl_bridge(ErroringYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+
+    for request in (
+        CopyableRequest("http://example.com/page"),
+        CopyableRequest("https://example.com/page", method="POST", data=b"x"),
+        CopyableRequest("https://example.com/page", headers={"Range": "bytes=0-9"}),
+    ):
+        try:
+            downloader.urlopen(request)
+        except FakeHTTPError as exc:
+            assert exc.status == 410
+        else:
+            raise AssertionError("unsafe request unexpectedly used fallback")
+
+    assert fallback.calls == []
 
 
 def test_remote_end_closed_during_analysis_is_reported_as_network_failure():
