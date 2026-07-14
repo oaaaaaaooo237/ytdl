@@ -422,7 +422,7 @@ public class HistoryItemEntity {
     private static String safeOutputUri(List<DownloadOutputFile> outputs) {
         for (DownloadOutputFile output : outputs) {
             if (output.getKind() == DownloadOutputKind.Media) {
-                return ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath());
+                return preferredOutputUri(output);
             }
         }
         return "";
@@ -432,7 +432,7 @@ public class HistoryItemEntity {
         StringBuilder builder = new StringBuilder();
         for (DownloadOutputFile output : outputs) {
             if (output.getKind() == DownloadOutputKind.Subtitle) {
-                String uri = ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath());
+                String uri = preferredOutputUri(output);
                 if (uri != null && !uri.isEmpty()) {
                     if (builder.length() > 0) {
                         builder.append('\n');
@@ -444,14 +444,38 @@ public class HistoryItemEntity {
         return builder.length() > 0 ? builder.toString() : null;
     }
 
+    private static String preferredOutputUri(DownloadOutputFile output) {
+        String externalUri = safeExternalDocumentUri(output.getExternalDocumentUri());
+        if (externalUri != null) {
+            return externalUri;
+        }
+        return ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath());
+    }
+
+    private static String safeExternalDocumentUri(String rawUri) {
+        if (rawUri == null || rawUri.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            URI uri = new URI(rawUri.trim());
+            if ("content".equalsIgnoreCase(uri.getScheme()) && uri.getRawAuthority() != null && !uri.getRawAuthority().isEmpty()) {
+                return uri.toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
     private static boolean hasValidMediaOutput(List<DownloadOutputFile> outputs) {
         for (DownloadOutputFile output : outputs) {
             File file = new File(output.getPath());
             if (
                     output.getKind() == DownloadOutputKind.Media
                             && output.getBytesWritten() > 0L
-                            && file.isFile()
-                            && file.length() > 0L
+                            && (
+                            safeExternalDocumentUri(output.getExternalDocumentUri()) != null
+                                    || (file.isFile() && file.length() > 0L)
+                    )
             ) {
                 return true;
             }

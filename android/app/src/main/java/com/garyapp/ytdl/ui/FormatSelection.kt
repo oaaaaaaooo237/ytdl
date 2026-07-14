@@ -2,6 +2,8 @@ package com.garyapp.ytdl.ui
 
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
+import com.garyapp.ytdl.download.DownloadRoute
+import com.garyapp.ytdl.download.RetryDownloadDraft
 
 enum class FormatMode(val label: String) {
     VideoAndAudio("视频+音频"),
@@ -17,6 +19,12 @@ data class FormatSelection(
     val mergeRequired: Boolean = false,
 )
 
+data class FormatCodecOption(
+    val label: String,
+    val videoFormatId: String,
+    val selected: Boolean,
+)
+
 data class FormatResolutionRow(
     val height: Int?,
     val label: String,
@@ -28,6 +36,8 @@ data class FormatResolutionRow(
     val summary: String,
     val videoFormatId: String?,
     val audioFormatId: String?,
+    val codecOptions: List<FormatCodecOption> = emptyList(),
+    val selectedCodecLabel: String? = null,
 )
 
 fun buildFormatResolutionRows(
@@ -46,7 +56,10 @@ private fun videoAndAudioRows(
     analysis: VideoAnalysis,
     selection: FormatSelection,
 ): List<FormatResolutionRow> {
-    val audio = bestStandaloneAudioForNativeMp4Merge(analysis) ?: return emptyList()
+    val audio = bestStandaloneAudioForNativeMp4Merge(
+        analysis = analysis,
+        preferredFormatId = selection.selectedAudioFormatId,
+    ) ?: return emptyList()
     val choices = analysis.formats
         .filter { it.isSupported && it.hasVideo && !it.hasAudio && it.isNativeMp4MergeVideoCompatible() }
         .sortedByDescending { it.height ?: 0 }
@@ -71,26 +84,67 @@ private fun rowsFromVideoChoices(
 ): List<FormatResolutionRow> {
     val best = choices.maxWithOrNull(
         compareBy<FormatChoice> { it.video.height ?: 0 }
+            .thenBy { codecCompatibilityRank(videoCodecLabel(it.video)) }
+            .thenBy { if (it.video.hasAudio) 1 else 0 }
             .thenBy { it.video.fps ?: 0.0 }
             .thenBy { it.video.filesizeBytes ?: 0L },
     ) ?: return emptyList()
+    val explicitAutoChoice = selection.selectedVideoFormatId?.let { formatId ->
+        choices.firstOrNull { it.video.id == formatId }
+    }
+    val autoChoice = explicitAutoChoice ?: best
     val auto = rowFromChoice(
         height = null,
         label = "自动（推荐）",
-        choice = best,
-        selected = selection.selectedHeight == null,
+        choice = autoChoice,
+        selected = selection.selectedHeight == null &&
+            (selection.selectedVideoFormatId == null || explicitAutoChoice != null),
         prefix = "自动（推荐） · ",
+        selectedCodecLabel = reliableCodecLabel(autoChoice.video),
     )
-    val specific = choices.map { choice ->
-        val format = choice.video
-        rowFromChoice(
-            height = format.height,
-            label = "${format.height}p",
-            choice = choice,
-            selected = selection.selectedHeight == format.height &&
-                (selection.selectedVideoFormatId == null || selection.selectedVideoFormatId == format.id),
-        )
-    }
+    val specific = choices
+        .groupBy { it.video.height }
+        .entries
+        .sortedByDescending { it.key ?: 0 }
+        .map { (height, heightChoices) ->
+            val explicitChoice = selection.selectedVideoFormatId?.let { formatId ->
+                heightChoices.firstOrNull { it.video.id == formatId }
+            }
+            val codecChoices = heightChoices
+                .groupBy { videoCodecLabel(it.video) }
+                .map { (label, matchingChoices) ->
+                    val choice = matchingChoices.firstOrNull {
+                        it.video.id == selection.selectedVideoFormatId
+                    } ?: bestChoiceForSameCodec(matchingChoices)
+                    label to choice
+                }
+                .sortedWith(
+                    compareByDescending<Pair<String, FormatChoice>> {
+                        codecCompatibilityRank(it.first)
+                    }.thenBy { it.first },
+                )
+            val choice = if (selection.selectedHeight == height && explicitChoice != null) {
+                explicitChoice
+            } else {
+                codecChoices.first().second
+            }
+            val codecOptions = codecChoices.map { (label, codecChoice) ->
+                FormatCodecOption(
+                    label = label,
+                    videoFormatId = codecChoice.video.id,
+                    selected = codecChoice.video.id == choice.video.id,
+                )
+            }
+            rowFromChoice(
+                height = height,
+                label = "${height}p",
+                choice = choice,
+                selected = selection.selectedHeight == height &&
+                    (selection.selectedVideoFormatId == null || explicitChoice != null),
+                codecOptions = codecOptions,
+                selectedCodecLabel = reliableCodecLabel(choice.video),
+            )
+        }
     return listOf(auto) + specific
 }
 
@@ -98,7 +152,10 @@ private fun audioDownloadRows(
     analysis: VideoAnalysis,
     selection: FormatSelection,
 ): List<FormatResolutionRow> {
-    val audio = bestStandaloneAudio(analysis) ?: return emptyList()
+    val audio = bestStandaloneAudio(
+        analysis = analysis,
+        preferredFormatId = selection.selectedAudioFormatId,
+    ) ?: return emptyList()
     return listOf(
         audioOnlyRow(
             height = null,
@@ -152,6 +209,48 @@ fun selectBestAvailableFormatSelection(
     return row?.let { selectionFromRow(mode, it) } ?: baseSelection
 }
 
+internal fun retryFormatSelection(
+    analysis: VideoAnalysis,
+    draft: RetryDownloadDraft,
+): FormatSelection {
+    val mode = when (draft.route) {
+        is DownloadRoute.MergeRequired -> FormatMode.VideoAndAudio
+        is DownloadRoute.AudioOnly -> FormatMode.AudioOnly
+        is DownloadRoute.DirectSingleFile,
+        is DownloadRoute.VideoOnly,
+        -> FormatMode.VideoOnly
+    }
+    if (!isFormatModeAvailable(analysis, mode)) return defaultFormatSelection(analysis)
+
+    val preferredVideoFormatId = when (val route = draft.route) {
+        is DownloadRoute.DirectSingleFile -> route.formatId
+        is DownloadRoute.VideoOnly -> route.videoFormatId
+        is DownloadRoute.MergeRequired -> route.videoFormatId
+        is DownloadRoute.AudioOnly -> null
+    }
+    val preferredAudioFormatId = when (val route = draft.route) {
+        is DownloadRoute.MergeRequired -> route.audioFormatId
+        is DownloadRoute.AudioOnly -> route.audioFormatId
+        is DownloadRoute.DirectSingleFile,
+        is DownloadRoute.VideoOnly,
+        -> null
+    }
+
+    val preferredHeight = analysis.formats
+        .firstOrNull { it.id == preferredVideoFormatId }
+        ?.height
+    val preferred = FormatSelection(
+        mode = mode,
+        selectedHeight = preferredHeight,
+        selectedVideoFormatId = preferredVideoFormatId,
+        selectedAudioFormatId = preferredAudioFormatId,
+    )
+    return buildFormatResolutionRows(analysis, preferred)
+        .firstOrNull { it.selectable && it.selected }
+        ?.let { selectionFromRow(mode, it) }
+        ?: selectBestAvailableFormatSelection(analysis, mode, preferredHeight)
+}
+
 fun formatSelectionSummary(
     analysis: VideoAnalysis?,
     selection: FormatSelection,
@@ -169,10 +268,13 @@ private fun rowFromChoice(
     choice: FormatChoice,
     selected: Boolean,
     prefix: String = "",
+    codecOptions: List<FormatCodecOption> = emptyList(),
+    selectedCodecLabel: String? = reliableCodecLabel(choice.video),
 ): FormatResolutionRow {
     val formatHeight = choice.video.height?.let { "${it}p" } ?: label
     val ext = choice.video.ext.ifBlank { choice.audio?.ext.orEmpty() }.uppercase()
     val capability = if (choice.mergeRequired) "需原生合并" else "单文件"
+    val codecSummary = selectedCodecLabel?.let { " $it" }.orEmpty()
     return FormatResolutionRow(
         height = height,
         label = label,
@@ -181,9 +283,11 @@ private fun rowFromChoice(
         mergeRequired = choice.mergeRequired,
         direct = !choice.mergeRequired,
         reason = null,
-        summary = "$prefix$formatHeight $ext $capability",
+        summary = "$prefix$formatHeight $ext$codecSummary $capability",
         videoFormatId = choice.video.id,
         audioFormatId = choice.audio?.id,
+        codecOptions = codecOptions,
+        selectedCodecLabel = selectedCodecLabel,
     )
 }
 
@@ -215,16 +319,66 @@ private data class FormatChoice(
     val mergeRequired: Boolean,
 )
 
-private fun bestStandaloneAudio(analysis: VideoAnalysis): VideoFormat? {
-    return analysis.formats
+private fun bestStandaloneAudio(
+    analysis: VideoAnalysis,
+    preferredFormatId: String? = null,
+): VideoFormat? {
+    val candidates = analysis.formats
         .filter { !it.hasVideo && it.hasAudio }
-        .maxByOrNull { it.filesizeBytes ?: 0L }
+    return preferredFormatId
+        ?.let { preferred -> candidates.firstOrNull { it.id == preferred } }
+        ?: candidates.maxByOrNull { it.filesizeBytes ?: 0L }
 }
 
-private fun bestStandaloneAudioForNativeMp4Merge(analysis: VideoAnalysis): VideoFormat? {
-    return analysis.formats
+private fun bestChoiceForSameCodec(choices: List<FormatChoice>): FormatChoice {
+    return choices.maxWithOrNull(
+        compareBy<FormatChoice> { if (it.video.hasAudio) 1 else 0 }
+            .thenBy { it.video.fps ?: 0.0 }
+            .thenBy { it.video.filesizeBytes ?: 0L },
+    ) ?: error("编码分组不能为空")
+}
+
+internal fun videoCodecLabel(format: VideoFormat): String {
+    val codec = format.videoCodec.orEmpty().lowercase()
+    return when {
+        codec.startsWith("avc1") ||
+            codec.startsWith("avc3") ||
+            codec.startsWith("h264") -> "H.264"
+
+        codec.startsWith("hev1") ||
+            codec.startsWith("hvc1") ||
+            codec.startsWith("hevc") ||
+            codec.startsWith("h265") -> "H.265"
+
+        codec.startsWith("vp09") || codec.startsWith("vp9") -> "VP9"
+        codec.startsWith("av01") || codec.startsWith("av1") -> "AV1"
+        else -> "其他"
+    }
+}
+
+private fun reliableCodecLabel(format: VideoFormat): String? {
+    return videoCodecLabel(format).takeUnless { it == "其他" }
+}
+
+private fun codecCompatibilityRank(label: String): Int {
+    return when (label) {
+        "H.264" -> 4
+        "H.265" -> 3
+        "VP9" -> 2
+        "AV1" -> 1
+        else -> 0
+    }
+}
+
+private fun bestStandaloneAudioForNativeMp4Merge(
+    analysis: VideoAnalysis,
+    preferredFormatId: String? = null,
+): VideoFormat? {
+    val candidates = analysis.formats
         .filter { !it.hasVideo && it.hasAudio && it.isNativeMp4MergeAudioCompatible() }
-        .maxByOrNull { it.filesizeBytes ?: 0L }
+    return preferredFormatId
+        ?.let { preferred -> candidates.firstOrNull { it.id == preferred } }
+        ?: candidates.maxByOrNull { it.filesizeBytes ?: 0L }
 }
 
 internal fun VideoFormat.isNativeMp4MergeVideoCompatible(): Boolean {

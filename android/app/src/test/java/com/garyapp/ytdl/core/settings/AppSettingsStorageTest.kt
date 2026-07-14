@@ -126,14 +126,11 @@ class AppSettingsStorageTest {
     fun storageTargetsModelPlaySafeDestinations() {
         val targets = listOf(
             StorageTarget.AppPrivate,
-            StorageTarget.MediaStoreDownloads(displayName = "video.mp4", mimeType = "video/mp4"),
-            StorageTarget.CreateDocument(uri = "content://export/video", displayName = "video.mp4", mimeType = "video/mp4"),
             StorageTarget.SafTree(treeUri = "content://tree/downloads", displayName = "项目目录"),
         )
 
-        assertEquals(4, targets.distinct().size)
-        assertTrue(targets.any { it is StorageTarget.MediaStoreDownloads })
-        assertTrue(targets.any { it is StorageTarget.CreateDocument })
+        assertEquals(2, targets.distinct().size)
+        assertTrue(targets.any { it is StorageTarget.AppPrivate })
         assertTrue(targets.any { it is StorageTarget.SafTree })
     }
 

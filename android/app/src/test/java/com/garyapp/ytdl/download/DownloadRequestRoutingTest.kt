@@ -24,10 +24,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNoException
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.nio.file.Files
 
 class DownloadRequestRoutingTest {
     @get:Rule
@@ -55,8 +57,49 @@ class DownloadRequestRoutingTest {
         assertEquals(DownloadStage.Completed, result.state.stage)
         assertEquals(listOf("format:media:18"), engine.calls)
         assertTrue(result.outputs.single { it.kind == DownloadOutputKind.Media }.path.endsWith("18-media.mp4"))
+        assertTrue(
+            ExportController.isIncompleteTaskDirectory(
+                requireNotNull(File(result.outputs.single().path).parentFile),
+            ),
+        )
         assertTrue(mediaProcessor.mergeRequests.isEmpty())
         assertFalse(stages.contains(DownloadStage.Exporting))
+    }
+
+    @Test
+    fun successfulCleanupDeletesSymlinkNodeWithoutTouchingExternalTarget() {
+        val outsideDirectory = temp.newFolder("outside-link-target")
+        val outsideSentinel = File(outsideDirectory, "keep.txt").apply { writeText("keep") }
+        val probeLink = temp.root.toPath().resolve("symlink-probe")
+        try {
+            Files.createSymbolicLink(probeLink, outsideDirectory.toPath())
+            Files.deleteIfExists(probeLink)
+        } catch (error: Exception) {
+            assumeNoException("当前文件系统不支持符号链接测试", error)
+        }
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+        lateinit var taskLink: File
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            afterFormatDownload = { taskDirectory ->
+                taskLink = File(taskDirectory, "external-link")
+                Files.createSymbolicLink(taskLink.toPath(), outsideDirectory.toPath())
+            }
+        }
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertFalse(taskLink.exists())
+        assertTrue(outsideSentinel.isFile)
+        assertEquals("keep", outsideSentinel.readText())
     }
 
     @Test
@@ -235,6 +278,34 @@ class DownloadRequestRoutingTest {
         assertTrue(File(result.outputs.single { it.kind == DownloadOutputKind.Media }.path).isFile)
         assertFalse("合并成功后应清理独立视频流", mergeRequest.videoInput.exists())
         assertFalse("合并成功后应清理独立音频流", mergeRequest.audioInput.exists())
+    }
+
+    @Test
+    fun mergeRequiredRouteFailsWhenIntermediateStreamCannotBeDeleted() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val mediaProcessor = RecordingMediaProcessor()
+        val result = DownloadPipeline(
+            engine = RecordingDownloadEngine(temp.root),
+            mediaProcessor = mediaProcessor,
+            deleteIntermediateFile = { false },
+        ).run(request, temp.root)
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertTrue(result.state.errorMessage.orEmpty().isNotBlank())
+        assertTrue(File(result.outputs.single().path).isFile)
     }
 
     @Test
@@ -726,6 +797,7 @@ class DownloadRequestRoutingTest {
         var downloadFailure: YtdlpDownloadException? = null
         var subtitleFailure: YtdlpDownloadException? = null
         var afterSubtitleDownload: (() -> Unit)? = null
+        var afterFormatDownload: (File) -> Unit = {}
         var lastMediaOutputPath: String? = null
         val failOnceByRole = mutableMapOf<DownloadFormatRole, YtdlpDownloadException>()
         val returnedRoleByRequestRole = mutableMapOf<DownloadFormatRole, DownloadFormatRole>()
@@ -759,6 +831,7 @@ class DownloadRequestRoutingTest {
             )
             continuedAfterProgress = true
             val file = writeFile(outputDirectory, "$formatId-${role.pythonValue}.${if (role == DownloadFormatRole.Audio) "m4a" else "mp4"}")
+            afterFormatDownload(outputDirectory)
             if (role == DownloadFormatRole.Video) {
                 onVideoDownload()
             }

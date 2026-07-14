@@ -1,7 +1,5 @@
 package com.garyapp.ytdl.data
 
-import android.content.Intent
-import android.provider.MediaStore
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import android.content.Context
@@ -17,7 +15,6 @@ import com.garyapp.ytdl.download.DownloadTaskState
 import com.garyapp.ytdl.storage.ExportController
 import com.garyapp.ytdl.ui.FormatMode
 import com.garyapp.ytdl.ui.FormatSelection
-import java.io.ByteArrayOutputStream
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -186,14 +183,12 @@ class HistoryPrivacyTest {
     }
 
     @Test
-    fun appPrivateDiscoveryAndExportContractsDoNotExposeRawPathsOrClaimSuccess() {
+    fun appPrivateDiscoveryContractsDoNotExposeRawPathsOrClaimSuccess() {
         val appRoot = temp.newFolder("app-files")
         val output = File(appRoot, "video.mp4").apply { writeText("media") }
 
         val discovered = ExportController.discoverAppPrivateOutput(output, appRoot).getOrThrow()
         val rediscovered = ExportController.discoverAppPrivateOutputUri(discovered.appPrivateUri, appRoot).getOrThrow()
-        val createDocumentIntent = ExportController.createDocumentIntent(discovered)
-        val mediaStoreValues = ExportController.mediaStoreValues(discovered)
 
         assertEquals("video.mp4", discovered.displayName)
         assertEquals("video.mp4", rediscovered.displayName)
@@ -201,23 +196,6 @@ class HistoryPrivacyTest {
         assertEquals("video/mp4", discovered.mimeType)
         assertTrue(discovered.appPrivateUri.startsWith("app-private://outputs/"))
         assertFalse(discovered.toString().contains(appRoot.absolutePath))
-        assertEquals(Intent.ACTION_CREATE_DOCUMENT, createDocumentIntent.action)
-        assertTrue(createDocumentIntent.categories?.contains(Intent.CATEGORY_OPENABLE) == true)
-        assertEquals("video/mp4", createDocumentIntent.type)
-        assertEquals("video.mp4", createDocumentIntent.getStringExtra(Intent.EXTRA_TITLE))
-        assertEquals("video.mp4", mediaStoreValues.getAsString(MediaStore.MediaColumns.DISPLAY_NAME))
-        assertEquals("video/mp4", mediaStoreValues.getAsString(MediaStore.MediaColumns.MIME_TYPE))
-        assertEquals(
-            "video-20260705-112800.mp4",
-            ExportController.createDocumentIntent(discovered, "video-20260705-112800.mp4")
-                .getStringExtra(Intent.EXTRA_TITLE),
-        )
-        val exportedBytes = ByteArrayOutputStream()
-        val bytesCopied = ExportController.copyToStream(discovered, exportedBytes).getOrThrow()
-        assertEquals(output.length(), bytesCopied)
-        assertEquals("media", exportedBytes.toString(Charsets.UTF_8.name()))
-        assertFalse(ExportController.exportDeniedMessage("D:/private/cookies.txt").contains("D:/private"))
-
         val denied = ExportController.discoverAppPrivateOutputUri("file:///storage/emulated/0/video.mp4", appRoot)
         assertTrue(denied.isFailure)
     }
@@ -265,7 +243,7 @@ class HistoryPrivacyTest {
         listOf("secret", "raw-token", "SID=", "content://provider/cookies").forEach {
             assertFalse("failure message leaked $it", joined.contains(it, ignoreCase = true))
         }
-        listOf("请输入", "有效", "http", "网络", "字幕", "处理", "导出", "cookies", "清理", "历史", "取消").forEach {
+        listOf("请输入", "有效", "http", "网络", "字幕", "处理", "保存", "cookies", "清理", "历史", "取消").forEach {
             assertTrue("missing readable cue $it", joined.contains(it))
         }
     }

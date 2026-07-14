@@ -5,14 +5,19 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.widget.EditText
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.R
+import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateChecker
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateCoordinator
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
@@ -21,6 +26,7 @@ import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.download.DownloadCoordinator
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
+import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -30,6 +36,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 
@@ -57,7 +64,7 @@ class YtdlAppDownloadFlowTest {
                 progressiveFormat(id = "240-direct", height = 240),
             ),
             formatRowTag = "ytdl-format-row-240",
-            expectedSummary = "240p MP4 单文件",
+            expectedSummary = "240p MP4 H.264 单文件",
         )
 
         assertEquals(DownloadRoute.DirectSingleFile(formatId = "240-direct"), request.route)
@@ -72,13 +79,69 @@ class YtdlAppDownloadFlowTest {
                 audioOnlyFormat(id = "140-audio"),
             ),
             formatRowTag = "ytdl-format-row-240",
-            expectedSummary = "240p MP4 需原生合并",
+            expectedSummary = "240p MP4 H.264 需原生合并",
         )
 
         assertEquals(
             DownloadRoute.MergeRequired(videoFormatId = "240-video", audioFormatId = "140-audio"),
             request.route,
         )
+    }
+
+    @Test
+    fun failedQueueRetryReanalyzesOriginalUrlAndRestoresPreviousFormatBeforeDownload() {
+        SettingsRepository.fromContext(ApplicationProvider.getApplicationContext())
+            .setCookiesReference(null)
+        val originalRequest = DownloadRequest(
+            url = "https://example.com/video?token=original",
+            title = "失败任务原始标题",
+            route = DownloadRoute.DirectSingleFile(formatId = "av1-1080"),
+            thumbnailUrl = "https://example.com/thumb.jpg",
+            cookiesPath = "/data/user/0/com.garyapp.ytdl/cache/temporary-cookies/stale.txt",
+            formatSummary = "1080p MP4 AV1 单文件",
+        )
+        val retryAnalysis = analysisWith(
+            progressiveFormat(id = "h264-1080", height = 1080),
+            progressiveFormat(id = "av1-1080", height = 1080, videoCodec = "av01"),
+        )
+        val analyzedUrl = AtomicReference<String>()
+        val unexpectedDownloadRequest = AtomicReference<DownloadRequest>()
+        composeRule.setContent {
+            YtdlApp(
+                parserUpdateCoordinator = offlineParserCoordinator(),
+                analysisProvider = { url, _ ->
+                    analyzedUrl.set(url)
+                    Result.success(retryAnalysis)
+                },
+                downloadStarter = { _, request, _ ->
+                    unexpectedDownloadRequest.set(request)
+                    Result.success(DownloadTaskState.waiting(request))
+                },
+            )
+        }
+        composeRule.runOnIdle {
+            DownloadCoordinator.publish(
+                DownloadTaskState(
+                    stage = DownloadStage.Failed,
+                    request = originalRequest,
+                    errorMessage = "network disconnected",
+                ),
+            )
+        }
+
+        composeRule.onNodeWithTag("ytdl-tab-queue").performClick()
+        composeRule.onNodeWithText(originalRequest.title).assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-retry-action").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("ytdl-screen-formats").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("ytdl-screen-formats")
+            .performScrollToNode(hasTestTag("ytdl-format-summary"))
+
+        assertEquals(originalRequest.url, analyzedUrl.get())
+        assertEquals(null, unexpectedDownloadRequest.get())
+        composeRule.onNodeWithText("实际下载：1080p MP4 AV1 单文件").assertExists()
+        composeRule.onAllNodesWithTag("ytdl-format-subtitle-toggle").assertCountEquals(0)
     }
 
     private fun runDownloadFlow(
@@ -143,7 +206,11 @@ class YtdlAppDownloadFlowTest {
         subtitles = emptyList<SubtitleInfo>(),
     )
 
-    private fun progressiveFormat(id: String, height: Int) = VideoFormat(
+    private fun progressiveFormat(
+        id: String,
+        height: Int,
+        videoCodec: String = "avc1",
+    ) = VideoFormat(
         id = id,
         ext = "mp4",
         height = height,
@@ -152,7 +219,7 @@ class YtdlAppDownloadFlowTest {
         hasAudio = true,
         mergeRequired = false,
         isSupported = true,
-        videoCodec = "avc1",
+        videoCodec = videoCodec,
         audioCodec = "mp4a",
     )
 

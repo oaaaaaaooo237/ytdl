@@ -5,6 +5,28 @@ import re
 import yt_dlp
 
 
+_EPORNER_METADATA_HTTP_PREFIX = "http://www.eporner.com/xhr/video/"
+
+
+def _upgrade_eporner_metadata_url(url):
+    if isinstance(url, str) and url.startswith(_EPORNER_METADATA_HTTP_PREFIX):
+        return "https://" + url[len("http://") :]
+    return url
+
+
+class AndroidYoutubeDL(yt_dlp.YoutubeDL):
+    def urlopen(self, request):
+        if isinstance(request, str):
+            request = _upgrade_eporner_metadata_url(request)
+        else:
+            original_url = getattr(request, "url", None)
+            upgraded_url = _upgrade_eporner_metadata_url(original_url)
+            if upgraded_url != original_url:
+                request = request.copy()
+                request.url = upgraded_url
+        return super().urlopen(request)
+
+
 class ProgressListenerException(Exception):
     pass
 
@@ -21,7 +43,7 @@ def analyze(url, cookies_path=None):
         options["cookiefile"] = cookies_path
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=False)
         return json.dumps(_to_result(info), ensure_ascii=False)
     except Exception as exc:  # yt-dlp has multiple extractor/downloader exception types.
@@ -55,7 +77,7 @@ def download_single_file(url, output_dir, cookies_path=None, progress_listener=N
         options["cookiefile"] = cookies_path
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_downloaded_file(info, output_dir)
         bytes_written = _downloaded_file_size(output_path)
@@ -112,7 +134,7 @@ def download_format(url, output_dir, format_id, role, cookies_path=None, progres
         if cookies_path:
             options["cookiefile"] = cookies_path
 
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_downloaded_file(info, output_dir, normalized_format_id, normalized_role)
         bytes_written = _downloaded_file_size(output_path)
@@ -182,12 +204,12 @@ def download_subtitle(
         if cookies_path:
             options["cookiefile"] = cookies_path
 
-        with yt_dlp.YoutubeDL({**options, "writesubtitles": False, "writeautomaticsub": False}) as ydl:
+        with AndroidYoutubeDL({**options, "writesubtitles": False, "writeautomaticsub": False}) as ydl:
             analysis_info = ydl.extract_info(url, download=False)
         if not _subtitle_available(analysis_info, normalized_language, normalized_ext, normalized_source):
             raise ValueError("requested subtitle is not available")
 
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with AndroidYoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_subtitle_file(info, output_dir, normalized_language, normalized_ext, normalized_source)
         bytes_written = _downloaded_file_size(output_path)
@@ -442,6 +464,7 @@ def _error_category(exc):
         "network" in text
         or "timed out" in text
         or "timeout" in text
+        or "remote end closed connection" in text
         or "http error 403" in text
         or "forbidden" in text
     ):

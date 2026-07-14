@@ -2,6 +2,7 @@ package com.garyapp.ytdl.download
 
 import com.garyapp.ytdl.core.ytdlp.DownloadProgress
 import java.io.File
+import java.net.URI
 
 enum class DownloadStage {
     Idle,
@@ -27,6 +28,7 @@ data class DownloadOutputFile(
     val path: String,
     val bytesWritten: Long,
     val appPrivateRootPath: String? = null,
+    val externalDocumentUri: String? = null,
 )
 
 data class DownloadTaskState(
@@ -65,6 +67,24 @@ data class DownloadTaskState(
                 outputs = outputs,
                 progress = null,
                 errorMessage = null,
+            )
+        }
+    }
+
+    fun withExternalDocumentUris(documentUris: List<String>): Result<DownloadTaskState> {
+        return runCatching {
+            require(stage == DownloadStage.Completed) { "只有完成任务可以标记外部输出。" }
+            require(documentUris.size == outputs.size) { "外部输出数量与私有输出不一致。" }
+            documentUris.forEach { rawUri ->
+                val uri = URI(rawUri)
+                require(uri.scheme.equals("content", ignoreCase = true) && !uri.rawAuthority.isNullOrBlank()) {
+                    "外部输出必须是 content URI。"
+                }
+            }
+            copy(
+                outputs = outputs.zip(documentUris) { output, documentUri ->
+                    output.copy(externalDocumentUri = documentUri)
+                },
             )
         }
     }

@@ -36,6 +36,20 @@ fun applyHistoryRecordingResult(
     return state.failed(DownloadFailureMessages.historyWriteFailed())
 }
 
+internal fun updateRetryDraftForHistory(
+    state: DownloadTaskState,
+    historyRecordResult: Result<Long>,
+    retryStore: RetryDraftStore,
+): Result<Unit> {
+    val historyId = historyRecordResult.getOrNull() ?: return Result.success(Unit)
+    val request = state.request
+    return if (state.stage == DownloadStage.Failed && request != null) {
+        retryStore.save(historyId, RetryDownloadDraft.fromRequest(request))
+    } else {
+        retryStore.delete(historyId).map { Unit }
+    }
+}
+
 private fun DownloadRequest.userVisibleHistoryFormatSummary(): String {
     formatSummary.takeIf { it.isNotBlank() }?.let { return it }
 

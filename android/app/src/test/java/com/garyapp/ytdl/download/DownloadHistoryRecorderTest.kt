@@ -14,6 +14,7 @@ import com.garyapp.ytdl.ui.FormatSelection
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -152,6 +153,40 @@ class DownloadHistoryRecorderTest {
     }
 
     @Test
+    fun recordsExternalDocumentUrisInPreferenceToPrivateOutputUris() {
+        val outputRoot = temp.newFolder("gui-downloads-external")
+        val media = File(outputRoot, "task-external/video.mp4").apply {
+            parentFile?.mkdirs()
+            writeText("media")
+        }
+        val subtitle = File(outputRoot, "task-external/subtitle.vtt").apply { writeText("subtitle") }
+        val externalMediaUri = "content://documents/document/exported-media"
+        val externalSubtitleUri = "content://documents/document/exported-subtitle"
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 47_500L },
+        )
+        val completed = DownloadTaskState.waiting(requestWithSubtitle(title = "外部保存视频")).completeWith(
+            listOf(
+                DownloadOutputFile(DownloadOutputKind.Media, media.absolutePath, media.length(), outputRoot.absolutePath),
+                DownloadOutputFile(DownloadOutputKind.Subtitle, subtitle.absolutePath, subtitle.length(), outputRoot.absolutePath),
+            ),
+        ).getOrThrow().withExternalDocumentUris(
+            listOf(externalMediaUri, externalSubtitleUri),
+        ).getOrThrow()
+        assertTrue(media.delete())
+        assertTrue(subtitle.delete())
+
+        assertTrue(recorder.recordTerminal(completed).isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals(externalMediaUri, row.outputUri)
+        assertEquals(externalSubtitleUri, subtitleOutputUris(row))
+        assertFalse(media.exists())
+        assertFalse(subtitle.exists())
+    }
+
+    @Test
     fun defaultHistoryFormatSummaryUsesUserReadableFormatDetails() {
         val output = temp.newFile("merged-137-140.mp4").apply { writeText("media") }
         val recorder = DownloadHistoryRecorder(
@@ -165,7 +200,7 @@ class DownloadHistoryRecorderTest {
         assertTrue(recorder.recordTerminal(completed).isSuccess)
 
         val row = database.historyDao().listRecent(1).single()
-        assertEquals("1080p MP4 需原生合并", row.formatSummary)
+        assertEquals("1080p MP4 H.264 需原生合并", row.formatSummary)
         assertTrue("history summary should not expose video format id", !row.formatSummary.orEmpty().contains("137"))
         assertTrue("history summary should not expose audio format id", !row.formatSummary.orEmpty().contains("140"))
     }

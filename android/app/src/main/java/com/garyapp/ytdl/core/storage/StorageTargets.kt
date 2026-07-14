@@ -5,17 +5,6 @@ import java.net.URI
 sealed interface StorageTarget {
     data object AppPrivate : StorageTarget
 
-    data class MediaStoreDownloads(
-        val displayName: String,
-        val mimeType: String,
-    ) : StorageTarget
-
-    data class CreateDocument(
-        val uri: String,
-        val displayName: String,
-        val mimeType: String,
-    ) : StorageTarget
-
     data class SafTree(
         val treeUri: String,
         val displayName: String? = null,
@@ -36,7 +25,6 @@ object StorageTargets {
                     StorageTarget.AppPrivate
                 }
             }
-            else -> StorageTarget.AppPrivate
         }
     }
 
@@ -62,7 +50,6 @@ object StorageTargets {
         return when (val safeTarget = sanitizeDefault(target)) {
             StorageTarget.AppPrivate -> "App 私有目录"
             is StorageTarget.SafTree -> safeTarget.displayName ?: "所选文件夹"
-            else -> "App 私有目录"
         }
     }
 

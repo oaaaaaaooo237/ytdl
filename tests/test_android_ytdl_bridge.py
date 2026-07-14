@@ -4,7 +4,7 @@ import types
 from pathlib import Path
 
 
-def load_android_ytdl_bridge():
+def load_android_ytdl_bridge(youtube_dl_class=object):
     bridge_path = (
         Path(__file__).resolve().parents[1]
         / "android"
@@ -16,9 +16,52 @@ def load_android_ytdl_bridge():
     )
     spec = importlib.util.spec_from_file_location("android_ytdl_bridge", bridge_path)
     module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault("yt_dlp", types.SimpleNamespace(YoutubeDL=object))
-    spec.loader.exec_module(module)
+    previous_yt_dlp = sys.modules.get("yt_dlp")
+    sys.modules["yt_dlp"] = types.SimpleNamespace(YoutubeDL=youtube_dl_class)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if previous_yt_dlp is None:
+            sys.modules.pop("yt_dlp", None)
+        else:
+            sys.modules["yt_dlp"] = previous_yt_dlp
     return module
+
+
+class RecordingYoutubeDL:
+    def urlopen(self, request):
+        return request
+
+
+class CopyableRequest:
+    def __init__(self, url):
+        self.url = url
+
+    def copy(self):
+        return CopyableRequest(self.url)
+
+
+def test_eporner_metadata_request_uses_https_without_mutating_original_request():
+    bridge = load_android_ytdl_bridge(RecordingYoutubeDL)
+    downloader = bridge.AndroidYoutubeDL()
+    request = CopyableRequest(
+        "http://www.eporner.com/xhr/video/5czAhpxw6bT?hash=test&device=generic"
+    )
+
+    rewritten = downloader.urlopen(request)
+
+    assert rewritten.url == (
+        "https://www.eporner.com/xhr/video/5czAhpxw6bT?hash=test&device=generic"
+    )
+    assert request.url.startswith("http://")
+
+
+def test_remote_end_closed_during_analysis_is_reported_as_network_failure():
+    bridge = load_android_ytdl_bridge()
+    error = RuntimeError("Remote end closed connection without response")
+
+    assert bridge._error_category(error) == "network"
+    assert bridge._safe_error_message(error) == "网络连接失败，请稍后重试。"
 
 
 def test_split_download_file_lookup_does_not_pick_stale_file_for_other_video(tmp_path):

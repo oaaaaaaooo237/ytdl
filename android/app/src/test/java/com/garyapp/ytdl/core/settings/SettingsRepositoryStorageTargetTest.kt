@@ -29,7 +29,7 @@ class SettingsRepositoryStorageTargetTest {
     fun safTreeTargetSurvivesRepositoryRecreation() {
         val target = StorageTarget.SafTree(
             treeUri = "content://com.android.externalstorage.documents/tree/primary%3AMovies",
-            displayName = "视频导出",
+            displayName = "视频保存",
         )
 
         SettingsRepository.fromContext(context).setDefaultStorageTarget(target)

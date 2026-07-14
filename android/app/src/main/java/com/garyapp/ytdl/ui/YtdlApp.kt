@@ -1,7 +1,6 @@
 package com.garyapp.ytdl.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -19,6 +18,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.webkit.MimeTypeMap
 import android.widget.EditText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -106,6 +107,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.garyapp.ytdl.BuildConfig
 import com.garyapp.ytdl.R
 import com.garyapp.ytdl.core.settings.AppSettings
 import com.garyapp.ytdl.core.settings.AppearanceSettings
@@ -113,7 +115,6 @@ import com.garyapp.ytdl.core.settings.CookiesReference as SettingsCookiesReferen
 import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.storage.StorageTargets
-import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateChecker
@@ -129,7 +130,10 @@ import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
+import com.garyapp.ytdl.download.FileRetryDraftStore
 import com.garyapp.ytdl.download.NotificationController
+import com.garyapp.ytdl.download.RetryDownloadDraft
+import com.garyapp.ytdl.download.deleteHistoryWithRetryPayload
 import com.garyapp.ytdl.storage.ExportController
 import com.garyapp.ytdl.storage.CacheClearResult
 import com.garyapp.ytdl.storage.CacheStats
@@ -146,7 +150,9 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
+import java.net.URLDecoder
 import java.util.Locale
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -165,12 +171,11 @@ private const val HistoryThumbnailPlaceholderTag = "ytdl-history-thumbnail-place
 private const val HistoryThumbnailTargetPx = 160
 private const val HistoryThumbnailCacheMaxItems = 64
 private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
+private val TopContentSpacing = 16.dp
 private val CardPillBadgeMinWidth = 64.dp
 private val CardPillBadgeMinHeight = 30.dp
 private val BottomBarGestureBuffer = 32.dp
 private val SettingsAppearanceBottomBuffer = 96.dp
-private val TopSafeAreaHeight = 16.dp
-private val TopPunchHoleSize = 7.dp
 private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
     checker = ParserUpdateChecker(),
     executor = Executor { command ->
@@ -199,7 +204,7 @@ private data class SettingsExplanation(
 private val MediaProcessorExplanation = SettingsExplanation(
     title = "媒体处理能力",
     body = "当前使用 Android 原生 MediaExtractor + MediaMuxer，将已下载的分离视频流和音频流封装合并。" +
-        "它不进行转码，也不嵌入或烧录字幕；带字幕任务会输出合并后的媒体文件和独立字幕文件。" +
+        "它不进行转码。" +
         "源轨道或容器不兼容时可能无法合并。",
 )
 
@@ -354,21 +359,22 @@ private val HistoryShareIcon = tabIcon("HistoryShare") {
     close()
 }
 
-private val HistoryExportIcon = tabIcon("HistoryExport") {
-    moveTo(11f, 4f)
-    lineTo(13f, 4f)
-    lineTo(13f, 12f)
-    lineTo(16f, 9f)
-    lineTo(17.4f, 10.4f)
-    lineTo(12f, 15.8f)
-    lineTo(6.6f, 10.4f)
-    lineTo(8f, 9f)
-    lineTo(11f, 12f)
+private val HistoryRetryIcon = tabIcon("HistoryRetry") {
+    moveTo(5f, 5f)
+    lineTo(15f, 5f)
+    lineTo(15f, 2f)
+    lineTo(21f, 8f)
+    lineTo(15f, 14f)
+    lineTo(15f, 11f)
+    lineTo(5f, 11f)
     close()
-    moveTo(5f, 18f)
-    lineTo(19f, 18f)
-    lineTo(19f, 20f)
-    lineTo(5f, 20f)
+    moveTo(19f, 13f)
+    lineTo(9f, 13f)
+    lineTo(9f, 10f)
+    lineTo(3f, 16f)
+    lineTo(9f, 22f)
+    lineTo(9f, 19f)
+    lineTo(19f, 19f)
     close()
 }
 
@@ -515,6 +521,48 @@ internal fun EditText.installUrlSelectionActionModeCallbacks() {
     customInsertionActionModeCallback = selectionActions
 }
 
+internal data class HistoryOutputTarget(
+    val uri: String,
+    val mimeType: String,
+)
+
+private fun historyContentOutputTarget(
+    rawUri: String,
+    resolverMimeType: String?,
+): HistoryOutputTarget? {
+    val normalizedUri = rawUri.trim()
+    val uri = runCatching { URI(normalizedUri) }.getOrNull() ?: return null
+    if (!uri.scheme.equals("content", ignoreCase = true) || uri.rawAuthority.isNullOrBlank()) return null
+    return HistoryOutputTarget(
+        uri = normalizedUri,
+        mimeType = historyOutputMimeType(normalizedUri, resolverMimeType),
+    )
+}
+
+private fun historyOutputMimeType(rawUri: String, resolverMimeType: String?): String {
+    resolverMimeType?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    val rawLeaf = runCatching { URI(rawUri).rawPath.orEmpty().substringAfterLast('/') }.getOrDefault("")
+    val extension = runCatching { URLDecoder.decode(rawLeaf, Charsets.UTF_8.name()) }.getOrDefault(rawLeaf)
+        .substringAfterLast('.', "")
+        .lowercase(Locale.ROOT)
+    return when (extension) {
+        "mp4" -> "video/mp4"
+        "m4a" -> "audio/mp4"
+        "webm" -> "video/webm"
+        "mp3" -> "audio/mpeg"
+        "vtt" -> "text/vtt"
+        "srt" -> "application/x-subrip"
+        "txt" -> "text/plain"
+        else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            ?: "application/octet-stream"
+    }
+}
+
+internal fun historyContentOutputTargetForUiTest(
+    rawUri: String,
+    resolverMimeType: String?,
+): HistoryOutputTarget? = historyContentOutputTarget(rawUri, resolverMimeType)
+
 @Immutable
 data class YtdlDestination(
     val route: String,
@@ -533,7 +581,6 @@ internal data class RuntimeDownloadState(
     val activeStage: DownloadStage = DownloadStage.Idle,
     val formatSelection: FormatSelection = FormatSelection(),
     val appliedFormatSelection: FormatSelection = FormatSelection(),
-    val selectedSubtitles: List<SubtitleInfo> = emptyList(),
     val thumbnailBitmap: Bitmap? = null,
     val thumbnailStatus: String = "",
     val isAnalyzing: Boolean = false,
@@ -546,15 +593,12 @@ internal data class RuntimeDownloadState(
     val downloadStatus: String = "",
     val outputPath: String = "",
     val outputBytes: Long = 0L,
-    val subtitleOutputCount: Int = 0,
-    val subtitleOutputBytes: Long = 0L,
 ) {
     val hasRealTask: Boolean
         get() = downloadStatus.isNotBlank() ||
             progressPercent != null ||
             outputPath.isNotBlank() ||
             outputBytes > 0L ||
-            subtitleOutputCount > 0 ||
             isDownloading
 }
 
@@ -652,10 +696,10 @@ internal fun ytdlNavigationAccentHexesForUiTest(
 }
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
     "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "保存位置", "下载模式", "开始下载"),
-    "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式", "字幕", "本阶段默认不下载"),
+    "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式"),
     "queue" to listOf("下载进行中", "当前阶段", "等待真实任务", "暂无真实下载任务", "最近任务已完成", "最近任务失败", "最近任务已取消", "下载视频", "下载音频", "原生合并", "已取消"),
     "history" to listOf("搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
-    "settings" to listOf("默认保存位置", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格", "MVP2"),
+    "settings" to listOf("保存位置", "恢复默认路径", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格", "MVP2"),
 )
 
 @Composable
@@ -670,14 +714,15 @@ fun YtdlApp(
 ) {
     val context = LocalContext.current
     var selectedRoute by rememberSaveable { mutableStateOf("download") }
+    val currentSelectedRoute by rememberUpdatedState(selectedRoute)
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
     var hasUserConfirmed by rememberSaveable { mutableStateOf(false) }
     var historyQuery by rememberSaveable { mutableStateOf("") }
     var historyFilterIndex by rememberSaveable { mutableStateOf(0) }
     val settingsRepository = remember { SettingsRepository.fromContext(context.applicationContext) }
+    val retryDraftStore = remember { FileRetryDraftStore.fromContext(context.applicationContext) }
     var appSettings by remember { mutableStateOf(settingsRepository.getSettings()) }
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
-    var pendingExportOutput by remember { mutableStateOf<ExportController.AppPrivateOutput?>(null) }
     var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
     var parserUpdateRevision by remember { mutableStateOf(-1L) }
     var parserUpdateState by remember { mutableStateOf(ParserUpdateState()) }
@@ -687,7 +732,6 @@ fun YtdlApp(
     var settingsExplanation by remember { mutableStateOf<SettingsExplanation?>(null) }
     var downloadCacheStats by remember { mutableStateOf(CacheStats(0, 0)) }
     var showDownloadCacheConfirmation by remember { mutableStateOf(false) }
-    var showStorageTargetDialog by rememberSaveable { mutableStateOf(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val downloadCache = remember { downloadCacheFactory(context.applicationContext) }
     val downloadCacheRefreshGeneration = remember { AtomicLong(0) }
@@ -702,7 +746,7 @@ fun YtdlApp(
             val rows = YtdlDatabaseProvider.get(context.applicationContext)
                 .historyDao()
                 .listRecent(50)
-            val items = historyUiItemsFromRows(rows)
+            val items = historyUiItemsFromRows(rows, retryDraftStore::isAvailable)
             mainHandler.post {
                 historyItems = items
             }
@@ -728,10 +772,6 @@ fun YtdlApp(
         } else if (route == "settings") {
             refreshDownloadCacheStats()
         }
-    }
-
-    fun openStorageTargetChooser() {
-        showStorageTargetDialog = true
     }
 
     fun persistStorageTarget(target: StorageTarget) {
@@ -786,8 +826,10 @@ fun YtdlApp(
                     is IdleDownloadActionResult.Executed -> cleanup.value
                 }
             }
-            if (result.getOrNull() is CacheClearResult.Success) {
-                refreshDownloadCacheStats()
+            when (result.getOrNull()) {
+                is CacheClearResult.Success,
+                is CacheClearResult.Incomplete -> refreshDownloadCacheStats()
+                else -> Unit
             }
             mainHandler.post {
                 settingsExplanation = result.fold(
@@ -801,12 +843,17 @@ fun YtdlApp(
                                 title = "清理完成",
                                 body = "已释放 ${formatBytes(clearResult.freedBytes)}，删除 ${clearResult.deletedFileCount} 个文件。",
                             )
+                            is CacheClearResult.Incomplete -> SettingsExplanation(
+                                title = "部分临时文件未能清理",
+                                body = "已释放 ${formatBytes(clearResult.freedBytes)}，删除 ${clearResult.deletedFileCount} 个文件；" +
+                                    "仍有 ${formatBytes(clearResult.remainingBytes)}、${clearResult.remainingFileCount} 个临时文件，请稍后重试。",
+                            )
                         }
                     },
                     onFailure = {
                         SettingsExplanation(
                             title = "清理失败",
-                            body = "无法清理 App 私有下载缓存，请稍后重试。",
+                            body = "无法清理 App 私有临时缓存，请稍后重试。",
                         )
                     },
                 )
@@ -851,31 +898,6 @@ fun YtdlApp(
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val destinationUri = result.data?.data
-        val output = pendingExportOutput
-        pendingExportOutput = null
-        if (result.resultCode != Activity.RESULT_OK || destinationUri == null || output == null) {
-            runtimeState = runtimeState.copy(userMessage = ExportController.exportDeniedMessage())
-            return@rememberLauncherForActivityResult
-        }
-        Thread {
-            val copyResult = runCatching {
-                context.contentResolver.openOutputStream(destinationUri)?.use { stream ->
-                    ExportController.copyToStream(output, stream).getOrThrow()
-                } ?: throw IllegalStateException("无法打开导出位置。")
-            }
-            mainHandler.post {
-                runtimeState = runtimeState.copy(
-                    userMessage = copyResult.fold(
-                        onSuccess = { bytes -> "导出完成：${formatBytes(bytes)}。" },
-                        onFailure = { error -> "导出失败：${error.message.orEmpty().ifBlank { "请重新选择位置。" }}" },
-                    ),
-                )
-            }
-        }.start()
-    }
-
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         notificationsAllowed = !notificationRuntimePermissionRequired || granted
         runtimeState = runtimeState.copy(
@@ -907,7 +929,7 @@ fun YtdlApp(
                 if (state.stage in TerminalDownloadStages) {
                     refreshDownloadCacheStats()
                 }
-                if (state.stage in TerminalDownloadStages && selectedRoute == "history") {
+                if (state.stage in TerminalDownloadStages && currentSelectedRoute == "history") {
                     refreshHistory()
                 }
             }
@@ -947,26 +969,30 @@ fun YtdlApp(
         }.start()
     }
 
-    fun analyzeCurrentUrl() {
-        val url = runtimeState.url.trim()
+    fun analyzeUrl(
+        requestedUrl: String,
+        retryDraft: RetryDownloadDraft? = null,
+    ) {
+        val url = requestedUrl.trim()
         if (url.isBlank()) {
             runtimeState = runtimeState.copy(userMessage = "请先输入公开视频页面地址。")
             return
         }
 
+        hasUserConfirmed = false
         runtimeState = runtimeState.copy(
+            url = url,
             isAnalyzing = true,
-            userMessage = "正在真实分析地址...",
+            userMessage = if (retryDraft == null) "正在真实分析地址..." else "正在重新分析原地址...",
             analysis = null,
             formatSelection = FormatSelection(),
             appliedFormatSelection = FormatSelection(),
-            selectedSubtitles = emptyList(),
             thumbnailBitmap = null,
             thumbnailStatus = "",
         )
         Thread {
             val temporaryCookiesResult = prepareTemporaryCookiesForDownload(
-                settingsReference = appSettings.cookiesReference,
+                settingsReference = settingsRepository.getSettings().cookiesReference,
                 context = context.applicationContext,
                 taskId = "analyze-${System.currentTimeMillis()}",
             )
@@ -989,7 +1015,18 @@ fun YtdlApp(
             mainHandler.post {
                 runtimeState = result.fold(
                     onSuccess = { analysis ->
-                        runtimeState.withAnalysisResult(analysis)
+                        val analyzed = runtimeState.withAnalysisResult(analysis)
+                        if (retryDraft == null) {
+                            analyzed
+                        } else {
+                            val restoredSelection = retryFormatSelection(analysis, retryDraft)
+                            selectedRoute = "formats"
+                            analyzed.copy(
+                                formatSelection = restoredSelection,
+                                appliedFormatSelection = restoredSelection,
+                                userMessage = "原地址已重新分析，请确认或调整下载格式。",
+                            )
+                        }
                     },
                     onFailure = { error ->
                         runtimeState.copy(
@@ -1005,6 +1042,10 @@ fun YtdlApp(
         }.start()
     }
 
+    fun analyzeCurrentUrl() {
+        analyzeUrl(runtimeState.url)
+    }
+
     fun startRealDownload() {
         if (!canStartDownload(runtimeState, hasUserConfirmed)) {
             runtimeState = runtimeState.copy(
@@ -1018,7 +1059,7 @@ fun YtdlApp(
         }
         val url = runtimeState.url.trim()
         val temporaryCookies = prepareTemporaryCookiesForDownload(
-            settingsReference = appSettings.cookiesReference,
+            settingsReference = settingsRepository.getSettings().cookiesReference,
             context = context.applicationContext,
             taskId = "download-${System.currentTimeMillis()}",
         ).getOrElse {
@@ -1032,7 +1073,7 @@ fun YtdlApp(
             url = url,
             analysis = runtimeState.analysis,
             appliedSelection = runtimeState.appliedFormatSelection,
-            selectedSubtitles = runtimeState.selectedSubtitles,
+            selectedSubtitles = emptyList(),
             cookiesPath = temporaryCookies?.file?.absolutePath,
         )
         if (requestResult.isFailure) {
@@ -1046,13 +1087,10 @@ fun YtdlApp(
             return
         }
         val request = requestResult.getOrThrow()
-
         val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
         val startResult = downloadStarter(context.applicationContext, request, outputDir)
         runtimeState = startResult.fold(
-            onSuccess = { waiting ->
-                runtimeState.withForegroundStartState(waiting)
-            },
+            onSuccess = { waiting -> runtimeState.withForegroundStartState(waiting) },
             onFailure = { error ->
                 temporaryCookies?.delete()
                 runtimeState.withPipelineState(DownloadTaskState.idle()).copy(
@@ -1063,22 +1101,32 @@ fun YtdlApp(
         )
     }
 
+    fun reanalyzeRetryDraft(draft: RetryDownloadDraft) {
+        analyzeUrl(requestedUrl = draft.url, retryDraft = draft)
+    }
+
+    fun retryHistoryItem(item: HistoryUiItem) {
+        Thread {
+            val draftResult = retryDraftStore.load(item.id)
+            mainHandler.post {
+                draftResult.fold(
+                    onSuccess = ::reanalyzeRetryDraft,
+                    onFailure = {
+                        runtimeState = runtimeState.copy(
+                            userMessage = "该历史记录的重试信息不可用，请删除记录后重新分析。",
+                        )
+                    },
+                )
+            }
+        }.start()
+    }
+
     fun outputForAppPrivateUri(appPrivateUri: String?): Result<ExportController.AppPrivateOutput> {
         return ExportController.discoverAppPrivateOutputUri(
             appPrivateUri = appPrivateUri,
             appPrivateRoot = File(context.filesDir, "gui-downloads"),
             legacyRoots = listOf(File(context.cacheDir, "gui-downloads")),
         )
-    }
-
-    fun outputForHistoryItem(item: HistoryUiItem): Result<ExportController.AppPrivateOutput> {
-        return outputForAppPrivateUri(item.outputUri)
-    }
-
-    fun subtitleOutputForHistoryItem(item: HistoryUiItem): Result<ExportController.AppPrivateOutput> {
-        return item.primarySubtitleOutputUri
-            ?.let(::outputForAppPrivateUri)
-            ?: Result.failure(IllegalStateException("该历史记录没有独立字幕文件。"))
     }
 
     fun fileProviderUri(output: ExportController.AppPrivateOutput): Uri {
@@ -1089,19 +1137,41 @@ fun YtdlApp(
         )
     }
 
+    fun outputTargetForHistoryUri(outputUri: String?): Result<HistoryOutputTarget> {
+        val normalizedUri = outputUri.orEmpty().trim()
+        val contentUri = runCatching { Uri.parse(normalizedUri) }.getOrNull()
+        val contentTarget = contentUri?.let { uri ->
+            historyContentOutputTarget(
+                rawUri = normalizedUri,
+                resolverMimeType = runCatching { context.contentResolver.getType(uri) }.getOrNull(),
+            )
+        }
+        if (contentTarget != null) return Result.success(contentTarget)
+
+        return outputForAppPrivateUri(normalizedUri).map { output ->
+            HistoryOutputTarget(
+                uri = fileProviderUri(output).toString(),
+                mimeType = output.mimeType,
+            )
+        }
+    }
+
+    fun outputForHistoryItem(item: HistoryUiItem): Result<HistoryOutputTarget> {
+        return outputTargetForHistoryUri(item.outputUri)
+    }
+
     fun openHistoryItem(item: HistoryUiItem) {
         val output = outputForHistoryItem(item).getOrElse { error ->
             runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
             return
         }
-        val uri = fileProviderUri(output)
         val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, output.mimeType)
+            .setDataAndType(Uri.parse(output.uri), output.mimeType)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         runCatching {
             context.startActivity(Intent.createChooser(intent, "打开下载文件"))
         }.onFailure {
-            runtimeState = runtimeState.copy(userMessage = "没有可用应用打开该文件，可先导出到本机。")
+            runtimeState = runtimeState.copy(userMessage = "没有可用应用打开该文件，请安装支持该文件类型的应用。")
         }
     }
 
@@ -1110,10 +1180,9 @@ fun YtdlApp(
             runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
             return
         }
-        val uri = fileProviderUri(output)
         val intent = Intent(Intent.ACTION_SEND)
             .setType(output.mimeType)
-            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_STREAM, Uri.parse(output.uri))
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         runCatching {
             context.startActivity(Intent.createChooser(intent, "分享下载文件"))
@@ -1122,64 +1191,29 @@ fun YtdlApp(
         }
     }
 
-    fun shareSubtitleHistoryItem(item: HistoryUiItem) {
-        val output = subtitleOutputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = historyMissingSubtitleOutputMessage(error))
-            return
-        }
-        val uri = fileProviderUri(output)
-        val intent = Intent(Intent.ACTION_SEND)
-            .setType(output.mimeType)
-            .putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        runCatching {
-            context.startActivity(Intent.createChooser(intent, "分享字幕文件"))
-        }.onFailure {
-            runtimeState = runtimeState.copy(userMessage = "没有可用应用分享字幕文件。")
-        }
-    }
-
-    fun exportHistoryItem(item: HistoryUiItem) {
-        val output = outputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
-            return
-        }
-        pendingExportOutput = output
-        exportLauncher.launch(
-            ExportController.createDocumentIntent(
-                output = output,
-                suggestedDisplayName = suggestedExportDisplayName(item, output.displayName),
-            ),
-        )
-    }
-
-    fun exportSubtitleHistoryItem(item: HistoryUiItem) {
-        val output = subtitleOutputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = historyMissingSubtitleOutputMessage(error))
-            return
-        }
-        pendingExportOutput = output
-        exportLauncher.launch(
-            ExportController.createDocumentIntent(
-                output = output,
-                suggestedDisplayName = suggestedExportDisplayName(item, output.displayName),
-            ),
-        )
-    }
-
     fun deleteHistoryItem(item: HistoryUiItem) {
         Thread {
-            val deleted = YtdlDatabaseProvider.get(context.applicationContext)
-                .historyDao()
-                .deleteById(item.id)
+            val deleteResult = deleteHistoryWithRetryPayload(
+                historyId = item.id,
+                retryStore = retryDraftStore,
+            ) {
+                YtdlDatabaseProvider.get(context.applicationContext)
+                    .historyDao()
+                    .deleteById(item.id)
+            }
+            val deleted = deleteResult.getOrDefault(0)
             val rows = YtdlDatabaseProvider.get(context.applicationContext)
                 .historyDao()
                 .listRecent(50)
-            val items = historyUiItemsFromRows(rows)
+            val items = historyUiItemsFromRows(rows, retryDraftStore::isAvailable)
             mainHandler.post {
                 historyItems = items
                 runtimeState = runtimeState.copy(
-                    userMessage = if (deleted > 0) "已删除历史记录。" else "历史记录已不存在。",
+                    userMessage = when {
+                        deleteResult.isFailure -> "删除失败，请重试。"
+                        deleted > 0 -> "已删除历史记录。"
+                        else -> "历史记录已不存在。"
+                    },
                 )
             }
         }.start()
@@ -1214,6 +1248,7 @@ fun YtdlApp(
 
         Scaffold(
             containerColor = palette.appBackground,
+            contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 YtdlBottomBar(
                     destinations = destinations,
@@ -1241,7 +1276,7 @@ fun YtdlApp(
                     contentPadding = PaddingValues(start = 16.dp, top = 22.dp, end = 16.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    item { TopPunchHoleSafeArea() }
+                    item { Spacer(Modifier.height(TopContentSpacing)) }
                     item { PageHeader(selected) }
                     when (selected.route) {
                         "download" -> downloadPageItems(
@@ -1255,7 +1290,6 @@ fun YtdlApp(
                                     analysis = null,
                                     formatSelection = FormatSelection(),
                                     appliedFormatSelection = FormatSelection(),
-                                    selectedSubtitles = emptyList(),
                                     thumbnailBitmap = null,
                                     thumbnailStatus = "",
                                 )
@@ -1264,17 +1298,13 @@ fun YtdlApp(
                             onStartDownload = ::startRealDownload,
                             onUserConfirmedChange = { hasUserConfirmed = it },
                             onModeSelected = ::selectDownloadMode,
-                            onSelectStorageTarget = ::openStorageTargetChooser,
+                            onSelectStorageTarget = { storageTreePicker.launch(null) },
                         )
                         "formats" -> formatPageItems(
                             analysis = runtimeState.analysis,
                             selection = runtimeState.formatSelection,
-                            selectedSubtitles = runtimeState.selectedSubtitles,
                             onSelectionChange = { selection ->
                                 runtimeState = runtimeState.withFormatSelection(selection)
-                            },
-                            onSubtitleSelectionChange = { subtitles ->
-                                runtimeState = runtimeState.copy(selectedSubtitles = subtitles)
                             },
                             onFinishSelection = { selectedRoute = "download" },
                         )
@@ -1283,6 +1313,9 @@ fun YtdlApp(
                             onCancelDownload = {
                                 DownloadCoordinator.cancelActive()
                                 runtimeState = runtimeState.copy(userMessage = "已请求取消当前下载。")
+                            },
+                            onRetryDownload = { request ->
+                                reanalyzeRetryDraft(RetryDownloadDraft.fromRequest(request))
                             },
                         )
                         "history" -> historyPageItems(
@@ -1294,9 +1327,7 @@ fun YtdlApp(
                             onHistoryFilterChange = { historyFilterIndex = it },
                             onOpen = ::openHistoryItem,
                             onShare = ::shareHistoryItem,
-                            onExport = ::exportHistoryItem,
-                            onShareSubtitle = ::shareSubtitleHistoryItem,
-                            onExportSubtitle = ::exportSubtitleHistoryItem,
+                            onRetry = ::retryHistoryItem,
                             onDelete = ::requestDeleteHistoryItem,
                         )
                         "settings" -> settingsPageItems(
@@ -1308,7 +1339,11 @@ fun YtdlApp(
                             onSelectCookies = {
                                 cookiesPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
                             },
-                            onSelectStorageTarget = ::openStorageTargetChooser,
+                            onSelectStorageTarget = { storageTreePicker.launch(null) },
+                            onResetStorageTarget = {
+                                persistStorageTarget(StorageTarget.AppPrivate)
+                                runtimeState = runtimeState.copy(userMessage = "已恢复默认路径：App 私有目录。")
+                            },
                             onShowParserStatus = { showParserStatusDialog = true },
                             onShowMediaProcessorExplanation = { settingsExplanation = MediaProcessorExplanation },
                             onShowUrlValidationExplanation = { settingsExplanation = UrlValidationExplanation },
@@ -1346,55 +1381,14 @@ fun YtdlApp(
                 }
             }
         }
-        if (showStorageTargetDialog) {
-            AlertDialog(
-                modifier = Modifier
-                    .semantics { testTagsAsResourceId = true }
-                    .testTag("ytdl-storage-target-dialog"),
-                onDismissRequest = { showStorageTargetDialog = false },
-                title = { Text("选择保存位置") },
-                text = { Text("下载和合并仍在 App 私有目录完成。选择文件夹后，完成的媒体和独立字幕会自动复制过去。") },
-                confirmButton = {
-                    TextButton(
-                        modifier = Modifier.testTag("ytdl-storage-target-dialog-tree"),
-                        onClick = {
-                            showStorageTargetDialog = false
-                            storageTreePicker.launch(null)
-                        },
-                    ) {
-                        Text("选择文件夹")
-                    }
-                },
-                dismissButton = {
-                    Row {
-                        TextButton(
-                            modifier = Modifier.testTag("ytdl-storage-target-dialog-private"),
-                            onClick = {
-                                showStorageTargetDialog = false
-                                persistStorageTarget(StorageTarget.AppPrivate)
-                                runtimeState = runtimeState.copy(userMessage = "已选择 App 私有目录。")
-                            },
-                        ) {
-                            Text("App 私有目录")
-                        }
-                        TextButton(
-                            modifier = Modifier.testTag("ytdl-storage-target-dialog-cancel"),
-                            onClick = { showStorageTargetDialog = false },
-                        ) {
-                            Text("取消")
-                        }
-                    }
-                },
-            )
-        }
         if (showDownloadCacheConfirmation) {
             AlertDialog(
                 modifier = Modifier
                     .semantics { testTagsAsResourceId = true }
                     .testTag("ytdl-cache-clear-dialog"),
                 onDismissRequest = { showDownloadCacheConfirmation = false },
-                title = { Text("确认清理私有下载缓存") },
-                text = { Text("只会删除 App 私有下载缓存中的文件，不会删除已通过系统文件夹保存的副本。") },
+                title = { Text("确认清理临时缓存") },
+                text = { Text("只删除未被下载记录引用的 App 私有临时文件；不会删除完成文件、合并文件或所选文件夹中的文件。") },
                 confirmButton = {
                     TextButton(
                         modifier = Modifier.testTag("ytdl-cache-clear-confirm"),
@@ -1532,7 +1526,6 @@ private fun RuntimeDownloadState.withAnalysisResult(analysis: VideoAnalysis): Ru
         analysis = analysis,
         formatSelection = freshSelection,
         appliedFormatSelection = freshSelection,
-        selectedSubtitles = emptyList(),
         thumbnailBitmap = null,
         thumbnailStatus = if (analysis.thumbnailUrl.isNullOrBlank()) {
             "无可用预览图"
@@ -1559,7 +1552,6 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
     val statusText = userVisibleDownloadStatus(state.stage)
     val progress = state.progress
     val mediaOutput = state.outputs.firstOrNull { it.kind == DownloadOutputKind.Media }
-    val subtitleOutputs = state.outputs.filter { it.kind == DownloadOutputKind.Subtitle }
     if (state.stage == DownloadStage.Completed && mediaOutput == null) {
         return copy(
             isDownloading = false,
@@ -1573,8 +1565,6 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             activeStage = DownloadStage.Failed,
             outputPath = "",
             outputBytes = 0L,
-            subtitleOutputCount = 0,
-            subtitleOutputBytes = 0L,
         )
     }
     if (state.stage == DownloadStage.Idle || (state.request == null && state.outputs.isEmpty() && state.stage == DownloadStage.Failed)) {
@@ -1590,24 +1580,18 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             activeStage = DownloadStage.Idle,
             outputPath = "",
             outputBytes = 0L,
-            subtitleOutputCount = 0,
-            subtitleOutputBytes = 0L,
         )
     }
     return copy(
         isDownloading = state.stage !in TerminalDownloadStages,
         userMessage = when (state.stage) {
             DownloadStage.Failed -> if (mediaOutput != null) {
-                "媒体文件已保存，但${state.errorMessage.orEmpty().ifBlank { "附加文件处理失败。" }}"
+                "媒体文件已保存，但${foregroundFailureReason(state.errorMessage, mediaSaved = true)}"
             } else {
-                "下载失败：${state.errorMessage.orEmpty().ifBlank { "请检查网络或授权状态。" }}"
+                "下载失败：${foregroundFailureReason(state.errorMessage, mediaSaved = false)}"
             }
             DownloadStage.Canceled -> "下载已取消。"
-            DownloadStage.Completed -> if (subtitleOutputs.isNotEmpty()) {
-                "下载完成：媒体文件 + 独立字幕文件已保存，可在历史中查看。"
-            } else {
-                "下载完成：媒体文件已保存，可在历史中打开或导出。"
-            }
+            DownloadStage.Completed -> "下载完成：媒体文件已保存，可在历史中打开或分享。"
             else -> "正在$statusText..."
         },
         downloadStatus = statusText,
@@ -1622,9 +1606,21 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
         totalBytes = progress?.totalBytes ?: mediaOutput?.bytesWritten,
         outputPath = mediaOutput?.path.orEmpty(),
         outputBytes = mediaOutput?.bytesWritten ?: 0L,
-        subtitleOutputCount = subtitleOutputs.size,
-        subtitleOutputBytes = subtitleOutputs.sumOf { it.bytesWritten },
     )
+}
+
+private fun foregroundFailureReason(errorMessage: String?, mediaSaved: Boolean): String {
+    val message = errorMessage.orEmpty()
+    if (message.contains("字幕", ignoreCase = true) || message.contains("subtitle", ignoreCase = true)) {
+        return if (mediaSaved) {
+            "附加文件处理失败。"
+        } else {
+            "文件处理失败，请重试或选择其他格式。"
+        }
+    }
+    return message.ifBlank {
+        if (mediaSaved) "附加文件处理失败。" else "请检查网络或授权状态。"
+    }
 }
 
 private val TerminalDownloadStages = setOf(
@@ -1802,27 +1798,6 @@ private fun YtdlBottomBar(
 }
 
 @Composable
-private fun TopPunchHoleSafeArea() {
-    val palette = LocalYtdlAppPalette.current
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(TopSafeAreaHeight)
-            .semantics { testTagsAsResourceId = true }
-            .testTag("ytdl-top-safe-area"),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(TopPunchHoleSize)
-                .clip(CircleShape)
-                .background(palette.neutralText.copy(alpha = 0.28f))
-                .testTag("ytdl-top-punch-hole"),
-        )
-    }
-}
-
-@Composable
 private fun PageHeader(destination: YtdlDestination) {
     val palette = LocalYtdlAppPalette.current
     Column(
@@ -1941,6 +1916,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
             subtitle = storageTargetSummary(storageTarget),
             leading = "□",
             trailing = "›",
+            subtitleMaxLines = 1,
             modifier = Modifier
                 .clickable(onClick = onSelectStorageTarget)
                 .testTag("ytdl-download-storage-target"),
@@ -2038,16 +2014,6 @@ private fun historyMissingLocalOutputMessage(error: Throwable?): String {
     }
 }
 
-private fun historyMissingSubtitleOutputMessage(error: Throwable?): String {
-    val fallback = "历史记录对应的字幕文件不存在或为空，请重新下载或删除该记录。"
-    val message = error?.message.orEmpty()
-    return if (message.contains("不存在") || message.contains("为空") || message.contains("本地输出")) {
-        fallback
-    } else {
-        message.ifBlank { fallback }
-    }
-}
-
 internal fun shouldShowQueueRuntimeMessageForUiTest(message: String): Boolean = shouldShowQueueRuntimeMessage(message)
 
 private fun shouldShowQueueRuntimeMessage(message: String): Boolean {
@@ -2080,7 +2046,7 @@ private fun UrlInputField(
     val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = modifier
-            .height(54.dp)
+            .defaultMinSize(minHeight = 54.dp)
             .clip(shape)
             .border(1.dp, palette.borderColor, shape)
             .background(Color.White.copy(alpha = 0.92f))
@@ -2093,7 +2059,10 @@ private fun UrlInputField(
             factory = { context ->
                 EditText(context).apply {
                     id = R.id.ytdl_url_input
-                    setSingleLine(true)
+                    setSingleLine(false)
+                    minLines = 1
+                    maxLines = 5
+                    setHorizontallyScrolling(false)
                     setPadding(0, 0, 0, 0)
                     background = null
                     includeFontPadding = false
@@ -2101,6 +2070,7 @@ private fun UrlInputField(
                     hint = "粘贴公开视频页面地址"
                     inputType = InputType.TYPE_CLASS_TEXT or
                         InputType.TYPE_TEXT_VARIATION_URI or
+                        InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                         InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                     imeOptions = EditorInfo.IME_ACTION_DONE
                     installUrlSelectionActionModeCallbacks()
@@ -2249,21 +2219,7 @@ private fun RuntimeMessageCard(message: String) {
 internal fun downloadPreviewFormatSummaryForUiTest(state: RuntimeDownloadState): String = downloadPreviewFormatSummary(state)
 
 private fun downloadPreviewFormatSummary(state: RuntimeDownloadState): String {
-    return formatSelectionSummaryWithSubtitles(
-        state.analysis,
-        state.appliedFormatSelection,
-        state.selectedSubtitles,
-    )
-}
-
-private fun formatSelectionSummaryWithSubtitles(
-    analysis: VideoAnalysis?,
-    selection: FormatSelection,
-    selectedSubtitles: List<SubtitleInfo>,
-): String {
-    val mediaSummary = formatSelectionSummary(analysis, selection)
-    if (selectedSubtitles.isEmpty()) return mediaSummary
-    return "$mediaSummary · 独立字幕文件"
+    return formatSelectionSummary(state.analysis, state.appliedFormatSelection)
 }
 
 private fun formatDuration(totalSeconds: Long): String {
@@ -2280,9 +2236,7 @@ private fun formatDuration(totalSeconds: Long): String {
 internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
     analysis: VideoAnalysis?,
     selection: FormatSelection,
-    selectedSubtitles: List<SubtitleInfo>,
     onSelectionChange: (FormatSelection) -> Unit,
-    onSubtitleSelectionChange: (List<SubtitleInfo>) -> Unit,
     onFinishSelection: () -> Unit,
 ) {
     val modeAvailability = FormatMode.entries.map { mode -> isFormatModeAvailable(analysis, mode) }
@@ -2332,6 +2286,16 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
                                 onSelectionChange(selectionFromRow(selection.mode, row))
                             }
                         },
+                        onCodecSelect = { option ->
+                            if (row.selectable) {
+                                onSelectionChange(
+                                    selectionFromRow(
+                                        selection.mode,
+                                        row.copy(videoFormatId = option.videoFormatId),
+                                    ),
+                                )
+                            }
+                        },
                     )
                 }
             }
@@ -2368,29 +2332,9 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
         )
     }
     item {
-        val subtitles = analysis?.subtitles.orEmpty()
-        val hasSubtitles = subtitles.isNotEmpty()
-        val subtitleUi = subtitleSelectionUiState(analysis, selectedSubtitles)
-        val newSelection = if (selectedSubtitles.isEmpty() && hasSubtitles) {
-            listOfNotNull(recommendedSubtitle(subtitles))
-        } else {
-            emptyList()
-        }
-        SettingLineCard(
-            "字幕",
-            subtitleUi.label,
-            "▾",
-            subtitleUi.trailing,
-            enabled = subtitleUi.canToggle,
-            modifier = Modifier
-                .clickable(enabled = subtitleUi.canToggle) { onSubtitleSelectionChange(newSelection) }
-                .testTag("ytdl-format-subtitle-toggle"),
-        )
-    }
-    item {
         val palette = LocalYtdlAppPalette.current
         val summaryTitle = if (hasAnalysis) {
-            "实际下载：${formatSelectionSummaryWithSubtitles(analysis, selection, selectedSubtitles)}"
+            "实际下载：${formatSelectionSummary(analysis, selection)}"
         } else {
             "分析后显示真实格式"
         }
@@ -2480,6 +2424,7 @@ private fun formatSettingSummaries(
 internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
     state: RuntimeDownloadState,
     onCancelDownload: () -> Unit,
+    onRetryDownload: (DownloadRequest) -> Unit,
 ) {
     item {
         val palette = LocalYtdlAppPalette.current
@@ -2504,7 +2449,9 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
         item {
             val palette = LocalYtdlAppPalette.current
             val progress = queueProgressPresentation(state)
-            val title = state.analysis?.title?.takeIf { it.isNotBlank() } ?: "真实下载任务"
+            val title = state.activeRequest?.title?.takeIf { it.isNotBlank() }
+                ?: state.analysis?.title?.takeIf { it.isNotBlank() }
+                ?: "真实下载任务"
             Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
                 QueueCard(
                     title = title,
@@ -2513,11 +2460,15 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                     status = queueCardStatus(state),
                     meta = queueCardMeta(state),
                     formatBadge = queueCardFormatBadge(state),
+                    codecBadge = queueCardCodecBadge(state),
                     stageItems = queueStageItems(state),
                     accent = queueCardAccent(state, palette),
                     actions = queueCardActions(state),
                     thumbnailBitmap = state.thumbnailBitmap,
                     onCancel = onCancelDownload,
+                    onRetry = state.activeRequest?.let { request ->
+                        { onRetryDownload(request) }
+                    },
                 )
             }
         }
@@ -2532,6 +2483,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
                 status = "待开始",
                 meta = "这里不会显示假进度",
                 formatBadge = "",
+                codecBadge = "",
                 stageItems = emptyList(),
                 accent = palette.queueAccent,
                 actions = emptyList(),
@@ -2703,8 +2655,7 @@ private fun queueStageSpecs(request: DownloadRequest?): List<QueueStageSpec> {
             QueueStageSpec("原生合并", DownloadStage.Merging),
         )
     }
-    if (request.selectedSubtitles.isEmpty()) return mediaStages
-    return mediaStages + QueueStageSpec("字幕文件", DownloadStage.DownloadingSubtitles)
+    return mediaStages
 }
 
 private fun queueStageItems(state: RuntimeDownloadState): List<QueueStageItem> {
@@ -2766,13 +2717,9 @@ internal fun queueCardStatusForUiTest(state: RuntimeDownloadState): String = que
 private fun queueCardMeta(state: RuntimeDownloadState): String {
     val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
     val total = state.totalBytes?.let(::formatBytes) ?: "未知大小"
-    val outputSummary = when {
-        state.subtitleOutputCount > 0 -> " · 媒体文件 + 独立字幕文件"
-        state.outputPath.isNotBlank() -> " · 媒体文件"
-        else -> ""
-    }
+    val outputSummary = if (state.outputPath.isNotBlank()) " · 媒体文件" else ""
     val outputPolicy = if (state.outputPath.isNotBlank()) {
-        " · App 私有目录 · 导出名：标题+时间；重名加序号"
+        " · App 私有目录"
     } else {
         ""
     }
@@ -2784,6 +2731,11 @@ internal fun queueCardMetaForUiTest(state: RuntimeDownloadState): String = queue
 private fun queueCardFormatBadge(state: RuntimeDownloadState): String = formatResolutionBadgeForRequest(state.activeRequest)
 
 internal fun queueCardFormatBadgeForUiTest(state: RuntimeDownloadState): String = queueCardFormatBadge(state)
+
+private fun queueCardCodecBadge(state: RuntimeDownloadState): String = formatCodecBadgeForRequest(state.activeRequest)
+
+internal fun queueCardCodecBadgeForUiTest(state: RuntimeDownloadState): String = queueCardCodecBadge(state)
+
 
 private fun queueCardAccent(
     state: RuntimeDownloadState,
@@ -2805,7 +2757,8 @@ internal fun queueCardAccentForUiTest(
 private fun queueCardActions(state: RuntimeDownloadState): List<String> {
     if (!state.hasRealTask) return emptyList()
     return when (state.downloadStatus) {
-        "下载完成", "下载失败", "已取消" -> emptyList()
+        "下载失败" -> if (state.activeRequest != null) listOf("重试") else emptyList()
+        "下载完成", "已取消" -> emptyList()
         else -> listOf("取消")
     }
 }
@@ -2839,9 +2792,8 @@ private fun settingsCookiesSubtitle(settings: AppSettings): String {
 
 private fun storageTargetSummary(target: StorageTarget): String {
     return when (val safeTarget = StorageTargets.sanitizeDefault(target)) {
-        StorageTarget.AppPrivate -> "App 私有目录 · 完成后保留在应用内"
-        is StorageTarget.SafTree -> "${StorageTargets.displayName(safeTarget)} · 完成后自动复制，私有文件保留"
-        else -> "App 私有目录 · 完成后保留在应用内"
+        StorageTarget.AppPrivate -> "App 私有目录；完成文件由 App 保留"
+        is StorageTarget.SafTree -> "${StorageTargets.displayName(safeTarget)}；完成后清理 App 内中转文件"
     }
 }
 
@@ -2982,7 +2934,7 @@ private fun HistoryFilterButton(
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
+internal fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
     historyItems: List<HistoryUiItem>,
     historyQuery: String,
     selectedFilterIndex: Int,
@@ -2991,9 +2943,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
     onHistoryFilterChange: (Int) -> Unit,
     onOpen: (HistoryUiItem) -> Unit,
     onShare: (HistoryUiItem) -> Unit,
-    onExport: (HistoryUiItem) -> Unit,
-    onShareSubtitle: (HistoryUiItem) -> Unit,
-    onExportSubtitle: (HistoryUiItem) -> Unit,
+    onRetry: (HistoryUiItem) -> Unit,
     onDelete: (HistoryUiItem) -> Unit,
 ) {
     val visibleItems = filterHistoryItems(historyItems, historyQuery, selectedFilterIndex)
@@ -3034,9 +2984,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
                 item = item,
                 onOpen = { onOpen(item) },
                 onShare = { onShare(item) },
-                onExport = { onExport(item) },
-                onShareSubtitle = { onShareSubtitle(item) },
-                onExportSubtitle = { onExportSubtitle(item) },
+                onRetry = { onRetry(item) },
                 onDelete = { onDelete(item) },
                 modifier = Modifier.testTag("ytdl-history-real-card"),
             )
@@ -3052,6 +3000,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     notificationRuntimePermissionRequired: Boolean,
     onSelectCookies: () -> Unit,
     onSelectStorageTarget: () -> Unit,
+    onResetStorageTarget: () -> Unit,
     onShowParserStatus: () -> Unit,
     onShowMediaProcessorExplanation: () -> Unit,
     onShowUrlValidationExplanation: () -> Unit,
@@ -3062,14 +3011,24 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
 ) {
     item {
         SettingLineCard(
-            "默认保存位置",
-            storageTargetSummary(settings.defaultStorageTarget),
+            "保存位置",
+            StorageTargets.displayName(StorageTargets.sanitizeDefault(settings.defaultStorageTarget)),
             "▣",
             "›",
             LocalYtdlAppPalette.current.settingsAccent,
+            subtitleMaxLines = 1,
             modifier = Modifier
                 .clickable(onClick = onSelectStorageTarget)
                 .testTag("ytdl-settings-storage-target"),
+            supportingContent = {
+                TextButton(
+                    onClick = onResetStorageTarget,
+                    enabled = StorageTargets.sanitizeDefault(settings.defaultStorageTarget) is StorageTarget.SafTree,
+                    modifier = Modifier.testTag("ytdl-settings-storage-target-reset"),
+                ) {
+                    Text("恢复默认路径")
+                }
+            },
         )
     }
     item {
@@ -3189,7 +3148,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
         }
     }
     item { Spacer(Modifier.height(SettingsAppearanceBottomBuffer)) }
-    item { SettingLineCard("关于", "版本 1.0.0", "i", "›", Color(0xFF55606C)) }
+    item { SettingLineCard("关于", "版本 ${BuildConfig.VERSION_NAME}", "i", "›", Color(0xFF55606C)) }
 }
 
 @Composable
@@ -3332,8 +3291,13 @@ private fun SegmentedRow(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
+private fun ResolutionRow(
+    row: FormatResolutionRow,
+    onSelect: () -> Unit,
+    onCodecSelect: (FormatCodecOption) -> Unit,
+) {
     val palette = LocalYtdlAppPalette.current
     val tagSuffix = row.height?.toString() ?: "auto"
     val badge = when {
@@ -3351,7 +3315,7 @@ private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
             .testTag("ytdl-format-row-$tagSuffix")
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = if (row.selected) "✓" else "○",
@@ -3360,10 +3324,39 @@ private fun ResolutionRow(row: FormatResolutionRow, onSelect: () -> Unit) {
         )
         Text(
             text = row.label,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.defaultMinSize(minWidth = 54.dp),
             color = if (row.selectable) palette.titleText else palette.softText.copy(alpha = 0.55f),
             fontWeight = if (row.selected) FontWeight.Bold else FontWeight.Normal,
         )
+        if (row.codecOptions.isEmpty()) {
+            Spacer(modifier = Modifier.weight(1f))
+        } else {
+            FlowRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                row.codecOptions.forEach { option ->
+                    val codecTagSuffix = option.label.lowercase().filter { it.isLetterOrDigit() }
+                    Surface(
+                        modifier = Modifier
+                            .padding(start = 4.dp)
+                            .testTag("ytdl-format-codec-$tagSuffix-$codecTagSuffix")
+                            .clickable(enabled = row.selectable) { onCodecSelect(option) },
+                        color = if (option.selected) palette.formatAccent else palette.mutedCardBackground,
+                        contentColor = if (option.selected) Color.White else palette.softText,
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            option.label,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+        }
         if (badge != null) {
             Surface(color = palette.mutedCardBackground, shape = RoundedCornerShape(10.dp)) {
                 Text(
@@ -3386,7 +3379,9 @@ private fun SettingLineCard(
     accent: Color? = null,
     inCard: Boolean = true,
     enabled: Boolean = true,
+    subtitleMaxLines: Int = 2,
     modifier: Modifier = Modifier,
+    supportingContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val palette = LocalYtdlAppPalette.current
     val resolvedAccent = accent ?: palette.formatAccent
@@ -3411,7 +3406,8 @@ private fun SettingLineCard(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, color = titleColor, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, color = subtitleColor, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = subtitleColor, style = MaterialTheme.typography.bodySmall, maxLines = subtitleMaxLines, overflow = TextOverflow.Ellipsis)
+                supportingContent?.invoke(this)
             }
             Text(trailing, color = subtitleColor, style = MaterialTheme.typography.titleSmall)
         }
@@ -3465,12 +3461,14 @@ private fun QueueCard(
     status: String,
     meta: String,
     formatBadge: String,
+    codecBadge: String,
     stageItems: List<QueueStageItem>,
     accent: Color,
     actions: List<String>,
     modifier: Modifier = Modifier,
     thumbnailBitmap: Bitmap? = null,
     onCancel: (() -> Unit)? = null,
+    onRetry: (() -> Unit)? = null,
 ) {
     val palette = LocalYtdlAppPalette.current
     AppCard(modifier = modifier) {
@@ -3515,12 +3513,23 @@ private fun QueueCard(
                 if (actions.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         actions.forEach { action ->
-                            if (action == "取消" && onCancel != null) {
+                            val actionCallback = when (action) {
+                                "取消" -> onCancel
+                                "重试" -> onRetry
+                                else -> null
+                            }
+                            if (actionCallback != null) {
                                 Box(
                                     modifier = Modifier
-                                        .testTag("ytdl-queue-cancel-action")
+                                        .testTag(
+                                            if (action == "重试") {
+                                                "ytdl-queue-retry-action"
+                                            } else {
+                                                "ytdl-queue-cancel-action"
+                                            },
+                                        )
                                         .clip(RoundedCornerShape(10.dp))
-                                        .clickable(onClick = onCancel)
+                                        .clickable(onClick = actionCallback)
                                         .defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
                                     contentAlignment = Alignment.Center,
@@ -3549,9 +3558,11 @@ private fun QueueCard(
                 status = status,
                 statusAccent = accent,
                 formatBadge = formatBadge,
+                codecBadge = codecBadge,
                 formatAccent = palette.formatAccent,
                 statusTag = "ytdl-queue-status-badge",
                 formatTag = "ytdl-queue-format-badge",
+                codecTag = "ytdl-queue-codec-badge",
             )
         }
     }
@@ -3606,9 +3617,7 @@ private fun HistoryCard(
     item: HistoryUiItem,
     onOpen: () -> Unit,
     onShare: () -> Unit,
-    onExport: () -> Unit,
-    onShareSubtitle: () -> Unit,
-    onExportSubtitle: () -> Unit,
+    onRetry: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -3661,9 +3670,7 @@ private fun HistoryCard(
                         val callback = when (action) {
                             "打开" -> onOpen
                             "分享" -> onShare
-                            "导出" -> onExport
-                            "分享字幕" -> onShareSubtitle
-                            "导出字幕" -> onExportSubtitle
+                            "再次下载" -> onRetry
                             else -> onDelete
                         }
                         HistoryActionChip(
@@ -3689,9 +3696,11 @@ private fun HistoryCard(
                 status = item.badge,
                 statusAccent = historyStatusBadgeAccent(item, palette),
                 formatBadge = item.formatBadge,
+                codecBadge = item.codecBadge,
                 formatAccent = palette.formatAccent,
                 statusTag = "ytdl-history-status-badge",
                 formatTag = "ytdl-history-format-badge",
+                codecTag = "ytdl-history-codec-badge",
             )
         }
     }
@@ -3699,8 +3708,8 @@ private fun HistoryCard(
 
 private fun historyActionIcon(action: String): ImageVector = when (action) {
     "打开" -> HistoryOpenIcon
-    "分享", "分享字幕" -> HistoryShareIcon
-    "导出", "导出字幕" -> HistoryExportIcon
+    "分享" -> HistoryShareIcon
+    "再次下载" -> HistoryRetryIcon
     else -> HistoryDeleteIcon
 }
 
@@ -3746,9 +3755,11 @@ private fun CardTrailingBadges(
     status: String,
     statusAccent: Color,
     formatBadge: String,
+    codecBadge: String,
     formatAccent: Color,
     statusTag: String,
     formatTag: String,
+    codecTag: String,
 ) {
     Column(
         modifier = Modifier.fillMaxHeight(),
@@ -3760,12 +3771,24 @@ private fun CardTrailingBadges(
             accent = statusAccent,
             tag = statusTag,
         )
-        if (formatBadge.isNotBlank()) {
-            CardPillBadge(
-                text = formatBadge,
-                accent = formatAccent,
-                tag = formatTag,
-            )
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (codecBadge.isNotBlank()) {
+                CardPillBadge(
+                    text = codecBadge,
+                    accent = formatAccent,
+                    tag = codecTag,
+                )
+            }
+            if (formatBadge.isNotBlank()) {
+                CardPillBadge(
+                    text = formatBadge,
+                    accent = formatAccent,
+                    tag = formatTag,
+                )
+            }
         }
     }
 }

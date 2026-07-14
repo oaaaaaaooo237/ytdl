@@ -43,9 +43,11 @@ class PrivateDownloadCacheTest {
     }
 
     @Test
-    fun inspectAndClearDeleteOnlyPrivateChildrenAndBrokenRecords() {
+    fun inspectAndClearDeleteOnlyUnreferencedTemporaryFiles() {
         val media = File(privateRoot, "task-1/video.mp4").writeBytesAfterCreating(byteArrayOf(1, 2, 3))
         val subtitle = File(privateRoot, "task-1/video.zh.srt").writeBytesAfterCreating(byteArrayOf(4, 5, 6, 7))
+        val orphanTemporary = File(privateRoot, "task-orphan/video.part")
+            .writeBytesAfterCreating(byteArrayOf(10, 11, 12, 13, 14))
         val externalCopy = File(testRoot, "saf-copy/video.mp4").writeBytesAfterCreating(byteArrayOf(8, 9))
         val mediaUri = ExportController.appPrivateOutputUri(media.absolutePath, privateRoot.absolutePath)
         val subtitleUri = ExportController.appPrivateOutputUri(subtitle.absolutePath, privateRoot.absolutePath)
@@ -57,23 +59,70 @@ class PrivateDownloadCacheTest {
         database.historyDao().insert(historyItem("外部历史", externalUri, null))
         val cache = PrivateDownloadCache(privateRoot, database.queueDao(), database.historyDao())
 
-        assertEquals(CacheStats(bytes = 7, fileCount = 2), cache.inspect())
+        assertEquals(CacheStats(bytes = 5, fileCount = 1), cache.inspect())
         val result = cache.clear()
 
         assertEquals(
             CacheClearResult.Success(
-                freedBytes = 7,
-                deletedFileCount = 2,
-                removedQueueRecordCount = 1,
-                removedHistoryRecordCount = 2,
+                freedBytes = 5,
+                deletedFileCount = 1,
             ),
             result,
         )
         assertTrue(privateRoot.isDirectory)
-        assertTrue(privateRoot.listFiles().orEmpty().isEmpty())
+        assertTrue(media.isFile)
+        assertTrue(subtitle.isFile)
+        assertFalse(orphanTemporary.exists())
         assertTrue(externalCopy.isFile)
-        assertEquals(listOf("外部队列"), database.queueDao().listAll().map { it.title })
-        assertEquals(listOf("外部历史"), database.historyDao().listAll().map { it.title })
+        assertEquals(2, database.queueDao().listAll().size)
+        assertEquals(3, database.historyDao().listAll().size)
+    }
+
+    @Test
+    fun completedPrivateTaskSurvivesHistoryDeletionAndCacheClear() {
+        val completedTask = File(privateRoot, "task-completed").apply { mkdirs() }
+        val completedMedia = File(completedTask, "merged-137-140.mp4")
+            .writeBytesAfterCreating(byteArrayOf(1, 2, 3, 4))
+        val completedOutput = ExportController.discoverAppPrivateOutput(completedMedia, privateRoot).getOrThrow()
+        ExportController.markPrivateTaskStarted(completedTask).getOrThrow()
+        ExportController.markAppPrivateTaskCompleted(listOf(completedOutput)).getOrThrow()
+
+        val incompleteTask = File(privateRoot, "task-incomplete").apply { mkdirs() }
+        val orphanStream = File(incompleteTask, "download-video-video.mp4")
+            .writeBytesAfterCreating(byteArrayOf(5, 6, 7))
+        ExportController.markPrivateTaskStarted(incompleteTask).getOrThrow()
+        val cache = PrivateDownloadCache(privateRoot, database.queueDao(), database.historyDao())
+
+        assertEquals(CacheStats(bytes = 3, fileCount = 1), cache.inspect())
+        assertEquals(CacheClearResult.Success(freedBytes = 3, deletedFileCount = 1), cache.clear())
+        assertTrue("删除历史后也必须保留用户完成文件", completedMedia.isFile)
+        assertFalse(orphanStream.exists())
+    }
+
+    @Test
+    fun clearReportsIncompleteWhenTemporaryFileCannotBeDeleted() {
+        val incompleteTask = File(privateRoot, "task-delete-failure").apply { mkdirs() }
+        val temporary = File(incompleteTask, "download-video-video.mp4")
+            .writeBytesAfterCreating(byteArrayOf(1, 2, 3))
+        ExportController.markPrivateTaskStarted(incompleteTask).getOrThrow()
+        val cache = PrivateDownloadCache(
+            rootDirectory = privateRoot,
+            queueDao = database.queueDao(),
+            historyDao = database.historyDao(),
+            deleteFile = { false },
+        )
+
+        assertEquals(
+            CacheClearResult.Incomplete(
+                freedBytes = 0,
+                deletedFileCount = 0,
+                remainingBytes = 3,
+                remainingFileCount = 1,
+            ),
+            cache.clear(),
+        )
+        assertTrue(temporary.isFile)
+        assertEquals(CacheStats(bytes = 3, fileCount = 1), cache.inspect())
     }
 
     @Test
@@ -83,7 +132,7 @@ class PrivateDownloadCacheTest {
 
         assertEquals(CacheStats(bytes = 0, fileCount = 0), cache.inspect())
         assertEquals(
-            CacheClearResult.Success(0, 0, 0, 0),
+            CacheClearResult.Success(0, 0),
             cache.clear(),
         )
         assertTrue(privateRoot.isDirectory)

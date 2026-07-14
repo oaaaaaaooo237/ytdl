@@ -2,8 +2,6 @@ package com.garyapp.ytdl.storage
 
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.OutputStream
-import java.lang.reflect.InvocationTargetException
 import java.util.concurrent.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,7 +27,7 @@ class SafTreeExportTest {
         val names = mutableListOf<String>()
         val destinations = linkedMapOf<String, ByteArrayOutputStream>()
 
-        val bytes = invokeTreeExport(
+        val result = ExportController.copyToSafTreeWithDocuments(
             treeUri = TreeUri,
             outputs = outputs,
             createDocument = { parent, _, name ->
@@ -41,14 +39,87 @@ class SafTreeExportTest {
                 ByteArrayOutputStream().also { destinations[uri] = it }
             },
             deleteDocument = {},
+            isCancellationRequested = { false },
         )
 
-        assertEquals(media.length() + subtitle.length(), bytes)
+        assertEquals(media.length() + subtitle.length(), result.bytesWritten)
         assertEquals(listOf(TreeDocumentUri, TreeDocumentUri), parents)
         assertEquals(listOf("video.mp4", "subtitle.vtt"), names)
         assertEquals(listOf("media", "subtitle"), destinations.values.map { it.toString(Charsets.UTF_8.name()) })
         assertTrue(media.isFile)
         assertTrue(subtitle.isFile)
+    }
+
+    @Test
+    fun detailedTreeExportReturnsEveryCreatedDocumentUriInInputOrder() {
+        val root = temp.newFolder("private-detailed")
+        val media = File(root, "video.mp4").apply { writeText("media") }
+        val subtitle = File(root, "subtitle.vtt").apply { writeText("subtitle") }
+        val outputs = listOf(media, subtitle).map {
+            ExportController.discoverAppPrivateOutput(it, root).getOrThrow()
+        }
+        val created = mutableListOf<String>()
+
+        val result = ExportController.copyToSafTreeWithDocuments(
+            treeUri = TreeUri,
+            outputs = outputs,
+            createDocument = { _, _, _ ->
+                "content://com.android.externalstorage.documents/document/export-${created.size + 1}"
+                    .also(created::add)
+            },
+            openOutputStream = { ByteArrayOutputStream() },
+            deleteDocument = {},
+            isCancellationRequested = { false },
+        )
+
+        assertEquals(media.length() + subtitle.length(), result.bytesWritten)
+        assertEquals(created, result.documentUris)
+    }
+
+    @Test
+    fun completedSafExportCleanupDeletesOnlyValidatedPrivateTaskDirectory() {
+        val root = temp.newFolder("private-cleanup")
+        val task = File(root, "task-123-1").apply { mkdirs() }
+        val media = File(task, "video.mp4").apply { writeText("media") }
+        val subtitle = File(task, "subtitle.vtt").apply { writeText("subtitle") }
+        val intermediate = File(task, "video.part").apply { writeText("temporary") }
+        val outside = File(root.parentFile, "outside.mp4").apply { writeText("outside") }
+        val outputs = listOf(media, subtitle).map {
+            ExportController.discoverAppPrivateOutput(it, root).getOrThrow()
+        }
+
+        ExportController.cleanupExportedPrivateTask(outputs).getOrThrow()
+
+        assertFalse(task.exists())
+        assertFalse(intermediate.exists())
+        assertTrue(outside.isFile)
+    }
+
+    @Test
+    fun completedSafExportCleanupRejectsFilesOutsideTaskSubdirectory() {
+        val root = temp.newFolder("private-cleanup-reject")
+        val completedFile = File(root, "completed.mp4").apply { writeText("completed") }
+        val output = ExportController.discoverAppPrivateOutput(completedFile, root).getOrThrow()
+
+        assertTrue(ExportController.cleanupExportedPrivateTask(listOf(output)).isFailure)
+        assertTrue(completedFile.isFile)
+    }
+
+    @Test
+    fun completedSafExportCleanupReportsDeletionFailure() {
+        val root = temp.newFolder("private-cleanup-failure")
+        val task = File(root, "task-123-2").apply { mkdirs() }
+        val media = File(task, "video.mp4").apply { writeText("media") }
+        val output = ExportController.discoverAppPrivateOutput(media, root).getOrThrow()
+
+        val result = ExportController.cleanupExportedPrivateTask(
+            outputs = listOf(output),
+            deleteTaskDirectory = { false },
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(task.isDirectory)
+        assertTrue(media.isFile)
     }
 
     @Test
@@ -60,12 +131,13 @@ class SafTreeExportTest {
         val deleted = mutableListOf<String>()
 
         val failure = runCatching {
-            invokeTreeExport(
+            ExportController.copyToSafTreeWithDocuments(
                 treeUri = TreeUri,
                 outputs = listOf(output),
                 createDocument = { _, _, _ -> createdUri },
                 openOutputStream = { throw IllegalStateException("raw failure $TreeUri ${media.absolutePath}") },
                 deleteDocument = { deleted += it },
+                isCancellationRequested = { false },
             )
         }.exceptionOrNull()
 
@@ -73,7 +145,7 @@ class SafTreeExportTest {
         assertTrue(media.isFile)
         assertEquals(listOf(createdUri), deleted)
         val message = failure?.message.orEmpty()
-        assertTrue(message.contains("App 私有文件"))
+        assertTrue(message.contains("私有中转文件"))
         assertFalse(message.contains("content://"))
         assertFalse(message.contains(media.absolutePath))
     }
@@ -90,7 +162,7 @@ class SafTreeExportTest {
         var cancellationRequested = false
 
         val failure = runCatching {
-            invokeCancelableTreeExport(
+            ExportController.copyToSafTreeWithDocuments(
                 treeUri = TreeUri,
                 outputs = outputs,
                 createDocument = { _, _, _ ->
@@ -114,58 +186,6 @@ class SafTreeExportTest {
         assertEquals(1, created.size)
         assertEquals(created, deleted)
         assertTrue(outputs.all { File(root, it.displayName).isFile })
-    }
-
-    private fun invokeTreeExport(
-        treeUri: String,
-        outputs: List<ExportController.AppPrivateOutput>,
-        createDocument: (String, String, String) -> String?,
-        openOutputStream: (String) -> OutputStream?,
-        deleteDocument: (String) -> Unit,
-    ): Long {
-        val method = ExportController::class.java.methods.firstOrNull {
-            it.name == "copyToSafTree" && it.parameterCount == 5
-        }
-        assertNotNull("缺少 SAF tree 自动导出入口", method)
-        return try {
-            method!!.invoke(
-                null,
-                treeUri,
-                outputs,
-                createDocument,
-                openOutputStream,
-                deleteDocument,
-            ) as Long
-        } catch (error: InvocationTargetException) {
-            throw error.targetException
-        }
-    }
-
-    private fun invokeCancelableTreeExport(
-        treeUri: String,
-        outputs: List<ExportController.AppPrivateOutput>,
-        createDocument: (String, String, String) -> String?,
-        openOutputStream: (String) -> OutputStream?,
-        deleteDocument: (String) -> Unit,
-        isCancellationRequested: () -> Boolean,
-    ): Long {
-        val method = ExportController::class.java.methods.firstOrNull {
-            it.name == "copyToSafTree" && it.parameterCount == 6
-        }
-        assertNotNull("缺少可取消的 SAF tree 自动导出入口", method)
-        return try {
-            method!!.invoke(
-                null,
-                treeUri,
-                outputs,
-                createDocument,
-                openOutputStream,
-                deleteDocument,
-                isCancellationRequested,
-            ) as Long
-        } catch (error: InvocationTargetException) {
-            throw error.targetException
-        }
     }
 
     private companion object {

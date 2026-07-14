@@ -1,13 +1,20 @@
 package com.garyapp.ytdl.ui
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.text.InputType
+import android.widget.EditText
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
@@ -37,6 +44,7 @@ import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
+import com.garyapp.ytdl.download.RetryDownloadDraft
 import com.garyapp.ytdl.ui.theme.YtdlTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,6 +52,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import java.io.File
@@ -84,34 +93,77 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun downloadAndSettingsStorageRowsShareClickablePersistedTreeSelection() {
+    fun settingsStorageCardShowsTargetResetsWithoutPickerAndOpensFolderPicker() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repository = SettingsRepository.fromContext(context)
         repository.setDefaultStorageTarget(
             StorageTarget.SafTree(
                 treeUri = "content://com.android.externalstorage.documents/tree/primary%3AMovies",
-                displayName = "视频导出",
+                displayName = "视频保存",
             ),
         )
 
         try {
-            composeRule.setContent { YtdlApp() }
+            lateinit var hostContext: Context
+            composeRule.setContent {
+                hostContext = LocalContext.current
+                YtdlApp()
+            }
 
             composeRule.onNodeWithTag("ytdl-screen-download")
                 .performScrollToNode(hasTestTag("ytdl-download-storage-target"))
-            composeRule.onNodeWithText("视频导出 · 完成后自动复制，私有文件保留").assertExists()
             composeRule.onNodeWithTag("ytdl-download-storage-target")
-                .performClick()
-            composeRule.onNodeWithTag("ytdl-storage-target-dialog").assertExists()
-            composeRule.onNodeWithTag("ytdl-storage-target-dialog-cancel").performClick()
+                .assertHasClickAction()
+            composeRule.onNodeWithText("视频保存；完成后清理 App 内中转文件").assertExists()
 
             composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
             composeRule.onNodeWithTag("ytdl-screen-settings")
                 .performScrollToNode(hasTestTag("ytdl-settings-storage-target"))
-            composeRule.onNodeWithText("视频导出 · 完成后自动复制，私有文件保留").assertExists()
             composeRule.onNodeWithTag("ytdl-settings-storage-target")
-                .performClick()
-            composeRule.onNodeWithTag("ytdl-storage-target-dialog").assertExists()
+                .assertHasClickAction()
+            composeRule.onNodeWithText("保存位置").assertExists()
+            composeRule.onNodeWithText("默认保存位置").assertDoesNotExist()
+            composeRule.onNodeWithText("视频保存").assertExists()
+            composeRule.onNodeWithText("content://", substring = true).assertDoesNotExist()
+            composeRule.onNodeWithTag("ytdl-settings-storage-target-reset")
+                .assertIsEnabled()
+
+            val shadowActivity = shadowOf(hostContext.requireActivity())
+            assertEquals(null, shadowActivity.nextStartedActivityForResult)
+            composeRule.onNodeWithTag("ytdl-settings-storage-target-reset").performClick()
+
+            assertEquals(
+                StorageTarget.AppPrivate,
+                SettingsRepository.fromContext(context).getSettings().defaultStorageTarget,
+            )
+            composeRule.onNodeWithText("App 私有目录").assertExists()
+            composeRule.onNodeWithTag("ytdl-settings-storage-target-reset")
+                .assertIsNotEnabled()
+            assertEquals(null, shadowActivity.nextStartedActivityForResult)
+
+            composeRule.onNodeWithTag("ytdl-settings-storage-target").performClick()
+            assertEquals(
+                Intent.ACTION_OPEN_DOCUMENT_TREE,
+                shadowActivity.nextStartedActivityForResult.intent.action,
+            )
+
+            assertEquals(
+                "App 私有目录；完成文件由 App 保留",
+                storageTargetSummaryForUiTest(StorageTarget.AppPrivate),
+            )
+            val source = sourceFile(
+                "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+                "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            ).readText()
+            assertEquals(
+                2,
+                Regex("""onSelectStorageTarget = \{ storageTreePicker\.launch\(null\) \}""")
+                    .findAll(source)
+                    .count(),
+            )
+            assertEquals(2, Regex("""subtitleMaxLines = 1""").findAll(source).count())
+            assertFalse(source.contains("showStorageTargetDialog"))
+            assertFalse(source.contains("ytdl-storage-target-dialog"))
         } finally {
             repository.setDefaultStorageTarget(StorageTarget.AppPrivate)
         }
@@ -129,7 +181,6 @@ class DownloadGuiBindingTest {
         assertTrue(source.contains("Intent.FLAG_GRANT_WRITE_URI_PERMISSION"))
         assertTrue(source.contains("takePersistableUriPermission"))
         assertTrue(source.contains("releasePersistableUriPermission"))
-        assertTrue(source.contains("onSelectStorageTarget = ::openStorageTargetChooser"))
     }
 
     @Test
@@ -216,42 +267,30 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun appScreensStartWithDedicatedPunchHoleSafeArea() {
+    fun appUsesSystemSafeDrawingAndContentSpacingWithoutPunchHole() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("private fun TopPunchHoleSafeArea("))
-        assertTrue(source.contains("item { TopPunchHoleSafeArea() }"))
-        assertTrue(source.contains(".testTag(\"ytdl-top-safe-area\")"))
-        assertTrue(source.contains(".testTag(\"ytdl-top-punch-hole\")"))
+        assertTrue(source.contains("contentWindowInsets = WindowInsets.safeDrawing,"))
+        assertTrue(source.contains("WindowInsets.navigationBars"))
+        assertTrue(source.contains("private val TopContentSpacing = 16.dp"))
+        val topContentSpacer = "item { Spacer(Modifier.height(TopContentSpacing)) }"
+        assertTrue(source.contains(topContentSpacer))
+        assertTrue(source.indexOf(topContentSpacer) < source.indexOf("item { PageHeader(selected) }"))
+        assertFalse(source.contains("TopPunchHoleSafeArea"))
+        assertFalse(source.contains("TopSafeAreaHeight"))
+        assertFalse(source.contains("TopPunchHoleSize"))
+        assertFalse(source.contains("ytdl-top-safe-area"))
+        assertFalse(source.contains("ytdl-top-punch-hole"))
         assertTrue(source.contains(".testTag(\"ytdl-page-header\")"))
-        assertTrue(source.indexOf("item { TopPunchHoleSafeArea() }") < source.indexOf("item { PageHeader(selected) }"))
 
         composeRule.setContent { YtdlApp() }
 
-        composeRule.onNodeWithTag("ytdl-top-safe-area").assertExists()
-        composeRule.onNodeWithTag("ytdl-top-punch-hole").assertExists()
+        composeRule.onAllNodesWithTag("ytdl-top-safe-area").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-top-punch-hole").assertCountEquals(0)
         composeRule.onNodeWithTag("ytdl-page-header").assertExists()
-        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-top-safe-area"))
-
-        val safeBounds = composeRule.onNodeWithTag("ytdl-top-safe-area").getUnclippedBoundsInRoot()
-        val punchBounds = composeRule.onNodeWithTag("ytdl-top-punch-hole").getUnclippedBoundsInRoot()
-        val headerBounds = composeRule.onNodeWithTag("ytdl-page-header").getUnclippedBoundsInRoot()
-        val safeHeight = safeBounds.bottom.value - safeBounds.top.value
-        val punchWidth = punchBounds.right.value - punchBounds.left.value
-        val punchHeight = punchBounds.bottom.value - punchBounds.top.value
-        val safeCenterX = (safeBounds.left.value + safeBounds.right.value) / 2f
-        val punchCenterX = (punchBounds.left.value + punchBounds.right.value) / 2f
-
-        assertTrue(kotlin.math.abs(safeHeight - 16f) < 0.5f)
-        assertTrue(kotlin.math.abs(punchWidth - 7f) < 0.5f)
-        assertTrue(kotlin.math.abs(punchHeight - 7f) < 0.5f)
-        assertTrue(kotlin.math.abs(safeCenterX - punchCenterX) < 1.5f)
-        assertTrue(punchBounds.top >= safeBounds.top)
-        assertTrue(punchBounds.bottom <= safeBounds.bottom)
-        assertTrue(safeBounds.bottom <= headerBounds.top)
     }
 
     @Test
@@ -309,6 +348,37 @@ class DownloadGuiBindingTest {
         assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_12KEY))
         assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_NOKEYS))
         assertTrue(urlInputShowKeyboardOnFocusForUiTest(Configuration.KEYBOARD_UNDEFINED))
+    }
+
+    @Test
+    fun urlInputWrapsFromOneToFiveLinesAndItsContainerCanGrow() {
+        lateinit var hostContext: Context
+        composeRule.setContent {
+            hostContext = LocalContext.current
+            YtdlApp()
+        }
+
+        lateinit var editText: EditText
+        composeRule.runOnIdle {
+            editText = hostContext.requireActivity().findViewById(com.garyapp.ytdl.R.id.ytdl_url_input)
+        }
+
+        assertEquals(1, editText.minLines)
+        assertEquals(5, editText.maxLines)
+        assertTrue(editText.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0)
+
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+        val fieldSource = source
+            .substringAfter("private fun UrlInputField(")
+            .substringBefore("private fun DownloadPreviewCard(")
+        assertTrue(fieldSource.contains(".defaultMinSize(minHeight = 54.dp)"))
+        assertTrue(fieldSource.contains("setSingleLine(false)"))
+        assertTrue(fieldSource.contains("minLines = 1"))
+        assertTrue(fieldSource.contains("maxLines = 5"))
+        assertFalse(fieldSource.contains(".height(54.dp)"))
     }
 
     @Test
@@ -432,11 +502,9 @@ class DownloadGuiBindingTest {
                         formatPageItems(
                             analysis = analysis,
                             selection = state.value.formatSelection,
-                            selectedSubtitles = emptyList(),
                             onSelectionChange = { selection ->
                                 state.value = state.value.withFormatSelection(selection)
                             },
-                            onSubtitleSelectionChange = {},
                             onFinishSelection = {},
                         )
                     }
@@ -447,7 +515,100 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithTag("ytdl-format-row-240").performClick()
         composeRule.runOnIdle { showDownloadPage.value = true }
 
-        composeRule.onNodeWithText("240p MP4 单文件").assertExists()
+        composeRule.onNodeWithText("240p MP4 H.264 单文件").assertExists()
+    }
+
+    @Test
+    fun selectingCodecKeepsOneResolutionRowAndEmitsExactFormatId() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "h264-1080", height = 1080, videoCodec = "avc1"),
+            progressiveFormat(id = "av1-1080", height = 1080, videoCodec = "av01"),
+        )
+        val selection = mutableStateOf(defaultFormatSelection(analysis))
+        composeRule.setContent {
+            YtdlTheme {
+                LazyColumn {
+                    formatPageItems(
+                        analysis = analysis,
+                        selection = selection.value,
+                        onSelectionChange = { selection.value = it },
+                        onFinishSelection = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onAllNodesWithTag("ytdl-format-row-1080").assertCountEquals(1)
+        composeRule.onNodeWithTag("ytdl-format-codec-1080-h264").assertExists()
+        composeRule.onNodeWithTag("ytdl-format-codec-1080-av1").performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(1080, selection.value.selectedHeight)
+            assertEquals("av1-1080", selection.value.selectedVideoFormatId)
+        }
+    }
+
+    @Test
+    fun retryAnalysisRestoresPreviousModeCodecAndResolutionWhenStillAvailable() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "h264-1080", height = 1080, videoCodec = "avc1"),
+            progressiveFormat(id = "av1-1080", height = 1080, videoCodec = "av01"),
+            audioOnlyFormat(id = "audio-140"),
+        )
+
+        val restored = retryFormatSelection(
+            analysis,
+            RetryDownloadDraft(
+                url = TestUrl,
+                route = DownloadRoute.DirectSingleFile("av1-1080"),
+            ),
+        )
+
+        assertEquals(FormatMode.VideoOnly, restored.mode)
+        assertEquals(1080, restored.selectedHeight)
+        assertEquals("av1-1080", restored.selectedVideoFormatId)
+        assertEquals(null, restored.selectedAudioFormatId)
+
+        val fallback = retryFormatSelection(
+            analysis,
+            RetryDownloadDraft(
+                url = TestUrl,
+                route = DownloadRoute.DirectSingleFile("missing-video"),
+            ),
+        )
+        assertEquals(FormatMode.VideoOnly, fallback.mode)
+        assertEquals("h264-1080", fallback.selectedVideoFormatId)
+        assertEquals(null, fallback.selectedAudioFormatId)
+    }
+
+    @Test
+    fun retryAnalysisRestoresExactAudioFormatWhenStillAvailable() {
+        val analysis = analysisWith(
+            videoOnlyFormat(id = "video-137", height = 1080),
+            audioOnlyFormat(id = "audio-140"),
+            audioOnlyFormat(id = "audio-251"),
+        )
+
+        val mergeSelection = retryFormatSelection(
+            analysis,
+            RetryDownloadDraft(
+                url = TestUrl,
+                route = DownloadRoute.MergeRequired("video-137", "audio-251"),
+            ),
+        )
+        assertEquals(FormatMode.VideoAndAudio, mergeSelection.mode)
+        assertEquals("video-137", mergeSelection.selectedVideoFormatId)
+        assertEquals("audio-251", mergeSelection.selectedAudioFormatId)
+
+        val audioSelection = retryFormatSelection(
+            analysis,
+            RetryDownloadDraft(
+                url = TestUrl,
+                route = DownloadRoute.AudioOnly("audio-251"),
+            ),
+        )
+        assertEquals(FormatMode.AudioOnly, audioSelection.mode)
+        assertEquals("audio-251", audioSelection.selectedAudioFormatId)
     }
 
     @Test
@@ -488,7 +649,7 @@ class DownloadGuiBindingTest {
         scrollFormatsTo("ytdl-format-frame-rate-line")
         scrollFormatsTo("ytdl-format-video-codec-line")
         scrollFormatsTo("ytdl-format-container-line")
-        scrollFormatsTo("ytdl-format-subtitle-toggle")
+        composeRule.onAllNodesWithTag("ytdl-format-subtitle-toggle").assertCountEquals(0)
         scrollFormatsTo("ytdl-format-summary")
         composeRule.onNodeWithText("分析后显示真实格式").assertExists()
         composeRule.onNodeWithText("请先在下载页完成分析，再选择真实格式。").assertExists()
@@ -513,7 +674,7 @@ class DownloadGuiBindingTest {
             url = TestUrl,
             title = "队列徽标测试",
             route = DownloadRoute.MergeRequired(videoFormatId = "137", audioFormatId = "140"),
-            formatSummary = "1080p MP4 需原生合并",
+            formatSummary = "1080p MP4 H.264 需原生合并",
         )
         val completed = RuntimeDownloadState().withPipelineStateForUiTest(
             DownloadTaskState(
@@ -527,18 +688,26 @@ class DownloadGuiBindingTest {
 
         composeRule.onNodeWithText("完成").assertExists()
         composeRule.onNodeWithText("1080p").assertExists()
+        composeRule.onNodeWithText("H.264").assertExists()
 
         val statusBounds = composeRule.onNodeWithTag("ytdl-queue-status-badge").getUnclippedBoundsInRoot()
+        val codecBounds = composeRule.onNodeWithTag("ytdl-queue-codec-badge").getUnclippedBoundsInRoot()
         val formatBounds = composeRule.onNodeWithTag("ytdl-queue-format-badge").getUnclippedBoundsInRoot()
         val statusWidth = statusBounds.right.value - statusBounds.left.value
+        val codecWidth = codecBounds.right.value - codecBounds.left.value
         val formatWidth = formatBounds.right.value - formatBounds.left.value
         val statusHeight = statusBounds.bottom.value - statusBounds.top.value
+        val codecHeight = codecBounds.bottom.value - codecBounds.top.value
         val formatHeight = formatBounds.bottom.value - formatBounds.top.value
 
-        assertTrue(statusBounds.top < formatBounds.top)
-        assertTrue(kotlin.math.abs(statusWidth - formatWidth) < 0.5f)
-        assertTrue(kotlin.math.abs(statusHeight - formatHeight) < 0.5f)
-        assertTrue(kotlin.math.abs(statusBounds.left.value - formatBounds.left.value) < 0.5f)
+        assertTrue(statusBounds.top < codecBounds.top)
+        assertTrue(codecBounds.top < formatBounds.top)
+        assertTrue(kotlin.math.abs(statusWidth - codecWidth) < 0.5f)
+        assertTrue(kotlin.math.abs(codecWidth - formatWidth) < 0.5f)
+        assertTrue(kotlin.math.abs(statusHeight - codecHeight) < 0.5f)
+        assertTrue(kotlin.math.abs(codecHeight - formatHeight) < 0.5f)
+        assertTrue(kotlin.math.abs(statusBounds.left.value - codecBounds.left.value) < 0.5f)
+        assertTrue(kotlin.math.abs(codecBounds.left.value - formatBounds.left.value) < 0.5f)
     }
 
     @Test
@@ -565,6 +734,25 @@ class DownloadGuiBindingTest {
         composeRule.onAllNodesWithTag("ytdl-queue-cancel-action").assertCountEquals(0)
         composeRule.onAllNodesWithTag("ytdl-queue-stage-strip").assertCountEquals(0)
         composeRule.onAllNodesWithTag("ytdl-queue-format-badge").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-queue-codec-badge").assertCountEquals(0)
+    }
+
+    @Test
+    fun failedQueueRetryActionInvokesCallback() {
+        val request = requestFor(progressiveFormat(id = "retry-format", height = 720))
+        val failed = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Failed,
+                request = request,
+                errorMessage = "network disconnected",
+            ),
+        )
+        var retried = false
+
+        renderQueuePage(failed, onRetryDownload = { retried = true })
+        composeRule.onNodeWithTag("ytdl-queue-retry-action").performClick()
+
+        composeRule.runOnIdle { assertTrue(retried) }
     }
 
     @Test
@@ -656,11 +844,48 @@ class DownloadGuiBindingTest {
         assertFalse(cards.first().meta.contains("%20"))
         assertTrue(cards.first().meta.contains("媒体文件"))
         assertFalse(cards.first().meta.contains("测试 video.mp4"))
-        assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(cards.first()))
+        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(cards.first()))
         assertEquals(listOf("删除"), historyActionLabelsForUiTest(cards.last()))
         listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {
             assertFalse("history UI leaked $it", serialized.contains(it))
         }
+    }
+
+    @Test
+    fun retryableHistoryCardInvokesAgainDownloadCallback() {
+        val item = HistoryUiItem(
+            id = 8L,
+            title = "断线任务",
+            meta = "720p MP4 H.264 单文件",
+            badge = "失败",
+            outputUri = "",
+            status = HistoryItemEntity.STATUS_FAILED,
+            completedAt = 1_000L,
+            retryAvailable = true,
+        )
+        var retriedHistoryId: Long? = null
+        composeRule.setContent {
+            YtdlTheme {
+                LazyColumn {
+                    historyPageItems(
+                        historyItems = listOf(item),
+                        historyQuery = "",
+                        selectedFilterIndex = 0,
+                        userMessage = "",
+                        onHistoryQueryChange = {},
+                        onHistoryFilterChange = {},
+                        onOpen = {},
+                        onShare = {},
+                        onRetry = { retriedHistoryId = it.id },
+                        onDelete = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("ytdl-history-action-8-再次下载").performClick()
+
+        composeRule.runOnIdle { assertEquals(8L, retriedHistoryId) }
     }
 
     @Test
@@ -724,11 +949,24 @@ class DownloadGuiBindingTest {
                         ),
                     ),
             )
-        val completed = RuntimeDownloadState()
-            .withPipelineStateForUiTest(DownloadTaskState.waiting(request).atStage(DownloadStage.Completed))
+        val completed = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Completed,
+                request = request,
+                outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, "completed.mp4", 100L)),
+            ),
+        )
 
         assertEquals(listOf("取消"), queueCardActionsForUiTest(running))
         assertTrue(queueCardActionsForUiTest(completed).isEmpty())
+        assertTrue(
+            queueCardActionsForUiTest(
+                RuntimeDownloadState(
+                    downloadStatus = "下载失败",
+                    activeStage = DownloadStage.Failed,
+                ),
+            ).isEmpty(),
+        )
     }
 
     @Test
@@ -813,44 +1051,12 @@ class DownloadGuiBindingTest {
 
         val mediaLabel = settingsMediaProcessorLabelForUiTest()
         assertTrue(mediaLabel.contains("原生合并"))
-        assertTrue(mediaLabel.contains("字幕独立文件"))
-        assertTrue(mediaLabel.contains("MVP2"))
-        assertFalse(mediaLabel.contains("字幕嵌入已支持"))
-        assertFalse(mediaLabel.contains("字幕烧录已支持"))
+        assertTrue(mediaLabel.contains("不转码"))
+        assertFalse(mediaLabel.contains("字幕"))
     }
 
     @Test
-    fun subtitleLabelDoesNotPretendGuiHasSelectedSubtitles() {
-        assertEquals("本阶段默认不下载字幕", subtitleSelectionLabelForUiTest(null, emptyList()))
-
-        val request = requestFor(progressiveFormat(id = "18", height = 360))
-        assertTrue(request.selectedSubtitles.isEmpty())
-    }
-
-    @Test
-    fun subtitleToggleIsAvailableOnlyWhenCurrentAnalysisProvidesSubtitles() {
-        val noAnalysis = subtitleSelectionUiStateForUiTest(null, emptyList())
-        assertFalse(noAnalysis.canToggle)
-
-        val noSubtitleAnalysis = analysisWith(progressiveFormat(id = "18", height = 360))
-        val unavailable = subtitleSelectionUiStateForUiTest(noSubtitleAnalysis, emptyList())
-        assertFalse(unavailable.canToggle)
-        assertEquals("无可选", unavailable.trailing)
-        assertEquals("当前视频未提供字幕", unavailable.label)
-
-        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
-        val subtitleAnalysis = noSubtitleAnalysis.copy(subtitles = listOf(subtitle))
-        val available = subtitleSelectionUiStateForUiTest(subtitleAnalysis, emptyList())
-        assertTrue(available.canToggle)
-        assertEquals("选择", available.trailing)
-
-        val selected = subtitleSelectionUiStateForUiTest(subtitleAnalysis, listOf(subtitle))
-        assertTrue(selected.canToggle)
-        assertEquals("取消", selected.trailing)
-    }
-
-    @Test
-    fun selectedSubtitleIsCarriedIntoDownloadRequestAsSeparateFile() {
+    fun backendRequestCanStillCarryExplicitSubtitleSelection() {
         val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
         val analysis = analysisWith(progressiveFormat(id = "18", height = 360)).copy(subtitles = listOf(subtitle))
         val selection = defaultFormatSelection(analysis)
@@ -863,24 +1069,21 @@ class DownloadGuiBindingTest {
         ).getOrThrow()
 
         assertEquals(listOf(subtitle), request.selectedSubtitles)
-        assertEquals("已选择 en vtt 自动字幕 · 独立字幕文件", subtitleSelectionLabelForUiTest(analysis, listOf(subtitle)))
-        assertEquals("有 1 个字幕可选 · 当前不下载", subtitleSelectionLabelForUiTest(analysis, emptyList()))
     }
 
     @Test
-    fun downloadPreviewSummaryMentionsIndependentSubtitleWhenSelected() {
+    fun downloadPreviewSummaryHidesSubtitleContent() {
         val subtitle = SubtitleInfo(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Automatic)
         val analysis = analysisWith(progressiveFormat(id = "18", height = 360)).copy(subtitles = listOf(subtitle))
         val state = RuntimeDownloadState(
             analysis = analysis,
             appliedFormatSelection = defaultFormatSelection(analysis),
-            selectedSubtitles = listOf(subtitle),
         )
 
         val summary = downloadPreviewFormatSummaryForUiTest(state)
 
         assertTrue(summary.contains("360p"))
-        assertTrue(summary.contains("独立字幕文件"))
+        assertFalse(summary.contains("字幕"))
     }
 
     @Test
@@ -902,13 +1105,17 @@ class DownloadGuiBindingTest {
         ).getOrThrow()
     }
 
-    private fun renderQueuePage(state: RuntimeDownloadState) {
+    private fun renderQueuePage(
+        state: RuntimeDownloadState,
+        onRetryDownload: (DownloadRequest) -> Unit = {},
+    ) {
         composeRule.setContent {
             YtdlTheme {
                 LazyColumn {
                     queuePageItems(
                         state = state,
                         onCancelDownload = {},
+                        onRetryDownload = onRetryDownload,
                     )
                 }
             }
@@ -945,9 +1152,7 @@ class DownloadGuiBindingTest {
                     formatPageItems(
                         analysis = analysis,
                         selection = selection,
-                        selectedSubtitles = emptyList(),
                         onSelectionChange = {},
-                        onSubtitleSelectionChange = {},
                         onFinishSelection = {},
                     )
                 }
@@ -968,7 +1173,11 @@ class DownloadGuiBindingTest {
         subtitles = emptyList<SubtitleInfo>(),
     )
 
-    private fun progressiveFormat(id: String, height: Int) = VideoFormat(
+    private fun progressiveFormat(
+        id: String,
+        height: Int,
+        videoCodec: String = "avc1",
+    ) = VideoFormat(
         id = id,
         ext = "mp4",
         height = height,
@@ -977,7 +1186,7 @@ class DownloadGuiBindingTest {
         hasAudio = true,
         mergeRequired = false,
         isSupported = true,
-        videoCodec = "avc1",
+        videoCodec = videoCodec,
         audioCodec = "mp4a",
     )
 
@@ -1039,5 +1248,14 @@ class DownloadGuiBindingTest {
 
     private companion object {
         const val TestUrl = "https://www.youtube.com/watch?v=tkxzMEfp49Q"
+    }
+
+    private fun Context.requireActivity(): Activity {
+        var current = this
+        while (current is ContextWrapper) {
+            if (current is Activity) return current
+            current = current.baseContext
+        }
+        return current as? Activity ?: error("Compose host activity not found")
     }
 }

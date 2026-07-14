@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
@@ -17,6 +18,7 @@ import java.util.concurrent.CancellationException
 class DownloadService : Service() {
     private lateinit var notificationController: NotificationController
     private lateinit var historyRecorder: DownloadHistoryRecorder
+    private lateinit var retryDraftStore: RetryDraftStore
 
     override fun onCreate() {
         super.onCreate()
@@ -25,6 +27,7 @@ class DownloadService : Service() {
         historyRecorder = DownloadHistoryRecorder(
             historyDao = YtdlDatabaseProvider.get(this).historyDao(),
         )
+        retryDraftStore = FileRetryDraftStore.fromContext(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -78,9 +81,17 @@ class DownloadService : Service() {
                 }
             }
             val terminalState = exportCompletedOutputs(result, storageTarget, cancellation)
+            val historyRecordResult = historyRecorder.recordTerminal(terminalState)
+            updateRetryDraftForHistory(
+                state = terminalState,
+                historyRecordResult = historyRecordResult,
+                retryStore = retryDraftStore,
+            ).onFailure {
+                Log.w(LogTag, "Retry draft persistence did not complete.", it)
+            }
             val finalState = applyHistoryRecordingResult(
                 state = terminalState,
-                recordResult = historyRecorder.recordTerminal(terminalState),
+                recordResult = historyRecordResult,
             )
             publishForegroundState(finalState)
         } finally {
@@ -95,26 +106,40 @@ class DownloadService : Service() {
         storageTarget: StorageTarget,
         cancellation: DownloadCancellation,
     ): DownloadTaskState {
-        if (result.state.stage != DownloadStage.Completed || storageTarget !is StorageTarget.SafTree) {
+        if (result.state.stage != DownloadStage.Completed) {
             return result.state
+        }
+
+        val outputs = result.outputs.map { output ->
+            val root = output.appPrivateRootPath?.let(::File)
+                ?: return result.state.failed("缺少私有输出目录。")
+            ExportController.discoverAppPrivateOutput(File(output.path), root).getOrElse {
+                return result.state.failed("无法确认 App 私有输出文件。")
+            }
+        }
+        if (storageTarget !is StorageTarget.SafTree) {
+            return ExportController.markAppPrivateTaskCompleted(outputs).fold(
+                onSuccess = { result.state },
+                onFailure = { result.state.failed("无法保护 App 私有完成文件。") },
+            )
         }
 
         publishForegroundState(result.state.atStage(DownloadStage.Exporting))
         val exportResult = runCatching {
-            val outputs = result.outputs.map { output ->
-                val root = output.appPrivateRootPath?.let(::File)
-                    ?: throw IllegalStateException("缺少私有输出目录。")
-                ExportController.discoverAppPrivateOutput(File(output.path), root).getOrThrow()
-            }
-            ExportController.copyToSafTree(
+            val safExport = ExportController.copyToSafTreeWithDocuments(
                 contentResolver = contentResolver,
                 treeUri = storageTarget.treeUri,
                 outputs = outputs,
                 isCancellationRequested = { cancellation.isCancellationRequested },
             ).getOrThrow()
+            val exportedState = result.state.withExternalDocumentUris(safExport.documentUris).getOrThrow()
+            ExportController.cleanupExportedPrivateTask(outputs).onFailure {
+                Log.w(LogTag, "App private staging cleanup did not complete.")
+            }
+            exportedState
         }
         return exportResult.fold(
-            onSuccess = { result.state },
+            onSuccess = { it },
             onFailure = { error ->
                 when (error) {
                     is CancellationException -> result.state.canceled()
@@ -155,6 +180,7 @@ class DownloadService : Service() {
     }
 
     companion object {
+        private const val LogTag = "YtdlDownloadService"
         const val ActionStart = "com.garyapp.ytdl.download.START"
         const val ActionCancel = "com.garyapp.ytdl.download.CANCEL"
     }

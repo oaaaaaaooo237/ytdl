@@ -39,7 +39,7 @@ class SettingsCacheUiTest {
     fun enteringSettingsRefreshesCacheStatsAfterInitialComposition() {
         val cache = FakeDownloadCache(
             initialStats = CacheStats(1, 1),
-            clearResult = CacheClearResult.Success(0, 0, 0, 0),
+            clearResult = CacheClearResult.Success(0, 0),
         )
         setContent(cache)
         composeRule.waitForIdle()
@@ -55,7 +55,7 @@ class SettingsCacheUiTest {
         val executor = ControllableExecutor()
         val cache = FakeDownloadCache(
             initialStats = CacheStats(1, 1),
-            clearResult = CacheClearResult.Success(0, 0, 0, 0),
+            clearResult = CacheClearResult.Success(0, 0),
         )
         setContent(cache, executor)
         openCacheRow()
@@ -78,7 +78,7 @@ class SettingsCacheUiTest {
     fun terminalDownloadRefreshesCacheStatsWhileSettingsIsVisible() {
         val cache = FakeDownloadCache(
             initialStats = CacheStats(1, 1),
-            clearResult = CacheClearResult.Success(0, 0, 0, 0),
+            clearResult = CacheClearResult.Success(0, 0),
         )
         setContent(cache)
         openCacheRow()
@@ -94,15 +94,15 @@ class SettingsCacheUiTest {
     fun cacheRowConfirmsThenReportsFreedBytesAndFiles() {
         val cache = FakeDownloadCache(
             initialStats = CacheStats(7, 2),
-            clearResult = CacheClearResult.Success(7, 2, 1, 2),
+            clearResult = CacheClearResult.Success(7, 2),
         )
         setContent(cache)
 
         openCacheRow()
         composeRule.onNodeWithText("7 B · 2 个文件").assertExists()
         composeRule.onNodeWithTag("ytdl-settings-cache-clear").performClick()
-        composeRule.onNodeWithText("确认清理私有下载缓存").assertExists()
-        composeRule.onNodeWithText("只会删除 App 私有下载缓存中的文件，不会删除已通过系统文件夹保存的副本。").assertExists()
+        composeRule.onNodeWithText("确认清理临时缓存").assertExists()
+        composeRule.onNodeWithText("只删除未被下载记录引用的 App 私有临时文件；不会删除完成文件、合并文件或所选文件夹中的文件。").assertExists()
 
         composeRule.onNodeWithTag("ytdl-cache-clear-confirm").performClick()
         composeRule.onNodeWithText("清理完成").assertExists()
@@ -114,7 +114,7 @@ class SettingsCacheUiTest {
     fun blockedCleanupExplainsActiveDownloadInChinese() {
         val cache = FakeDownloadCache(
             initialStats = CacheStats(3, 1),
-            clearResult = CacheClearResult.Success(3, 1, 0, 0),
+            clearResult = CacheClearResult.Success(3, 1),
         )
         setContent(cache)
         DownloadCoordinator.publish(DownloadTaskState(stage = DownloadStage.Waiting))
@@ -126,6 +126,27 @@ class SettingsCacheUiTest {
         composeRule.onNodeWithText("无法清理缓存").assertExists()
         composeRule.onNodeWithText("当前有下载任务正在运行。为避免删除任务仍在使用的文件，请等待下载结束后再清理。").assertExists()
         assertEquals(0, cache.clearCallCount)
+    }
+
+    @Test
+    fun incompleteCleanupReportsRemainingTemporaryFiles() {
+        val cache = FakeDownloadCache(
+            initialStats = CacheStats(7, 2),
+            clearResult = CacheClearResult.Incomplete(
+                freedBytes = 3,
+                deletedFileCount = 1,
+                remainingBytes = 4,
+                remainingFileCount = 1,
+            ),
+        )
+        setContent(cache)
+
+        openCacheRow()
+        composeRule.onNodeWithTag("ytdl-settings-cache-clear").performClick()
+        composeRule.onNodeWithTag("ytdl-cache-clear-confirm").performClick()
+
+        composeRule.onNodeWithText("部分临时文件未能清理").assertExists()
+        composeRule.onNodeWithText("已释放 3 B，删除 1 个文件；仍有 4 B、1 个临时文件，请稍后重试。").assertExists()
     }
 
     private fun setContent(
@@ -190,6 +211,8 @@ private class FakeDownloadCache(
         clearCallCount += 1
         if (clearResult is CacheClearResult.Success) {
             stats = CacheStats(0, 0)
+        } else if (clearResult is CacheClearResult.Incomplete) {
+            stats = CacheStats(clearResult.remainingBytes, clearResult.remainingFileCount)
         }
         return clearResult
     }

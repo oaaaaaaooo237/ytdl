@@ -1,11 +1,8 @@
 package com.garyapp.ytdl.storage
 
-import android.content.ContentValues
 import android.content.ContentResolver
-import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
-import android.provider.MediaStore
 import java.io.File
 import java.io.OutputStream
 import java.net.URI
@@ -21,11 +18,17 @@ object ExportController {
         val bytesWritten: Long,
         val appPrivateUri: String,
         internal val sourceFile: File,
+        internal val appPrivateRoot: File,
     ) {
         override fun toString(): String {
             return "AppPrivateOutput(displayName=$displayName, mimeType=$mimeType, bytesWritten=$bytesWritten, appPrivateUri=$appPrivateUri)"
         }
     }
+
+    data class SafTreeExportResult(
+        val bytesWritten: Long,
+        val documentUris: List<String>,
+    )
 
     fun discoverAppPrivateOutput(
         outputFile: File,
@@ -35,10 +38,10 @@ object ExportController {
             val canonicalRoot = appPrivateRoot.canonicalFile
             val canonicalOutput = outputFile.canonicalFile
             require(canonicalOutput.isFile && canonicalOutput.length() > 0L) {
-                "输出文件不存在或为空，不能导出。"
+                "输出文件不存在或为空，无法继续操作。"
             }
             require(isInside(canonicalOutput, canonicalRoot)) {
-                "只能导出 App 私有目录内的输出文件。"
+                "只能访问 App 私有目录内的输出文件。"
             }
 
             val displayName = canonicalOutput.name.safeDisplayName()
@@ -48,6 +51,7 @@ object ExportController {
                 bytesWritten = canonicalOutput.length(),
                 appPrivateUri = appPrivateOutputUri(canonicalOutput.absolutePath, canonicalRoot.absolutePath),
                 sourceFile = canonicalOutput,
+                appPrivateRoot = canonicalRoot,
             )
         }
     }
@@ -60,7 +64,7 @@ object ExportController {
         return runCatching {
             val uri = URI(appPrivateUri.orEmpty())
             require(uri.scheme == "app-private" && uri.host == "outputs") {
-                "历史记录没有可导出的本地输出。"
+                "历史记录没有可用的本地输出。"
             }
             val relativeSegments = uri.rawPath.orEmpty()
                 .trimStart('/')
@@ -69,7 +73,7 @@ object ExportController {
                 .map { decodeSegment(it).safeDisplayName() }
                 .filter { it.isNotBlank() }
             require(relativeSegments.isNotEmpty()) {
-                "历史记录没有可导出的本地输出。"
+                "历史记录没有可用的本地输出。"
             }
             val relativePath = relativeSegments.fold(File("")) { current, segment ->
                 File(current, segment)
@@ -84,77 +88,32 @@ object ExportController {
         }
     }
 
-    fun createDocumentIntent(
-        output: AppPrivateOutput,
-        suggestedDisplayName: String = output.displayName,
-    ): Intent {
-        return Intent(Intent.ACTION_CREATE_DOCUMENT)
-            .addCategory(Intent.CATEGORY_OPENABLE)
-            .setType(output.mimeType)
-            .putExtra(Intent.EXTRA_TITLE, suggestedDisplayName.safeDisplayName())
-    }
-
-    fun mediaStoreValues(output: AppPrivateOutput): ContentValues {
-        return ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, output.displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, output.mimeType)
-            put(MediaStore.MediaColumns.SIZE, output.bytesWritten)
-        }
-    }
-
-    fun copyToStream(
-        output: AppPrivateOutput,
-        destination: OutputStream,
-    ): Result<Long> {
-        return runCatching {
-            val copiedBytes = output.sourceFile.inputStream().use { input ->
-                input.copyTo(destination)
-            }
-            copiedBytes
-        }
-    }
-
-    @JvmStatic
-    fun copyToSafTree(
-        treeUri: String,
-        outputs: List<AppPrivateOutput>,
-        createDocument: (parentDocumentUri: String, mimeType: String, displayName: String) -> String?,
-        openOutputStream: (documentUri: String) -> OutputStream?,
-        deleteDocument: (documentUri: String) -> Unit,
-    ): Long {
-        return copyToSafTree(
-            treeUri = treeUri,
-            outputs = outputs,
-            createDocument = createDocument,
-            openOutputStream = openOutputStream,
-            deleteDocument = deleteDocument,
-            isCancellationRequested = { false },
-        )
-    }
-
-    @JvmStatic
-    fun copyToSafTree(
+    fun copyToSafTreeWithDocuments(
         treeUri: String,
         outputs: List<AppPrivateOutput>,
         createDocument: (parentDocumentUri: String, mimeType: String, displayName: String) -> String?,
         openOutputStream: (documentUri: String) -> OutputStream?,
         deleteDocument: (documentUri: String) -> Unit,
         isCancellationRequested: () -> Boolean,
-    ): Long {
+    ): SafTreeExportResult {
         val createdDocuments = mutableListOf<String>()
         return try {
             val parentDocumentUri = treeDocumentUri(treeUri)
-            outputs.sumOf { output ->
+            val bytesWritten = outputs.sumOf { output ->
                 throwIfExportCanceled(isCancellationRequested)
                 val documentUri = createDocument(parentDocumentUri, output.mimeType, output.displayName)
-                    ?: throw IllegalStateException("无法创建导出文件。")
+                    ?: throw IllegalStateException("无法创建保存文件。")
                 createdDocuments += documentUri
                 val destination = openOutputStream(documentUri)
-                    ?: throw IllegalStateException("无法打开导出文件。")
+                    ?: throw IllegalStateException("无法打开保存文件。")
                 destination.use { stream ->
                     copyToStream(output, stream, isCancellationRequested)
                 }
             }
+            SafTreeExportResult(
+                bytesWritten = bytesWritten,
+                documentUris = createdDocuments.toList(),
+            )
         } catch (error: Exception) {
             createdDocuments.asReversed().forEach { documentUri ->
                 runCatching { deleteDocument(documentUri) }
@@ -164,14 +123,14 @@ object ExportController {
         }
     }
 
-    fun copyToSafTree(
+    fun copyToSafTreeWithDocuments(
         contentResolver: ContentResolver,
         treeUri: String,
         outputs: List<AppPrivateOutput>,
         isCancellationRequested: () -> Boolean = { false },
-    ): Result<Long> {
+    ): Result<SafTreeExportResult> {
         return runCatching {
-            copyToSafTree(
+            copyToSafTreeWithDocuments(
                 treeUri = treeUri,
                 outputs = outputs,
                 createDocument = { parentDocumentUri, mimeType, displayName ->
@@ -193,6 +152,74 @@ object ExportController {
         }
     }
 
+    fun markPrivateTaskStarted(taskDirectory: File): Result<Unit> {
+        return runCatching {
+            val canonicalTask = taskDirectory.canonicalFile
+            require(canonicalTask.isDirectory && canonicalTask.name.startsWith("task-")) {
+                "无法初始化私有任务目录。"
+            }
+            val marker = File(canonicalTask, IncompleteTaskMarker)
+            marker.writeText("")
+            check(marker.isFile) { "无法标记私有任务目录。" }
+        }
+    }
+
+    fun markAppPrivateTaskCompleted(outputs: List<AppPrivateOutput>): Result<Unit> {
+        return runCatching {
+            val taskDirectory = controlledTaskDirectory(outputs)
+            val completedMarker = File(taskDirectory, CompletedTaskMarker)
+            completedMarker.writeText("")
+            check(completedMarker.isFile) { "无法保护 App 私有完成文件。" }
+            File(taskDirectory, IncompleteTaskMarker).delete()
+        }
+    }
+
+    fun cleanupExportedPrivateTask(
+        outputs: List<AppPrivateOutput>,
+        deleteTaskDirectory: (File) -> Boolean = { it.deleteRecursively() },
+    ): Result<Unit> {
+        return runCatching {
+            val taskDirectory = controlledTaskDirectory(outputs)
+            check(deleteTaskDirectory(taskDirectory) && !taskDirectory.exists()) {
+                "App 私有中转文件未能立即清理。"
+            }
+        }
+    }
+
+    internal fun isIncompleteTaskDirectory(directory: File): Boolean {
+        return File(directory, IncompleteTaskMarker).isFile && !isCompletedTaskDirectory(directory)
+    }
+
+    internal fun isCompletedTaskDirectory(directory: File): Boolean {
+        return File(directory, CompletedTaskMarker).isFile
+    }
+
+    internal fun isTaskLifecycleMarker(file: File): Boolean {
+        return file.name == IncompleteTaskMarker || file.name == CompletedTaskMarker
+    }
+
+    private fun controlledTaskDirectory(outputs: List<AppPrivateOutput>): File {
+        require(outputs.isNotEmpty()) { "缺少需要处理的私有输出文件。" }
+        val roots = outputs.map { it.appPrivateRoot.canonicalFile }.distinctBy { it.path }
+        require(roots.size == 1) { "私有输出文件不属于同一受控目录。" }
+        val root = roots.single()
+        val taskDirectories = outputs.map { output ->
+            requireNotNull(output.sourceFile.canonicalFile.parentFile) {
+                "私有输出文件缺少任务父目录。"
+            }
+        }.distinctBy { it.path }
+        require(taskDirectories.size == 1) { "私有输出文件不属于同一任务目录。" }
+        val taskDirectory = taskDirectories.single()
+        require(taskDirectory.parentFile == root && taskDirectory.name.startsWith("task-")) {
+            "只能处理受控私有目录中的任务子目录。"
+        }
+        require(outputs.all { it.sourceFile.canonicalFile.parentFile == taskDirectory }) {
+            "私有输出文件路径不安全。"
+        }
+        require(taskDirectory.isDirectory) { "私有任务目录不存在。" }
+        return taskDirectory
+    }
+
     @JvmStatic
     fun appPrivateOutputUri(path: String?): String {
         return appPrivateOutputUri(path, null)
@@ -212,12 +239,8 @@ object ExportController {
         return "app-private://outputs/${encodeSegment(displayName)}"
     }
 
-    fun exportDeniedMessage(detail: String? = null): String {
-        return "未获得保存位置授权，导出已取消。请重新选择保存位置。"
-    }
-
     fun treeExportFailureMessage(): String {
-        return "保存到所选文件夹失败，App 私有文件已保留；请重新选择文件夹后从历史导出。"
+        return "保存到所选文件夹失败，私有中转文件暂未清理；请重新选择文件夹后重试下载。"
     }
 
     private fun isInside(file: File, root: File): Boolean {
@@ -261,7 +284,7 @@ object ExportController {
 
     private fun throwIfExportCanceled(isCancellationRequested: () -> Boolean) {
         if (isCancellationRequested()) {
-            throw CancellationException("SAF export canceled")
+            throw CancellationException("SAF save canceled")
         }
     }
 
@@ -318,4 +341,7 @@ object ExportController {
             else -> "application/octet-stream"
         }
     }
+
+    private const val IncompleteTaskMarker = ".ytdl-incomplete"
+    private const val CompletedTaskMarker = ".ytdl-completed"
 }

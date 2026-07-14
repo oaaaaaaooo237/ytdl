@@ -23,6 +23,95 @@ import java.io.File
 
 class DownloadUiBridgeTest {
     @Test
+    fun historyOutputsAcceptContentUrisWithoutRestoringManualExportActions() {
+        val contentItem = HistoryUiItem(
+            id = 41L,
+            title = "公共媒体",
+            meta = "视频",
+            badge = "完成",
+            outputUri = "content://media/external/video/media/41",
+            status = HistoryItemEntity.STATUS_COMPLETED,
+            completedAt = 41L,
+        )
+
+        assertTrue(contentItem.hasOutput)
+        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(contentItem))
+    }
+
+    @Test
+    fun failedHistoryOffersRetryOnlyWhenEncryptedRequestExists() {
+        val failedRow = HistoryItemEntity.createSafe(
+            "断线任务",
+            60,
+            "https",
+            "host-hash",
+            "other",
+            "",
+            "720p MP4 H.264 单文件",
+            HistoryItemEntity.STATUS_FAILED,
+            0,
+            "",
+            "",
+            "网络中断",
+            1_000,
+            1_000,
+            1_000,
+        )
+
+        val retryable = historyUiItemsFromRows(listOf(failedRow)) { true }.single()
+        val unavailable = historyUiItemsFromRows(listOf(failedRow)) { false }.single()
+
+        assertTrue(retryable.retryAvailable)
+        assertEquals(listOf("再次下载", "删除"), historyActionLabelsForUiTest(retryable))
+        assertFalse(unavailable.retryAvailable)
+        assertEquals(listOf("删除"), historyActionLabelsForUiTest(unavailable))
+    }
+
+    @Test
+    fun contentHistoryTargetKeepsGrantedUriAndUsesResolverThenSuffixForMime() {
+        val mediaUri = "content://media/external/video/media/41"
+        val resolverTarget = historyContentOutputTargetForUiTest(mediaUri, "video/custom")
+
+        assertEquals(mediaUri, resolverTarget?.uri)
+        assertEquals("video/custom", resolverTarget?.mimeType)
+        assertEquals(
+            "text/vtt",
+            historyContentOutputTargetForUiTest(
+                "content://com.example.documents/document/subtitle.zh-Hans.vtt",
+                null,
+            )?.mimeType,
+        )
+        assertEquals(null, historyContentOutputTargetForUiTest("app-private://outputs/video.mp4", "video/mp4"))
+    }
+
+    @Test
+    fun historyUiSourceContainsNoManualExportStateLauncherCallbacksOrLabels() {
+        val appSource = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+        val bridgeSource = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/DownloadUiBridge.kt",
+            "src/main/java/com/garyapp/ytdl/ui/DownloadUiBridge.kt",
+        ).readText()
+
+        listOf(
+            "pendingExportOutput",
+            "exportLauncher",
+            "exportHistoryItem",
+            "exportSubtitleHistoryItem",
+            "onExport:",
+            "onExportSubtitle:",
+            "HistoryExportIcon",
+            "可先导出",
+        ).forEach { forbidden -> assertFalse(appSource.contains(forbidden)) }
+        assertFalse(bridgeSource.contains("add(\"导出\")"))
+        assertFalse(bridgeSource.contains("add(\"导出字幕\")"))
+        assertFalse(bridgeSource.contains("suggestedExportDisplayName"))
+        assertTrue(appSource.contains("下载完成：媒体文件已保存，可在历史中打开或分享。"))
+        assertFalse(appSource.contains("可在历史中打开或导出"))
+    }
+    @Test
     fun startRealDownloadSourceDoesNotCallLegacySingleFileFallback() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
@@ -57,7 +146,8 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("testTag(\"ytdl-queue-cancel-action\")"))
+        assertTrue(source.contains("\"ytdl-queue-cancel-action\""))
+        assertTrue(source.contains("\"ytdl-queue-retry-action\""))
         assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)"))
     }
 
@@ -149,6 +239,9 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("DownloadCoordinator.addListener"))
         assertTrue(source.contains("runtimeState.withPipelineState(state)"))
         assertTrue(source.contains("subscription.close()"))
+        assertTrue(source.contains("rememberUpdatedState(selectedRoute)"))
+        assertTrue(source.contains("currentSelectedRoute == \"history\""))
+        assertFalse(source.contains("selectedRoute == \"history\""))
     }
 
     @Test
@@ -187,48 +280,6 @@ class DownloadUiBridgeTest {
 
         assertFalse(source.contains("requestResult.isFailure") && source.contains("downloadStatus = \"下载失败\""))
         assertTrue(source.contains("DownloadCoordinator::startForegroundDownload"))
-    }
-
-    @Test
-    fun formatPageDoesNotPretendSubtitleFileIsAlreadySelected() {
-        val label = subtitleSelectionLabelForUiTest(null, emptyList())
-
-        assertFalse(label.contains("已选择"))
-        assertFalse(label.contains("下载文件"))
-        assertTrue(label.contains("不下载字幕"))
-        assertTrue(label.contains("默认不下载"))
-    }
-
-    @Test
-    fun recommendedSubtitlePrefersEnglishVttOverFirstJson3AutomaticSubtitle() {
-        val json3Automatic = subtitle(language = "ab", ext = "json3", source = SubtitleSource.Automatic)
-        val englishVttAutomatic = subtitle(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
-
-        val recommended = recommendedSubtitleForUiTest(listOf(json3Automatic, englishVttAutomatic))
-
-        assertEquals(englishVttAutomatic, recommended)
-    }
-
-    @Test
-    fun recommendedSubtitleUsesLanguagePriorityAndManualTieBreakWithinVtt() {
-        val englishManual = subtitle(language = "en", ext = "vtt", source = SubtitleSource.Manual)
-        val simplifiedChineseAutomatic = subtitle(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Automatic)
-        val simplifiedChineseManual = subtitle(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Manual)
-
-        val recommended = recommendedSubtitleForUiTest(
-            listOf(englishManual, simplifiedChineseAutomatic, simplifiedChineseManual),
-        )
-
-        assertEquals(simplifiedChineseManual, recommended)
-    }
-
-    @Test
-    fun recommendedSubtitleFallsBackToPreferredLanguageWhenVttIsUnavailableThenFirstSubtitle() {
-        val firstUnknown = subtitle(language = "ab", ext = "json3", source = SubtitleSource.Automatic)
-        val englishSrv = subtitle(language = "en", ext = "srv3", source = SubtitleSource.Manual)
-
-        assertEquals(englishSrv, recommendedSubtitleForUiTest(listOf(firstUnknown, englishSrv)))
-        assertEquals(firstUnknown, recommendedSubtitleForUiTest(listOf(firstUnknown)))
     }
 
     @Test
@@ -275,9 +326,9 @@ class DownloadUiBridgeTest {
         assertEquals("空闲", userVisibleDownloadStatus(DownloadStage.Idle))
         assertEquals("下载视频", userVisibleDownloadStatus(DownloadStage.DownloadingVideo))
         assertEquals("下载音频", userVisibleDownloadStatus(DownloadStage.DownloadingAudio))
-        assertEquals("下载字幕", userVisibleDownloadStatus(DownloadStage.DownloadingSubtitles))
+        assertEquals("处理附加文件", userVisibleDownloadStatus(DownloadStage.DownloadingSubtitles))
         assertEquals("原生合并", userVisibleDownloadStatus(DownloadStage.Merging))
-        assertEquals("导出中", userVisibleDownloadStatus(DownloadStage.Exporting))
+        assertEquals("保存中", userVisibleDownloadStatus(DownloadStage.Exporting))
         assertEquals("下载完成", userVisibleDownloadStatus(DownloadStage.Completed))
         assertEquals("下载失败", userVisibleDownloadStatus(DownloadStage.Failed))
         assertEquals("已取消", userVisibleDownloadStatus(DownloadStage.Canceled))
@@ -333,7 +384,7 @@ class DownloadUiBridgeTest {
         assertTrue(joined.contains("文件引用"))
         assertTrue(joined.contains("不保存内容"))
         assertTrue(joined.contains("App 私有目录"))
-        assertTrue(joined.contains("导出"))
+        assertTrue(joined.contains("打开和分享由系统授权"))
         assertTrue(joined.contains("历史缩略图"))
         assertTrue(joined.contains("公开预览图"))
         assertTrue(joined.contains("不携带 Cookies"))
@@ -453,7 +504,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun mergeQueueStateAddsSubtitleStageOnlyWhenSubtitleSelected() {
+    fun queueHidesSubtitleStageEvenForLegacyRequest() {
         val request = mergeRequest().copy(
             selectedSubtitles = listOf(subtitle(language = "zh-Hans", ext = "vtt")),
         )
@@ -463,15 +514,7 @@ class DownloadUiBridgeTest {
                     .atStage(DownloadStage.DownloadingSubtitles),
             )
 
-        assertEquals(
-            listOf(
-                QueueStageItem("下载视频", QueueStageStatus.Completed),
-                QueueStageItem("下载音频", QueueStageStatus.Completed),
-                QueueStageItem("原生合并", QueueStageStatus.Completed),
-                QueueStageItem("字幕文件", QueueStageStatus.Current),
-            ),
-            queueStageItemsForUiTest(state),
-        )
+        assertFalse(queueStageItemsForUiTest(state).any { it.label.contains("字幕") })
     }
 
     @Test
@@ -493,7 +536,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun queueMetaExplainsPrivateOutputUsesTitleTimeExportRuleInsteadOfInternalMergedName() {
+    fun queueMetaExplainsPrivateOutputWithoutManualExportNaming() {
         val state = RuntimeDownloadState().withPipelineStateForUiTest(
             DownloadTaskState(
                 stage = DownloadStage.Completed,
@@ -512,7 +555,8 @@ class DownloadUiBridgeTest {
 
         assertTrue(meta.contains("4.0 KB / 4.0 KB"))
         assertTrue(meta.contains("App 私有目录"))
-        assertTrue(meta.contains("导出名：标题+时间；重名加序号"))
+        assertTrue(meta.contains("App 私有目录"))
+        assertFalse(meta.contains("导出名"))
         assertFalse(meta.contains("merged-136-140.mp4"))
     }
 
@@ -689,7 +733,7 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("testTag(\"ytdl-history-action-${'$'}{item.id}-${'$'}action\")"))
         assertTrue(source.contains("\"打开\" -> onOpen"))
         assertTrue(source.contains("\"分享\" -> onShare"))
-        assertTrue(source.contains("\"导出\" -> onExport"))
+        assertFalse(source.contains("\"导出\" -> onExport"))
         assertTrue(source.contains("else -> onDelete"))
         assertTrue(source.contains("filterNot { it == \"删除\" }"))
     }
@@ -743,7 +787,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun historyMetaAndActionsExposeIndependentSubtitleOnlyWhenPresent() {
+    fun historyHidesSubtitleMetadataAndActions() {
         val withSubtitle = HistoryItemEntity.createSafe(
             "带字幕视频",
             60,
@@ -783,12 +827,13 @@ class DownloadUiBridgeTest {
 
         val items = historyUiItemsFromRows(listOf(withSubtitle, mediaOnly))
 
-        assertTrue(items[0].meta.contains("媒体文件 + 独立字幕文件"))
+        assertTrue(items[0].meta.contains("媒体文件"))
+        assertFalse(items[0].meta.contains("字幕"))
         assertFalse(items[0].meta.contains("merged-299-140.mp4"))
         assertFalse(items[0].meta.contains("captions.en.vtt"))
-        assertEquals(listOf("打开", "分享", "导出", "分享字幕", "导出字幕", "删除"), historyActionLabelsForUiTest(items[0]))
+        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[0]))
         assertFalse(items[1].meta.contains("独立字幕文件"))
-        assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(items[1]))
+        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[1]))
     }
 
     @Test
@@ -868,10 +913,55 @@ class DownloadUiBridgeTest {
             url = "https://www.youtube.com/shorts/example",
             title = "短视频",
             route = DownloadRoute.MergeRequired(videoFormatId = "137", audioFormatId = "140"),
-            formatSummary = "720p MP4 需原生合并",
+            formatSummary = "720p MP4 H.264 需原生合并",
         )
 
         assertEquals("720p", formatResolutionBadgeForRequest(shortVideoRequest))
+        assertEquals("H.264", formatCodecBadgeForRequest(shortVideoRequest))
+    }
+
+    @Test
+    fun historyCodecBadgeUsesRecordedSummaryWithoutGuessingFromLegacyFormatIds() {
+        val recordedCodec = HistoryItemEntity.createSafe(
+            "明确编码记录",
+            60,
+            "https",
+            "host-hash",
+            "other",
+            "app-private://outputs/task-media/video.webm",
+            "1080p WEBM VP9 单文件",
+            HistoryItemEntity.STATUS_COMPLETED,
+            100,
+            "",
+            "",
+            "",
+            1_000,
+            1_000,
+            1_000,
+        )
+        val legacyIdOnly = HistoryItemEntity.createSafe(
+            "旧格式记录",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "app-private://outputs/task-media/video.webm",
+            "视频 248",
+            HistoryItemEntity.STATUS_COMPLETED,
+            100,
+            "",
+            "",
+            "",
+            2_000,
+            2_000,
+            2_000,
+        )
+
+        val items = historyUiItemsFromRows(listOf(recordedCodec, legacyIdOnly))
+
+        assertEquals("VP9", items[0].codecBadge)
+        assertEquals("1080p", items[0].formatBadge)
+        assertEquals("", items[1].codecBadge)
     }
 
     @Test
@@ -967,12 +1057,12 @@ class DownloadUiBridgeTest {
         val item = historyUiItemsFromRows(listOf(mediaSavedSubtitleFailed)).single()
 
         assertTrue(item.meta.contains("媒体文件"))
-        assertTrue(item.meta.contains("所选字幕 zh-Hans 不可用"))
-        assertEquals(listOf("打开", "分享", "导出", "删除"), historyActionLabelsForUiTest(item))
+        assertFalse(item.meta.contains("字幕"))
+        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(item))
     }
 
     @Test
-    fun completedQueueMetaShowsMediaAndSubtitleOutputsWithoutRawFileNames() {
+    fun completedQueueMetaHidesSubtitleOutputsAndRawFileNames() {
         val state = RuntimeDownloadState().withPipelineStateForUiTest(
             DownloadTaskState(
                 stage = DownloadStage.Completed,
@@ -994,35 +1084,44 @@ class DownloadUiBridgeTest {
 
         val meta = queueCardMetaForUiTest(state)
 
-        assertTrue(meta.contains("媒体文件 + 独立字幕文件"))
+        assertTrue(meta.contains("媒体文件"))
+        assertFalse(meta.contains("字幕"))
         assertFalse(meta.contains("merged-299-140.mp4"))
         assertFalse(meta.contains("captions.en.vtt"))
-        assertTrue(state.userMessage.contains("媒体文件 + 独立字幕文件"))
+        assertTrue(state.userMessage.contains("媒体文件已保存"))
+        assertFalse(state.userMessage.contains("字幕"))
         assertFalse(state.userMessage.contains("merged-299-140.mp4"))
         assertFalse(state.userMessage.contains("captions.en.vtt"))
     }
 
     @Test
-    fun historyExportSuggestionUsesTitleAndTimestampToAvoidRepeatedMergedNames() {
-        val item = HistoryUiItem(
-            id = 1,
-            title = "Jalen/Brunson: Captain?",
-            meta = "视频+音频",
-            badge = "完成",
-            outputUri = "app-private://outputs/task-1/merged-299-140.mp4",
-            status = "completed",
-            completedAt = 1_783_250_902_008L,
+    fun failedQueueMessageHidesLegacySubtitleWording() {
+        val failed = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Failed,
+                request = request(),
+                errorMessage = "所选字幕 en 不可用，请取消字幕或重新分析后再试。",
+            ),
+        )
+        val mediaSaved = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Failed,
+                request = request(),
+                outputs = listOf(
+                    DownloadOutputFile(
+                        DownloadOutputKind.Media,
+                        "/data/user/0/com.garyapp.ytdl/files/gui-downloads/task-1/media.mp4",
+                        4096L,
+                    ),
+                ),
+                errorMessage = "所选字幕 en 不可用，请取消字幕或重新分析后再试。",
+            ),
         )
 
-        val name = suggestedExportDisplayNameForUiTest(item, "merged-299-140.mp4")
-
-        assertTrue(name.startsWith("Jalen_Brunson_ Captain_"))
-        assertTrue(name.endsWith(".mp4"))
-        assertTrue(Regex("""Jalen_Brunson_ Captain_-\d{8}-\d{6}\.mp4""").matches(name))
-        listOf("/", ":", "?").forEach { forbidden ->
-            assertFalse(name.contains(forbidden))
-        }
-        assertFalse(name.startsWith("merged-299-140"))
+        assertFalse(failed.userMessage.contains("字幕"))
+        assertTrue(failed.userMessage.contains("文件处理失败"))
+        assertFalse(mediaSaved.userMessage.contains("字幕"))
+        assertTrue(mediaSaved.userMessage.contains("媒体文件已保存"))
     }
 
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(

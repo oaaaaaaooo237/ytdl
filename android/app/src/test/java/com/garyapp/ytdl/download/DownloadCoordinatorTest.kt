@@ -185,15 +185,23 @@ class DownloadCoordinatorTest {
     }
 
     @Test
-    fun serviceExportsAllCompletedOutputsBeforeRecordingTerminalHistory() {
+    fun serviceSavesAllCompletedOutputsAndCleansPrivateTaskBeforeRecordingHistory() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
             "src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
         ).readText()
 
         assertTrue(source.contains("DownloadStage.Exporting"))
-        assertTrue(source.contains("ExportController.copyToSafTree"))
+        assertTrue(source.contains("ExportController.copyToSafTreeWithDocuments"))
+        assertTrue(source.contains("ExportController.cleanupExportedPrivateTask"))
+        assertTrue(source.contains(".onFailure {"))
+        assertTrue(source.contains("Log.w("))
+        assertTrue(source.contains("ExportController.markAppPrivateTaskCompleted"))
         assertTrue(source.contains("result.outputs.map"))
+        assertTrue(
+            source.indexOf("ExportController.copyToSafTreeWithDocuments") <
+                source.indexOf("ExportController.cleanupExportedPrivateTask"),
+        )
         assertTrue(source.indexOf("val terminalState = exportCompletedOutputs") < source.indexOf("historyRecorder.recordTerminal"))
         assertTrue(source.contains("ExportController.treeExportFailureMessage()"))
     }

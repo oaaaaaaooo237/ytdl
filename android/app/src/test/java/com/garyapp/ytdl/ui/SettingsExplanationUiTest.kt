@@ -32,7 +32,7 @@ class SettingsExplanationUiTest {
         composeRule.onNodeWithTag("ytdl-settings-explanation-dialog").assertExists()
         composeRule.onNodeWithText(
             "当前使用 Android 原生 MediaExtractor + MediaMuxer，将已下载的分离视频流和音频流封装合并。" +
-                "它不进行转码，也不嵌入或烧录字幕；带字幕任务会输出合并后的媒体文件和独立字幕文件。" +
+                "它不进行转码。" +
                 "源轨道或容器不兼容时可能无法合并。",
         ).assertExists()
     }

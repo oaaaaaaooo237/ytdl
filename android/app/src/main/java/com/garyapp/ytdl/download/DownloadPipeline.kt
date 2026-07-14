@@ -12,7 +12,9 @@ import com.garyapp.ytdl.core.ytdlp.YtdlpDownloadException
 import com.garyapp.ytdl.media.MediaMergeRequest
 import com.garyapp.ytdl.media.MediaOutputContainer
 import com.garyapp.ytdl.media.MediaProcessor
+import com.garyapp.ytdl.storage.ExportController
 import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -91,6 +93,7 @@ data class DownloadPipelineResult(
 class DownloadPipeline(
     private val engine: DownloadEngine,
     private val mediaProcessor: MediaProcessor,
+    private val deleteIntermediateFile: (File) -> Boolean = { it.delete() },
 ) {
     fun run(
         request: DownloadRequest,
@@ -101,6 +104,7 @@ class DownloadPipeline(
         outputDirectory.mkdirs()
         val appPrivateRoot = outputDirectory.canonicalFile
         val taskOutputDirectory = createTaskOutputDirectory(appPrivateRoot)
+        ExportController.markPrivateTaskStarted(taskOutputDirectory).getOrThrow()
         var state = DownloadTaskState.waiting(request)
         var currentStage = state.stage
         var currentSubtitleLanguage: String? = null
@@ -227,6 +231,11 @@ class DownloadPipeline(
             currentSubtitleLanguage = null
 
             ensureActive()
+            cleanupUntrackedTaskFiles(
+                taskOutputDirectory = taskOutputDirectory,
+                finalOutputs = finalOutputs,
+                preserveLifecycleMarker = true,
+            )
             val completed = state.completeWith(finalOutputs).getOrThrow()
             emit(completed)
             DownloadPipelineResult(state = state, outputs = finalOutputs)
@@ -378,30 +387,64 @@ class DownloadPipeline(
     }
 
     private fun deleteIntermediateStream(file: File) {
-        if (file.isFile) {
-            file.delete()
+        if (file.isFile && !deleteIntermediateFile(file) && file.exists()) {
+            throw DownloadStateException("合并完成后无法清理中间流文件。")
         }
     }
 
     private fun cleanupUntrackedTaskFiles(
         taskOutputDirectory: File,
         finalOutputs: List<DownloadOutputFile>,
+        preserveLifecycleMarker: Boolean = false,
     ) {
         val retainedOutputs = finalOutputs.mapNotNull { output ->
             runCatching { File(output.path).canonicalFile }.getOrNull()
         }
-        taskOutputDirectory.listFiles()?.forEach { candidate ->
+        val canonicalTaskDirectory = taskOutputDirectory.canonicalFile
+        taskOutputDirectory.listFiles()
+            ?.filterNot(ExportController::isTaskLifecycleMarker)
+            ?.forEach { candidate ->
             val canonicalCandidate = runCatching { candidate.canonicalFile }.getOrNull() ?: return@forEach
             val containsRetainedOutput = retainedOutputs.any { output ->
                 output == canonicalCandidate || output.path.startsWith(canonicalCandidate.path + File.separator)
             }
             if (!containsRetainedOutput) {
-                canonicalCandidate.deleteRecursively()
+                deleteTaskEntry(candidate, canonicalTaskDirectory)
             }
+        }
+        val remainingPayloads = taskOutputDirectory.listFiles().orEmpty()
+            .filterNot(ExportController::isTaskLifecycleMarker)
+        val hasUntrackedPayload = remainingPayloads.any { candidate ->
+            val canonicalCandidate = runCatching { candidate.canonicalFile }.getOrNull() ?: return@any true
+            retainedOutputs.none { output ->
+                output == canonicalCandidate || output.path.startsWith(canonicalCandidate.path + File.separator)
+            }
+        }
+        if (preserveLifecycleMarker && hasUntrackedPayload) {
+            throw DownloadStateException("无法清理下载过程文件。")
+        }
+        if (!preserveLifecycleMarker && !hasUntrackedPayload) {
+            taskOutputDirectory.listFiles().orEmpty()
+                .filter(ExportController::isTaskLifecycleMarker)
+                .forEach(File::delete)
         }
         if (taskOutputDirectory.listFiles().isNullOrEmpty()) {
             taskOutputDirectory.delete()
         }
+    }
+
+    private fun deleteTaskEntry(candidate: File, canonicalTaskDirectory: File): Boolean {
+        val path = candidate.toPath()
+        if (Files.isSymbolicLink(path)) {
+            return runCatching { Files.deleteIfExists(path) }.getOrDefault(false)
+        }
+        val canonicalCandidate = runCatching { candidate.canonicalFile }.getOrNull() ?: return false
+        if (!canonicalCandidate.path.startsWith(canonicalTaskDirectory.path + File.separator)) return false
+        if (candidate.isDirectory) {
+            val children = candidate.listFiles() ?: return false
+            if (!children.all { deleteTaskEntry(it, canonicalTaskDirectory) }) return false
+        }
+        return candidate.delete() || !candidate.exists()
     }
 
     private fun String.safeFileToken(): String {

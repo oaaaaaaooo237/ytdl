@@ -162,22 +162,44 @@ class FormatSelectionModelTest {
     }
 
     @Test
-    fun videoDownloadKeepsProgressiveAndPureVideoAtSameHeight() {
+    fun videoDownloadGroupsOneRowPerResolutionAndDefaultsToCompatibleCodec() {
         val rows = buildFormatResolutionRows(
             analysis = analysisWith(
-                progressiveFormat(id = "18", height = 1080),
-                videoOnlyFormat(id = "137", height = 1080),
+                progressiveFormat(id = "av1-1080", height = 1080, videoCodec = "av01"),
+                progressiveFormat(id = "h264-1080", height = 1080, videoCodec = "avc1"),
             ),
             selection = FormatSelection(
                 mode = FormatMode.VideoOnly,
                 selectedHeight = 1080,
-                selectedVideoFormatId = "137",
             ),
         )
 
-        val rows1080 = rows.filter { it.height == 1080 }
-        assertEquals(listOf("18", "137"), rows1080.map { it.videoFormatId })
-        assertEquals("137", rows1080.single { it.selected }.videoFormatId)
+        val row = rows.single { it.height == 1080 }
+        assertEquals("h264-1080", row.videoFormatId)
+        assertEquals("H.264", row.selectedCodecLabel)
+        assertEquals(listOf("H.264", "AV1"), row.codecOptions.map { it.label })
+        assertEquals(listOf(true, false), row.codecOptions.map { it.selected })
+    }
+
+    @Test
+    fun videoDownloadKeepsExplicitCodecAndExactFormatId() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "h264-1080", height = 1080, videoCodec = "avc1"),
+            progressiveFormat(id = "av1-1080", height = 1080, videoCodec = "av01"),
+        )
+        val row = buildFormatResolutionRows(
+            analysis = analysis,
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "av1-1080",
+            ),
+        ).single { it.height == 1080 }
+
+        assertEquals("av1-1080", row.videoFormatId)
+        assertEquals("AV1", row.selectedCodecLabel)
+        assertEquals(listOf(false, true), row.codecOptions.map { it.selected })
+        assertEquals("av1-1080", selectionFromRow(FormatMode.VideoOnly, row).selectedVideoFormatId)
     }
 
     @Test
@@ -195,7 +217,7 @@ class FormatSelectionModelTest {
         assertTrue(row.direct)
         assertEquals("18", row.videoFormatId)
         assertNull(row.audioFormatId)
-        assertEquals("360p MP4 单文件", row.summary)
+        assertEquals("360p MP4 H.264 单文件", row.summary)
     }
 
     @Test
@@ -227,11 +249,11 @@ class FormatSelectionModelTest {
     }
 
     @Test
-    fun videoDownloadListsEveryDownloadableVideoFormatWithoutInternalIdsInLabels() {
+    fun videoDownloadGroupsDifferentCodecsWithoutShowingInternalIds() {
         val analysis = analysisWith(
-            progressiveFormat(id = "progressive-1080", height = 1080),
+            progressiveFormat(id = "progressive-1080", height = 1080, videoCodec = "avc1"),
             unknownSingleFileFormat(id = "unknown-1080", height = 1080),
-            videoOnlyFormat(id = "137", height = 1080),
+            videoOnlyFormat(id = "vp9-1080", height = 1080, ext = "webm", videoCodec = "vp9"),
             audioOnlyFormat(id = "140"),
         )
 
@@ -240,9 +262,10 @@ class FormatSelectionModelTest {
             selection = FormatSelection(mode = FormatMode.VideoOnly),
         ).filter { it.height != null }
 
-        assertEquals(listOf("progressive-1080", "unknown-1080", "137"), rows.map { it.videoFormatId })
-        assertTrue(rows.all { it.label.startsWith("1080p") })
-        assertTrue(rows.none { it.label.contains("137") || it.label.contains("140") || it.label.contains("1920p") })
+        val row = rows.single()
+        assertEquals("1080p", row.label)
+        assertEquals(listOf("H.264", "VP9", "其他"), row.codecOptions.map { it.label })
+        assertTrue(row.codecOptions.none { it.label.contains("1080") || it.label.contains("140") })
     }
 
     @Test
@@ -299,7 +322,11 @@ class FormatSelectionModelTest {
         subtitles = emptyList<SubtitleInfo>(),
     )
 
-    private fun progressiveFormat(id: String, height: Int) = VideoFormat(
+    private fun progressiveFormat(
+        id: String,
+        height: Int,
+        videoCodec: String = "avc1",
+    ) = VideoFormat(
         id = id,
         ext = "mp4",
         height = height,
@@ -308,7 +335,7 @@ class FormatSelectionModelTest {
         hasAudio = true,
         mergeRequired = false,
         isSupported = true,
-        videoCodec = "avc1",
+        videoCodec = videoCodec,
         audioCodec = "mp4a",
     )
 

@@ -25,7 +25,7 @@ class NotificationController(
             "下载任务",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "显示正在进行的下载、合并和导出状态。"
+            description = "显示正在进行的下载、合并和保存状态。"
         }
         manager.createNotificationChannel(channel)
     }
@@ -77,9 +77,9 @@ class NotificationController(
             DownloadStage.Waiting -> "等待下载"
             DownloadStage.DownloadingVideo -> "正在下载视频"
             DownloadStage.DownloadingAudio -> "正在下载音频"
-            DownloadStage.DownloadingSubtitles -> "正在下载字幕文件"
+            DownloadStage.DownloadingSubtitles -> "正在处理附加文件"
             DownloadStage.Merging -> "正在原生合并"
-            DownloadStage.Exporting -> "正在导出"
+            DownloadStage.Exporting -> "正在保存"
             DownloadStage.Completed -> "下载完成"
             DownloadStage.Failed -> "下载失败"
             DownloadStage.Canceled -> "已取消"

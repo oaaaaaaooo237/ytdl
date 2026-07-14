@@ -27,7 +27,7 @@ object DownloadFailureMessages {
     }
 
     fun saveExportDenied(detail: String? = null): String {
-        return "未获得保存位置授权，导出已取消。请重新选择保存位置。"
+        return "未获得保存位置授权，保存已取消。请重新选择保存位置。"
     }
 
     fun canceled(): String {
