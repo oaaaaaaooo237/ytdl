@@ -702,9 +702,30 @@ class DownloadUiBridgeTest {
         assertEquals(300L, updated.downloadedBytes)
         assertEquals(1_000L, updated.totalBytes)
         assertEquals(
-            "速度 400 B/s · 已下载 300 B · 总计 1000 B",
+            QueueProgressMeta(
+                speed = "400.0 B/s",
+                transferred = "300.0 B/1000.0 B",
+                contentDescription = "下载速度 400.0 B/s，已下载 300.0 B，总容量 1000.0 B",
+            ),
             queueCardMetaForUiTest(updated),
         )
+    }
+
+    @Test
+    fun queueProgressUsesOneDecimalUnitsWithoutVisibleLabels() {
+        assertEquals("0.0 B", formatProgressBytesForUiTest(0.0))
+        assertEquals("1.0 KB", formatProgressBytesForUiTest(1024.0))
+        assertEquals("1.0 MB", formatProgressBytesForUiTest(1024.0 * 1024.0))
+        assertEquals("1.0 GB", formatProgressBytesForUiTest(1024.0 * 1024.0 * 1024.0))
+
+        val empty = queueCardMetaForUiTest(RuntimeDownloadState())
+
+        assertEquals("--", empty.speed)
+        assertEquals("0.0 B/--", empty.transferred)
+        listOf("速度", "已下载", "总计", "未知").forEach { label ->
+            assertFalse(empty.speed.contains(label))
+            assertFalse(empty.transferred.contains(label))
+        }
     }
 
     @Test
@@ -744,7 +765,11 @@ class DownloadUiBridgeTest {
         assertEquals(50L, audio.downloadedBytes)
         assertEquals(200L, audio.totalBytes)
         assertEquals(
-            "速度 100 B/s · 已下载 50 B · 总计 200 B",
+            QueueProgressMeta(
+                speed = "100.0 B/s",
+                transferred = "50.0 B/200.0 B",
+                contentDescription = "下载速度 100.0 B/s，已下载 50.0 B，总容量 200.0 B",
+            ),
             queueCardMetaForUiTest(audio),
         )
     }
@@ -801,10 +826,17 @@ class DownloadUiBridgeTest {
 
         val meta = queueCardMetaForUiTest(state)
 
-        assertEquals("速度 -- · 已下载 4.0 KB · 总计 4.0 KB", meta)
-        assertFalse(meta.contains("App 私有目录"))
-        assertFalse(meta.contains("媒体文件"))
-        assertFalse(meta.contains("merged-136-140.mp4"))
+        assertEquals(
+            QueueProgressMeta(
+                speed = "--",
+                transferred = "4.0 KB/4.0 KB",
+                contentDescription = "下载速度 --，已下载 4.0 KB，总容量 4.0 KB",
+            ),
+            meta,
+        )
+        assertFalse(meta.toString().contains("App 私有目录"))
+        assertFalse(meta.toString().contains("媒体文件"))
+        assertFalse(meta.toString().contains("merged-136-140.mp4"))
     }
 
     @Test
@@ -1369,7 +1401,7 @@ class DownloadUiBridgeTest {
 
         assertFalse(item.meta.contains("媒体文件"))
         assertFalse(item.meta.contains("字幕"))
-        assertTrue(item.meta.contains("merged-299-140.mp4"))
+        assertFalse(item.meta.contains("merged-299-140.mp4"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(item))
     }
 
@@ -1396,11 +1428,18 @@ class DownloadUiBridgeTest {
 
         val meta = queueCardMetaForUiTest(state)
 
-        assertEquals("速度 -- · 已下载 4.0 KB · 总计 4.0 KB", meta)
-        assertFalse(meta.contains("字幕"))
-        assertFalse(meta.contains("媒体文件"))
-        assertFalse(meta.contains("merged-299-140.mp4"))
-        assertFalse(meta.contains("captions.en.vtt"))
+        assertEquals(
+            QueueProgressMeta(
+                speed = "--",
+                transferred = "4.0 KB/4.0 KB",
+                contentDescription = "下载速度 --，已下载 4.0 KB，总容量 4.0 KB",
+            ),
+            meta,
+        )
+        assertFalse(meta.toString().contains("字幕"))
+        assertFalse(meta.toString().contains("媒体文件"))
+        assertFalse(meta.toString().contains("merged-299-140.mp4"))
+        assertFalse(meta.toString().contains("captions.en.vtt"))
         assertEquals("下载完成", state.userMessage)
         assertFalse(state.userMessage.contains("字幕"))
         assertFalse(state.userMessage.contains("媒体文件"))

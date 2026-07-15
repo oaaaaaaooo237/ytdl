@@ -638,6 +638,12 @@ internal data class QueueProgressPresentation(
     val isIndeterminate: Boolean,
 )
 
+internal data class QueueProgressMeta(
+    val speed: String,
+    val transferred: String,
+    val contentDescription: String,
+)
+
 internal data class FormatSettingSummaries(
     val frameRate: String,
     val videoCodec: String,
@@ -2782,17 +2788,21 @@ private fun queueCardStatus(state: RuntimeDownloadState): String {
 
 internal fun queueCardStatusForUiTest(state: RuntimeDownloadState): String = queueCardStatus(state)
 
-private fun queueCardMeta(state: RuntimeDownloadState): String {
+private fun queueCardMeta(state: RuntimeDownloadState): QueueProgressMeta {
     val speed = state.speedBytesPerSecond
         ?.takeIf { it.isFinite() && it > 0.0 }
-        ?.let { "${formatBytes(it.toLong())}/s" }
+        ?.let { "${formatProgressBytes(it)}/s" }
         ?: "--"
-    val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
-    val total = state.totalBytes?.let(::formatBytes) ?: "未知"
-    return "速度 $speed · 已下载 $downloaded · 总计 $total"
+    val downloaded = formatProgressBytes((state.downloadedBytes ?: 0L).toDouble())
+    val total = state.totalBytes?.let { formatProgressBytes(it.toDouble()) } ?: "--"
+    return QueueProgressMeta(
+        speed = speed,
+        transferred = "$downloaded/$total",
+        contentDescription = "下载速度 $speed，已下载 $downloaded，总容量 $total",
+    )
 }
 
-internal fun queueCardMetaForUiTest(state: RuntimeDownloadState): String = queueCardMeta(state)
+internal fun queueCardMetaForUiTest(state: RuntimeDownloadState): QueueProgressMeta = queueCardMeta(state)
 
 private fun queueCardFormatBadge(state: RuntimeDownloadState): String = formatResolutionBadgeForRequest(state.activeRequest)
 
@@ -2828,6 +2838,20 @@ private fun formatBytes(bytes: Long): String {
     if (mib < 1024) return "%.1f MB".format(mib)
     return "%.2f GB".format(mib / 1024.0)
 }
+
+private fun formatProgressBytes(bytes: Double): String {
+    val safeBytes = bytes.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+    val units = listOf("B", "KB", "MB", "GB")
+    var value = safeBytes
+    var unitIndex = 0
+    while (value >= 1024.0 && unitIndex < units.lastIndex) {
+        value /= 1024.0
+        unitIndex += 1
+    }
+    return String.format(Locale.ROOT, "%.1f %s", value, units[unitIndex])
+}
+
+internal fun formatProgressBytesForUiTest(bytes: Double): String = formatProgressBytes(bytes)
 
 private fun settingsCookiesSubtitle(settings: AppSettings): String {
     val reference = settings.cookiesReference
@@ -3029,7 +3053,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                     subtitle = queueCardSubtitle(state),
                     progress = queueProgressPresentation(state),
                     status = queueCardStatus(state),
-                    meta = queueCardMeta(state),
+                    meta = queueCardMeta(state).let { "${it.speed} · ${it.transferred}" },
                     formatBadge = queueCardFormatBadge(state),
                     codecBadge = queueCardCodecBadge(state),
                     stageItems = queueStageItems(state),

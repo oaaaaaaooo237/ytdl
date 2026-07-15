@@ -88,7 +88,7 @@ git commit -m "fix(android): hide task filenames from history"
 - Modify: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt`
 - Test: `android/app/src/test/java/com/garyapp/ytdl/ui/DownloadUiBridgeTest.kt`
 
-- [ ] **Step 1: 写进度格式的失败测试**
+- [x] **Step 1: 写进度格式的失败测试**
 
 把既有 `queueCardMetaForUiTest` 断言改成结构化结果，并增加单位边界：
 
@@ -117,7 +117,7 @@ assertFalse(empty.transferred.contains("总计"))
 assertFalse(empty.transferred.contains("未知"))
 ```
 
-- [ ] **Step 2: 运行聚焦测试并确认 RED**
+- [x] **Step 2: 运行聚焦测试并确认 RED**
 
 Run:
 
@@ -127,7 +127,7 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests "com.gary
 
 Expected: `QueueProgressMeta` 和 `formatProgressBytesForUiTest` 尚不存在，测试编译失败。
 
-- [ ] **Step 3: 实现独立进度模型和格式化函数**
+- [x] **Step 3: 实现独立进度模型和格式化函数**
 
 在 `YtdlApp.kt` 中加入：
 
@@ -173,13 +173,13 @@ private fun queueCardMeta(state: RuntimeDownloadState): QueueProgressMeta {
 
 保留原有 `formatBytes(Long)` 给设置页缓存统计使用，不改变其输出。
 
-- [ ] **Step 4: 运行聚焦测试并确认 GREEN**
+- [x] **Step 4: 运行聚焦测试并确认 GREEN**
 
 Run: 与 Step 2 相同。
 
 Expected: 一位小数、四级单位和未知值断言全部通过。
 
-- [ ] **Step 5: 提交进度模型**
+- [x] **Step 5: 提交进度模型**
 
 ```powershell
 git add -- android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt android/app/src/test/java/com/garyapp/ytdl/ui/DownloadUiBridgeTest.kt
