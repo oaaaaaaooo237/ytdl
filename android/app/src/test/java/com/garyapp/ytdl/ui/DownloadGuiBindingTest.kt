@@ -1055,6 +1055,39 @@ class DownloadGuiBindingTest {
         assertEquals(retryTop, canceledDeleteTop)
     }
 
+    @Test
+    fun historyCardKeepsThreeTrailingBadgesEvenlySeparated() {
+        val completed = HistoryUiItem(
+            id = 103L,
+            title = "三枚标签的视频",
+            meta = "视频 · 07/15 12:02",
+            badge = "完成",
+            outputUri = "app-private://outputs/video.mp4",
+            status = HistoryItemEntity.STATUS_COMPLETED,
+            completedAt = 103L,
+            formatBadge = "720p",
+            codecBadge = "H.264",
+        )
+
+        renderTasksPage(RuntimeDownloadState(), emptyList(), listOf(completed))
+
+        val statusBounds = composeRule.onNodeWithTag("ytdl-history-status-badge")
+            .getUnclippedBoundsInRoot()
+        val codecBounds = composeRule.onNodeWithTag("ytdl-history-codec-badge")
+            .getUnclippedBoundsInRoot()
+        val formatBounds = composeRule.onNodeWithTag("ytdl-history-format-badge")
+            .getUnclippedBoundsInRoot()
+        val firstGap = codecBounds.top - statusBounds.bottom
+        val secondGap = formatBounds.top - codecBounds.bottom
+
+        assertTrue(firstGap.value >= 0f)
+        assertTrue(secondGap.value >= 0f)
+        assertEquals(firstGap.value, secondGap.value, 0.5f)
+        assertTrue((statusBounds.bottom - statusBounds.top).value <= 28.5f)
+        assertTrue((codecBounds.bottom - codecBounds.top).value <= 28.5f)
+        assertTrue((formatBounds.bottom - formatBounds.top).value <= 28.5f)
+    }
+
     private fun requestFor(vararg formats: VideoFormat): DownloadRequest {
         val analysis = analysisWith(*formats)
         return DownloadRequest.fromAnalysis(

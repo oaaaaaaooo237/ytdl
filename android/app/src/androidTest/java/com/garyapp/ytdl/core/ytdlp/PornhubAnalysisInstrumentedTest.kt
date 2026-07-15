@@ -20,7 +20,8 @@ class PornhubAnalysisInstrumentedTest {
             Python.start(AndroidPlatform(ApplicationProvider.getApplicationContext()))
         }
         val result = YtdlpBridge().analyze(REPORTED_URL)
-        assertTrue(result.isSuccess)
+        val failureCategory = (result.exceptionOrNull() as? YtdlpAnalysisException)?.category
+        assertTrue("Pornhub analysis failed: category=$failureCategory", result.isSuccess)
         val analysis = result.getOrThrow()
         assertTrue(analysis.title.isNotBlank())
         assertTrue(analysis.formats.isNotEmpty())

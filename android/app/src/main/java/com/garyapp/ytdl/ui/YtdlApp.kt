@@ -183,8 +183,8 @@ private const val HistoryThumbnailTargetPx = 160
 private const val HistoryThumbnailCacheMaxItems = 64
 private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
 private val TopContentSpacing = 16.dp
-private val CardPillBadgeMinWidth = 64.dp
-private val CardPillBadgeMinHeight = 30.dp
+private val CardPillBadgeMinWidth = 60.dp
+private val CardPillBadgeMinHeight = 28.dp
 private val BottomBarGestureBuffer = 32.dp
 private val SettingsAppearanceBottomBuffer = 96.dp
 private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
@@ -3801,33 +3801,27 @@ private fun CardTrailingBadges(
     codecTag: String,
 ) {
     Column(
-        modifier = Modifier.fillMaxHeight(),
         horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         CardPillBadge(
             text = status,
             accent = statusAccent,
             tag = statusTag,
         )
-        Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            if (codecBadge.isNotBlank()) {
-                CardPillBadge(
-                    text = codecBadge,
-                    accent = formatAccent,
-                    tag = codecTag,
-                )
-            }
-            if (formatBadge.isNotBlank()) {
-                CardPillBadge(
-                    text = formatBadge,
-                    accent = formatAccent,
-                    tag = formatTag,
-                )
-            }
+        if (codecBadge.isNotBlank()) {
+            CardPillBadge(
+                text = codecBadge,
+                accent = formatAccent,
+                tag = codecTag,
+            )
+        }
+        if (formatBadge.isNotBlank()) {
+            CardPillBadge(
+                text = formatBadge,
+                accent = formatAccent,
+                tag = formatTag,
+            )
         }
     }
 }
@@ -3855,7 +3849,7 @@ private fun CardPillBadge(
             Text(
                 text,
                 color = accent,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
