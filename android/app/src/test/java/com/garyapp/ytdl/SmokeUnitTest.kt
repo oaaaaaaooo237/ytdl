@@ -23,9 +23,9 @@ class SmokeUnitTest {
     }
 
     @Test
-    fun navigationLabelsExposeFourAndroidTabs() {
+    fun navigationLabelsExposeThreeAndroidTabs() {
         assertEquals(
-            listOf("下载", "格式", "任务", "设置"),
+            listOf("下载", "任务", "设置"),
             ytdlNavigationDestinations().map { it.label },
         )
     }
@@ -38,13 +38,12 @@ class SmokeUnitTest {
     }
 
     @Test
-    fun visibleContentModelCoversFourReferenceScreens() {
+    fun visibleContentModelCoversThreeReferenceScreens() {
         val labels = ytdlVisibleContentLabels()
 
-        assertEquals(setOf("download", "formats", "tasks", "settings"), labels.keys)
-        assertTrue(labels.getValue("download").containsAll(listOf("粘贴公开视频页面地址", "分析", "开始下载")))
-        assertTrue(labels.getValue("formats").containsAll(listOf("视频+音频", "1080p", "需合并")))
-        assertTrue(labels.getValue("formats").none { it.contains("字幕") })
+        assertEquals(setOf("download", "tasks", "settings"), labels.keys)
+        assertTrue(labels.getValue("download").containsAll(listOf("粘贴公开视频页面地址", "分析", "视频+音频", "视频", "音频", "分辨率", "开始下载")))
+        assertTrue(labels.getValue("download").none { it.contains("字幕") })
         assertTrue(labels.getValue("tasks").containsAll(listOf("当前任务", "等待中", "搜索历史", "暂无真实历史记录", "完成下载后会显示")))
         assertTrue(labels.getValue("settings").containsAll(listOf("Cookies 文件", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格")))
     }

@@ -7,8 +7,8 @@ import com.garyapp.ytdl.download.RetryDownloadDraft
 
 enum class FormatMode(val label: String) {
     VideoAndAudio("视频+音频"),
-    AudioOnly("仅音频"),
-    VideoOnly("视频下载"),
+    AudioOnly("音频"),
+    VideoOnly("视频"),
 }
 
 data class FormatSelection(

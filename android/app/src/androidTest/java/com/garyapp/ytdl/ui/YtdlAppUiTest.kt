@@ -58,14 +58,10 @@ class YtdlAppUiTest {
     }
 
     @Test
-    fun bottomTabsNavigateAcrossFourReferenceScreens() {
+    fun bottomTabsNavigateAcrossThreeReferenceScreens() {
         assertTagVisible("ytdl-screen-download")
         assertTagVisible("ytdl-download-start")
-
-        tapTag("ytdl-tab-formats")
-        assertTagVisible("ytdl-screen-formats")
-        assertTagVisible("ytdl-format-empty-card")
-        assertTextContains("请先分析视频", timeoutMs = 1_000)
+        assertTagNotVisible("ytdl-tab-formats")
 
         tapTag("ytdl-tab-tasks")
         assertTagVisible("ytdl-screen-tasks")
@@ -627,12 +623,11 @@ class YtdlAppUiTest {
         assertTextContains("分析完成", timeoutMs = 45_000)
         expectedTitleText?.let { assertTextContains(it, timeoutMs = 1_000) }
 
-        tapTag("ytdl-tab-formats")
         scrollUntilTag("ytdl-format-row-1080")
         tapTag("ytdl-format-row-1080")
-        scrollUntilTag("ytdl-format-apply")
-        tapTag("ytdl-format-apply")
+        scrollUntilTag("ytdl-download-authorized-checkbox")
         tapTag("ytdl-download-authorized-checkbox")
+        scrollUntilTag("ytdl-download-start")
         tapTag("ytdl-download-start")
     }
 
@@ -651,15 +646,13 @@ class YtdlAppUiTest {
         assertTagVisible("ytdl-thumbnail-image", timeoutMs = 15_000)
         saveScreen("${screenshotPrefix}03-analysis.png")
 
-        tapTag("ytdl-tab-formats")
         scrollUntilTag("ytdl-format-row-1080")
         assertTextContains("1080p", timeoutMs = 1_000)
         assertTextContains("需原生合并", timeoutMs = 1_000)
         tapTag("ytdl-format-row-1080")
-        scrollUntilTag("ytdl-format-apply")
-        tapTag("ytdl-format-apply")
         assertTagVisible("ytdl-screen-download")
         assertTextContains("1080p", timeoutMs = 1_000)
+        scrollUntilTag("ytdl-download-authorized-checkbox")
         tapTag("ytdl-download-authorized-checkbox")
         saveScreen("${screenshotPrefix}03-format-applied.png")
 

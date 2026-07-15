@@ -98,6 +98,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
@@ -266,29 +267,6 @@ private val DownloadTabIcon = tabIcon("DownloadTab") {
     lineTo(19f, 18f)
     lineTo(19f, 20f)
     lineTo(5f, 20f)
-    close()
-}
-
-private val FormatTabIcon = tabIcon("FormatTab") {
-    moveTo(4f, 4f)
-    lineTo(10f, 4f)
-    lineTo(10f, 10f)
-    lineTo(4f, 10f)
-    close()
-    moveTo(14f, 4f)
-    lineTo(20f, 4f)
-    lineTo(20f, 10f)
-    lineTo(14f, 10f)
-    close()
-    moveTo(4f, 14f)
-    lineTo(10f, 14f)
-    lineTo(10f, 20f)
-    lineTo(4f, 20f)
-    close()
-    moveTo(14f, 14f)
-    lineTo(20f, 14f)
-    lineTo(20f, 20f)
-    lineTo(14f, 20f)
     close()
 }
 
@@ -673,14 +651,6 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         accent = palette.downloadAccent,
     ),
     YtdlDestination(
-        route = "formats",
-        label = "格式",
-        title = "格式",
-        summary = "设置下载格式偏好，不做强制转码承诺。",
-        icon = FormatTabIcon,
-        accent = palette.formatAccent,
-    ),
-    YtdlDestination(
         route = "tasks",
         label = "任务",
         title = "任务",
@@ -707,8 +677,7 @@ internal fun ytdlNavigationAccentHexesForUiTest(
         .associate { destination -> destination.label to colorArgbHexForUiTest(destination.accent) }
 }
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
-    "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "保存位置", "下载模式", "开始下载"),
-    "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式"),
+    "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "下载模式", "视频+音频", "视频", "音频", "分辨率", "视频编码", "容器格式", "保存位置", "开始下载"),
     "tasks" to listOf("当前任务", "等待中", "搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
     "settings" to listOf("保存位置", "恢复默认路径", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格", "MVP2"),
 )
@@ -1090,7 +1059,7 @@ internal fun YtdlApp(
                             analyzed
                         } else {
                             val restoredSelection = retryFormatSelection(analysis, retryDraft)
-                            selectedRoute = "formats"
+                            selectedRoute = "download"
                             analyzed.copy(
                                 formatSelection = restoredSelection,
                                 appliedFormatSelection = restoredSelection,
@@ -1360,30 +1329,27 @@ internal fun YtdlApp(
                             state = runtimeState,
                             storageTarget = appSettings.defaultStorageTarget,
                             hasUserConfirmed = hasUserConfirmed,
-                            onUrlChange = {
-                                hasUserConfirmed = false
-                                runtimeState = runtimeState.copy(
-                                    url = it,
-                                    analysis = null,
-                                    formatSelection = FormatSelection(),
-                                    appliedFormatSelection = FormatSelection(),
-                                    thumbnailBitmap = null,
-                                    thumbnailStatus = "",
-                                )
+                            onUrlChange = { updatedUrl ->
+                                if (updatedUrl != runtimeState.url) {
+                                    hasUserConfirmed = false
+                                    runtimeState = runtimeState.copy(
+                                        url = updatedUrl,
+                                        analysis = null,
+                                        formatSelection = FormatSelection(),
+                                        appliedFormatSelection = FormatSelection(),
+                                        thumbnailBitmap = null,
+                                        thumbnailStatus = "",
+                                    )
+                                }
                             },
                             onAnalyze = ::analyzeCurrentUrl,
                             onStartDownload = ::startRealDownload,
                             onUserConfirmedChange = { hasUserConfirmed = it },
                             onModeSelected = ::selectDownloadMode,
                             onSelectStorageTarget = { storageTreePicker.launch(null) },
-                        )
-                        "formats" -> formatPageItems(
-                            analysis = runtimeState.analysis,
-                            selection = runtimeState.formatSelection,
-                            onSelectionChange = { selection ->
+                            onFormatSelectionChange = { selection ->
                                 runtimeState = runtimeState.withFormatSelection(selection)
                             },
-                            onFinishSelection = { selectedRoute = "download" },
                         )
                         "tasks" -> tasksPageItems(
                             state = runtimeState,
@@ -2072,6 +2038,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     onUserConfirmedChange: (Boolean) -> Unit,
     onModeSelected: (FormatMode) -> Unit,
     onSelectStorageTarget: () -> Unit,
+    onFormatSelectionChange: (FormatSelection) -> Unit = {},
 ) {
     val modeSelections = downloadModeSelections(state)
     val modeAvailability = FormatMode.entries.associateWith { mode ->
@@ -2108,6 +2075,51 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
         }
     }
     item {
+        SectionTitle("下载模式")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            ModeCard(
+                "▣",
+                FormatMode.VideoAndAudio.label,
+                selected = modeSelections[FormatMode.VideoAndAudio] == true,
+                enabled = modeAvailability[FormatMode.VideoAndAudio] == true,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(enabled = modeAvailability[FormatMode.VideoAndAudio] == true) { onModeSelected(FormatMode.VideoAndAudio) }
+                    .testTag("ytdl-download-mode-av"),
+            )
+            ModeCard(
+                "▤",
+                FormatMode.VideoOnly.label,
+                selected = modeSelections[FormatMode.VideoOnly] == true,
+                enabled = modeAvailability[FormatMode.VideoOnly] == true,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(enabled = modeAvailability[FormatMode.VideoOnly] == true) { onModeSelected(FormatMode.VideoOnly) }
+                    .testTag("ytdl-download-mode-video"),
+            )
+            ModeCard(
+                "♫",
+                FormatMode.AudioOnly.label,
+                selected = modeSelections[FormatMode.AudioOnly] == true,
+                enabled = modeAvailability[FormatMode.AudioOnly] == true,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(enabled = modeAvailability[FormatMode.AudioOnly] == true) { onModeSelected(FormatMode.AudioOnly) }
+                    .testTag("ytdl-download-mode-audio"),
+            )
+        }
+    }
+    state.analysis?.let { analysis ->
+        formatSelectionItems(
+            analysis = analysis,
+            selection = state.formatSelection,
+            onSelectionChange = onFormatSelectionChange,
+        )
+    }
+    item {
         SettingLineCard(
             title = "保存位置",
             subtitle = storageTargetSummary(storageTarget),
@@ -2120,69 +2132,31 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
         )
     }
     item {
-        SectionTitle("下载模式")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ModeCard(
-                "♫",
-                "仅音频",
-                selected = modeSelections[FormatMode.AudioOnly] == true,
-                enabled = modeAvailability[FormatMode.AudioOnly] == true,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable(enabled = modeAvailability[FormatMode.AudioOnly] == true) { onModeSelected(FormatMode.AudioOnly) }
-                    .testTag("ytdl-download-mode-audio"),
-            )
-            ModeCard(
-                "▣",
-                "视频+音频",
-                selected = modeSelections[FormatMode.VideoAndAudio] == true,
-                enabled = modeAvailability[FormatMode.VideoAndAudio] == true,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable(enabled = modeAvailability[FormatMode.VideoAndAudio] == true) { onModeSelected(FormatMode.VideoAndAudio) }
-                    .testTag("ytdl-download-mode-av"),
-            )
-            ModeCard(
-                "▤",
-                "视频下载",
-                selected = modeSelections[FormatMode.VideoOnly] == true,
-                enabled = modeAvailability[FormatMode.VideoOnly] == true,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable(enabled = modeAvailability[FormatMode.VideoOnly] == true) { onModeSelected(FormatMode.VideoOnly) }
-                    .testTag("ytdl-download-mode-video"),
-            )
-        }
-    }
-    item {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Checkbox(
-                checked = hasUserConfirmed,
-                onCheckedChange = onUserConfirmedChange,
-                modifier = Modifier.testTag("ytdl-download-authorized-checkbox"),
-            )
-            Text("我确认有权保存该内容", style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-    item {
         val palette = LocalYtdlAppPalette.current
-        Button(
-            onClick = onStartDownload,
-            enabled = canStartDownload(state, hasUserConfirmed),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("ytdl-download-start"),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = palette.downloadAccent),
-            contentPadding = PaddingValues(vertical = 13.dp),
-        ) {
-            Text(
-                if (state.isDownloading) "↓  加入等待队列" else "↓  开始下载",
-                fontWeight = FontWeight.Bold,
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Checkbox(
+                    checked = hasUserConfirmed,
+                    onCheckedChange = onUserConfirmedChange,
+                    modifier = Modifier.testTag("ytdl-download-authorized-checkbox"),
+                )
+                Text("我确认有权保存该内容", style = MaterialTheme.typography.bodyMedium)
+            }
+            Button(
+                onClick = onStartDownload,
+                enabled = canStartDownload(state, hasUserConfirmed),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ytdl-download-start"),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = palette.downloadAccent),
+                contentPadding = PaddingValues(vertical = 13.dp),
+            ) {
+                Text(
+                    if (state.isDownloading) "↓  加入等待队列" else "↓  开始下载",
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }
@@ -2419,51 +2393,49 @@ private fun formatDuration(totalSeconds: Long): String {
     }
 }
 
-internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
-    analysis: VideoAnalysis?,
+internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems(
+    analysis: VideoAnalysis,
     selection: FormatSelection,
     onSelectionChange: (FormatSelection) -> Unit,
-    onFinishSelection: () -> Unit,
 ) {
-    val modeAvailability = FormatMode.entries.map { mode -> isFormatModeAvailable(analysis, mode) }
-    item {
-        val palette = LocalYtdlAppPalette.current
-        SegmentedRow(
-            options = listOf(FormatMode.VideoAndAudio, FormatMode.AudioOnly, FormatMode.VideoOnly).map { it.label },
-            selectedIndex = selection.mode.ordinal,
-            accent = palette.formatAccent,
-            testTagPrefix = "ytdl-format-mode",
-            enabledOptions = modeAvailability,
-            onSelected = { index ->
-                val mode = FormatMode.entries[index]
-                onSelectionChange(
-                    selectBestAvailableFormatSelection(
-                        analysis = analysis,
-                        mode = mode,
-                        preferredHeight = selection.selectedHeight,
-                    ),
-                )
-            },
-        )
-    }
-    if (analysis == null) {
-        item {
-            val palette = LocalYtdlAppPalette.current
-            AppCard(modifier = Modifier.testTag("ytdl-format-empty-card")) {
-                Text("请先分析视频", color = palette.softText, fontWeight = FontWeight.Bold)
-                Text("格式页会根据当前视频真实提供的格式生成可选项。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
     val rows = buildFormatResolutionRows(analysis, selection)
     val summaries = formatSettingSummaries(analysis, selection)
-    val hasAnalysis = analysis != null
-    item {
-        AppCard(modifier = Modifier.testTag("ytdl-format-resolution-card")) {
-            SectionTitle("分辨率")
-            if (analysis != null && rows.isEmpty()) {
-                Text("当前模式没有可下载格式", color = LocalYtdlAppPalette.current.softText)
-            } else {
+    val audioMode = selection.mode == FormatMode.AudioOnly
+
+    if (audioMode) {
+        item {
+            SettingLineCard(
+                title = "视频分辨率",
+                subtitle = "音频模式不适用",
+                leading = "—",
+                trailing = "",
+                enabled = false,
+                modifier = Modifier.testTag("ytdl-format-video-resolution-line"),
+            )
+        }
+        item {
+            SettingLineCard(
+                title = "帧率",
+                subtitle = "音频模式不适用",
+                leading = "—",
+                trailing = "",
+                enabled = false,
+                modifier = Modifier.testTag("ytdl-format-frame-rate-line"),
+            )
+        }
+        item {
+            SettingLineCard(
+                title = "视频编码",
+                subtitle = "音频模式不适用",
+                leading = "—",
+                trailing = "",
+                enabled = false,
+                modifier = Modifier.testTag("ytdl-format-video-codec-line"),
+            )
+        }
+        item {
+            AppCard(modifier = Modifier.testTag("ytdl-format-audio-card")) {
+                SectionTitle("音频格式")
                 rows.forEach { row ->
                     ResolutionRow(
                         row = row,
@@ -2486,49 +2458,75 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
                 }
             }
         }
-    }
-    item {
-        SettingLineCard(
-            "帧率",
-            summaries.frameRate,
-            "▾",
-            "›",
-            enabled = hasAnalysis,
-            modifier = Modifier.testTag("ytdl-format-frame-rate-line"),
-        )
-    }
-    item {
-        SettingLineCard(
-            "视频编码",
-            summaries.videoCodec,
-            "▾",
-            "›",
-            enabled = hasAnalysis,
-            modifier = Modifier.testTag("ytdl-format-video-codec-line"),
-        )
-    }
-    item {
-        SettingLineCard(
-            "容器格式",
-            summaries.container,
-            "▾",
-            "›",
-            enabled = hasAnalysis,
-            modifier = Modifier.testTag("ytdl-format-container-line"),
-        )
+        item {
+            SettingLineCard(
+                "音频容器",
+                summaries.container,
+                "♫",
+                "",
+                modifier = Modifier.testTag("ytdl-format-container-line"),
+            )
+        }
+    } else {
+        item {
+            AppCard(modifier = Modifier.testTag("ytdl-format-resolution-card")) {
+                SectionTitle("分辨率")
+                if (rows.isEmpty()) {
+                    Text("当前模式没有可下载格式", color = LocalYtdlAppPalette.current.softText)
+                } else {
+                    rows.forEach { row ->
+                        ResolutionRow(
+                            row = row,
+                            onSelect = {
+                                if (row.selectable) {
+                                    onSelectionChange(selectionFromRow(selection.mode, row))
+                                }
+                            },
+                            onCodecSelect = { option ->
+                                if (row.selectable) {
+                                    onSelectionChange(
+                                        selectionFromRow(
+                                            selection.mode,
+                                            row.copy(videoFormatId = option.videoFormatId),
+                                        ),
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            SettingLineCard(
+                "帧率",
+                summaries.frameRate,
+                "▾",
+                "›",
+                modifier = Modifier.testTag("ytdl-format-frame-rate-line"),
+            )
+        }
+        item {
+            SettingLineCard(
+                "视频编码",
+                summaries.videoCodec,
+                "▾",
+                "›",
+                modifier = Modifier.testTag("ytdl-format-video-codec-line"),
+            )
+        }
+        item {
+            SettingLineCard(
+                "容器格式",
+                summaries.container,
+                "▾",
+                "›",
+                modifier = Modifier.testTag("ytdl-format-container-line"),
+            )
+        }
     }
     item {
         val palette = LocalYtdlAppPalette.current
-        val summaryTitle = if (hasAnalysis) {
-            "实际下载：${formatSelectionSummary(analysis, selection)}"
-        } else {
-            "分析后显示真实格式"
-        }
-        val summaryBody = if (hasAnalysis) {
-            "开始下载会按当前格式选择进入真实任务队列。"
-        } else {
-            "请先在下载页完成分析，再选择真实格式。"
-        }
         Surface(
             modifier = Modifier.testTag("ytdl-format-summary"),
             color = palette.formatAccent.copy(alpha = 0.11f),
@@ -2536,24 +2534,17 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatPageItems(
             border = androidx.compose.foundation.BorderStroke(1.dp, palette.formatAccent.copy(alpha = 0.35f)),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(summaryTitle, color = palette.formatAccent, fontWeight = FontWeight.Bold)
-                Text(summaryBody, color = palette.softText, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "实际下载：${formatSelectionSummary(analysis, selection)}",
+                    color = palette.formatAccent,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "开始下载会按当前格式选择进入真实任务队列。",
+                    color = palette.softText,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
-        }
-    }
-    item {
-        val palette = LocalYtdlAppPalette.current
-        Button(
-            onClick = onFinishSelection,
-            enabled = hasAnalysis,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("ytdl-format-done"),
-            colors = ButtonDefaults.buttonColors(containerColor = palette.formatAccent),
-            shape = RoundedCornerShape(16.dp),
-            contentPadding = PaddingValues(vertical = 15.dp),
-        ) {
-            Text("返回下载页", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -3481,7 +3472,12 @@ private fun SettingLineCard(
     }
 
     if (inCard) {
-        AppCard(modifier = modifier, content = content)
+        AppCard(
+            modifier = modifier.semantics {
+                if (!enabled) disabled()
+            },
+            content = content,
+        )
     } else {
         Column(modifier = modifier, content = content)
     }

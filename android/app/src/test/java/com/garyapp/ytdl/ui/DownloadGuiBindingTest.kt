@@ -10,6 +10,7 @@ import android.text.InputType
 import android.widget.EditText
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.platform.testTag
 import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.settings.AppearanceSettings
@@ -205,7 +207,6 @@ class DownloadGuiBindingTest {
         assertEquals(
             mapOf(
                 "下载" to "#FFFF5B55",
-                "格式" to "#FF138F88",
                 "任务" to "#FFFF7A1A",
                 "设置" to "#FF2E86DE",
             ),
@@ -215,11 +216,22 @@ class DownloadGuiBindingTest {
         assertEquals(
             mapOf(
                 "下载" to "#FF315C6B",
-                "格式" to "#FF7C705E",
                 "任务" to "#FFA26E35",
                 "设置" to "#FF2F6D80",
             ),
             ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetCodex),
+        )
+    }
+
+    @Test
+    fun bottomNavigationHasOnlyDownloadTasksAndSettings() {
+        assertEquals(
+            listOf("download", "tasks", "settings"),
+            ytdlNavigationDestinations().map { it.route },
+        )
+        assertEquals(
+            listOf("下载", "任务", "设置"),
+            ytdlNavigationDestinations().map { it.label },
         )
     }
 
@@ -480,7 +492,31 @@ class DownloadGuiBindingTest {
 
         composeRule.onNodeWithTag("ytdl-download-mode-av").assertIsNotEnabled()
         composeRule.onNodeWithTag("ytdl-download-mode-video").assertIsEnabled()
-        composeRule.onNodeWithText("视频下载").assertExists()
+        composeRule.onNodeWithText("视频").assertExists()
+    }
+
+    @Test
+    fun audioModeOnDownloadPageDisablesVideoSettingsAndShowsAudioFormat() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "18", height = 360),
+            audioOnlyFormat(id = "140"),
+        )
+        val selection = selectBestAvailableFormatSelection(analysis, FormatMode.AudioOnly)
+        val state = RuntimeDownloadState()
+            .withAnalysisForUiTest(analysis)
+            .copy(formatSelection = selection, appliedFormatSelection = selection)
+
+        renderDownloadPage(state)
+
+        composeRule.onNodeWithTag("test-download-list")
+            .performScrollToNode(hasTestTag("ytdl-format-audio-card"))
+        composeRule.onNodeWithText("音频格式").assertExists()
+        composeRule.onNodeWithTag("ytdl-format-video-resolution-line").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-format-frame-rate-line").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-format-video-codec-line").assertIsNotEnabled()
+        composeRule.onNodeWithTag("test-download-list")
+            .performScrollToNode(hasTestTag("ytdl-format-summary"))
+        composeRule.onNodeWithText("音频 M4A 单文件", substring = true).assertExists()
     }
 
     @Test
@@ -490,42 +526,34 @@ class DownloadGuiBindingTest {
             progressiveFormat(id = "240-direct", height = 240),
         )
         val state = mutableStateOf(RuntimeDownloadState().withAnalysisForUiTest(analysis))
-        val showDownloadPage = mutableStateOf(false)
         composeRule.setContent {
             YtdlTheme {
-                if (showDownloadPage.value) {
-                    LazyColumn {
-                        downloadPageItems(
-                            state = state.value,
-                            storageTarget = StorageTarget.AppPrivate,
-                            hasUserConfirmed = false,
-                            onUrlChange = {},
-                            onAnalyze = {},
-                            onStartDownload = {},
-                            onUserConfirmedChange = {},
-                            onModeSelected = {},
-                            onSelectStorageTarget = {},
-                        )
-                    }
-                } else {
-                    LazyColumn {
-                        formatPageItems(
-                            analysis = analysis,
-                            selection = state.value.formatSelection,
-                            onSelectionChange = { selection ->
-                                state.value = state.value.withFormatSelection(selection)
-                            },
-                            onFinishSelection = {},
-                        )
-                    }
+                LazyColumn(Modifier.testTag("test-download-list")) {
+                    downloadPageItems(
+                        state = state.value,
+                        storageTarget = StorageTarget.AppPrivate,
+                        hasUserConfirmed = false,
+                        onUrlChange = {},
+                        onAnalyze = {},
+                        onStartDownload = {},
+                        onUserConfirmedChange = {},
+                        onModeSelected = {},
+                        onSelectStorageTarget = {},
+                        onFormatSelectionChange = { selection ->
+                            state.value = state.value.withFormatSelection(selection)
+                        },
+                    )
                 }
             }
         }
 
+        composeRule.onNodeWithTag("test-download-list")
+            .performScrollToNode(hasTestTag("ytdl-format-row-240"))
         composeRule.onNodeWithTag("ytdl-format-row-240").performClick()
-        composeRule.runOnIdle { showDownloadPage.value = true }
 
-        composeRule.onNodeWithText("240p MP4 H.264 单文件").assertExists()
+        composeRule.onNodeWithTag("test-download-list")
+            .performScrollToNode(hasTestTag("ytdl-format-summary"))
+        composeRule.onNodeWithText("240p MP4 H.264 单文件", substring = true).assertExists()
     }
 
     @Test
@@ -537,12 +565,11 @@ class DownloadGuiBindingTest {
         val selection = mutableStateOf(defaultFormatSelection(analysis))
         composeRule.setContent {
             YtdlTheme {
-                LazyColumn {
-                    formatPageItems(
+                LazyColumn(Modifier.testTag("test-download-list")) {
+                    formatSelectionItems(
                         analysis = analysis,
                         selection = selection.value,
                         onSelectionChange = { selection.value = it },
-                        onFinishSelection = {},
                     )
                 }
             }
@@ -622,60 +649,15 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun singleFileAnalysisGreysVideoAndAudioModeOnFormatPage() {
-        val analysis = analysisWith(unknownSingleFileFormat(id = "single-file", height = 1080))
-        val state = RuntimeDownloadState().withAnalysisForUiTest(analysis)
-
-        renderFormatPage(analysis, state.formatSelection)
-
-        composeRule.onNodeWithTag("ytdl-format-mode-0").assertIsNotEnabled()
-        composeRule.onNodeWithTag("ytdl-format-mode-2").assertIsEnabled()
-    }
-
-    @Test
-    fun unavailableModeShowsOneEmptyStateWithoutPerFormatReasons() {
-        val analysis = analysisWith(unknownSingleFileFormat(id = "single-file", height = 1080))
-
-        renderFormatPage(
-            analysis = analysis,
-            selection = FormatSelection(mode = FormatMode.VideoAndAudio),
-        )
-
-        composeRule.onNodeWithText("当前模式没有可下载格式").assertExists()
-        composeRule.onAllNodesWithText("当前视频未提供").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("ytdl-format-row-1080").assertCountEquals(0)
-    }
-
-    @Test
-    fun formatPageWithoutAnalysisUsesEmptyStateWithoutFakeFormatRows() {
+    fun downloadPageWithoutAnalysisHidesFormatDetailsAndFormatTab() {
         composeRule.setContent { YtdlApp() }
 
-        composeRule.onNodeWithTag("ytdl-tab-formats").performClick()
-
-        composeRule.onNodeWithTag("ytdl-format-empty-card").assertExists()
-        composeRule.onNodeWithTag("ytdl-format-resolution-card").assertExists()
+        composeRule.onAllNodesWithTag("ytdl-tab-formats").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-format-resolution-card").assertCountEquals(0)
         composeRule.onAllNodesWithTag("ytdl-format-row-auto").assertCountEquals(0)
         composeRule.onAllNodesWithTag("ytdl-format-row-1080").assertCountEquals(0)
-        scrollFormatsTo("ytdl-format-frame-rate-line")
-        scrollFormatsTo("ytdl-format-video-codec-line")
-        scrollFormatsTo("ytdl-format-container-line")
-        composeRule.onAllNodesWithTag("ytdl-format-subtitle-toggle").assertCountEquals(0)
-        scrollFormatsTo("ytdl-format-summary")
-        composeRule.onNodeWithText("分析后显示真实格式").assertExists()
-        composeRule.onNodeWithText("请先在下载页完成分析，再选择真实格式。").assertExists()
-        scrollFormatsTo("ytdl-format-done")
-        composeRule.onNodeWithTag("ytdl-format-done").assertIsNotEnabled()
-    }
-
-    @Test
-    fun immediateFormatSelectionUsesReturnNavigationCopy() {
-        composeRule.setContent { YtdlApp() }
-
-        composeRule.onNodeWithTag("ytdl-tab-formats").performClick()
-        scrollFormatsTo("ytdl-format-done")
-
-        composeRule.onNodeWithText("返回下载页").assertExists()
-        composeRule.onAllNodesWithText("应用选择").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-format-summary").assertCountEquals(0)
+        composeRule.onAllNodesWithText("返回下载页").assertCountEquals(0)
     }
 
     @Test
@@ -1074,7 +1056,7 @@ class DownloadGuiBindingTest {
     private fun renderDownloadPage(state: RuntimeDownloadState) {
         composeRule.setContent {
             YtdlTheme {
-                LazyColumn {
+                LazyColumn(Modifier.testTag("test-download-list")) {
                     downloadPageItems(
                         state = state,
                         storageTarget = StorageTarget.AppPrivate,
@@ -1089,29 +1071,6 @@ class DownloadGuiBindingTest {
                 }
             }
         }
-    }
-
-    private fun renderFormatPage(
-        analysis: VideoAnalysis?,
-        selection: FormatSelection,
-    ) {
-        composeRule.setContent {
-            YtdlTheme {
-                LazyColumn {
-                    formatPageItems(
-                        analysis = analysis,
-                        selection = selection,
-                        onSelectionChange = {},
-                        onFinishSelection = {},
-                    )
-                }
-            }
-        }
-    }
-
-    private fun scrollFormatsTo(tag: String) {
-        composeRule.onNodeWithTag("ytdl-screen-formats").performScrollToNode(hasTestTag(tag))
-        composeRule.onNodeWithTag(tag).assertExists()
     }
 
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(

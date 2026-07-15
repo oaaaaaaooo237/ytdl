@@ -226,7 +226,8 @@ class FormatSelectionModelTest {
 
         val selection = defaultFormatSelection(analysis)
 
-        assertEquals("视频下载", FormatMode.VideoOnly.label)
+        assertEquals("视频", FormatMode.VideoOnly.label)
+        assertEquals("音频", FormatMode.AudioOnly.label)
         assertEquals(FormatMode.VideoOnly, selection.mode)
         assertEquals("single-file", selection.selectedVideoFormatId)
         assertNull(selection.selectedAudioFormatId)

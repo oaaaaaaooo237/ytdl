@@ -37,11 +37,11 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun bottomNavigationHasOnlyFourUserFacingDestinations() {
+    fun bottomNavigationHasOnlyThreeUserFacingDestinations() {
         val destinations = ytdlNavigationDestinations()
 
-        assertEquals(listOf("download", "formats", "tasks", "settings"), destinations.map { it.route })
-        assertEquals(listOf("下载", "格式", "任务", "设置"), destinations.map { it.label })
+        assertEquals(listOf("download", "tasks", "settings"), destinations.map { it.route })
+        assertEquals(listOf("下载", "任务", "设置"), destinations.map { it.label })
     }
 
     @Test

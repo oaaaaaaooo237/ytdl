@@ -6,6 +6,9 @@ import android.content.ContextWrapper
 import android.widget.EditText
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -145,9 +148,9 @@ class YtdlAppDownloadFlowTest {
         composeRule.onNodeWithText(originalRequest.title).assertExists()
         composeRule.onNodeWithTag("ytdl-history-action-$historyId-再次下载").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithTag("ytdl-screen-formats").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("ytdl-screen-download").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("ytdl-screen-formats")
+        composeRule.onNodeWithTag("ytdl-screen-download")
             .performScrollToNode(hasTestTag("ytdl-format-summary"))
 
         assertEquals(originalRequest.url, analyzedUrl.get())
@@ -186,19 +189,23 @@ class YtdlAppDownloadFlowTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
-        composeRule.onNodeWithTag("ytdl-tab-formats").performClick()
-        composeRule.onNodeWithTag("ytdl-screen-formats")
+        composeRule.onNodeWithTag("ytdl-screen-download")
             .performScrollToNode(hasTestTag(formatRowTag))
         composeRule.onNodeWithTag(formatRowTag).performClick()
-        composeRule.onNodeWithTag("ytdl-tab-download").performClick()
 
         composeRule.onNodeWithText(expectedSummary).assertExists()
         composeRule.onNodeWithTag("ytdl-screen-download")
             .performScrollToNode(hasTestTag("ytdl-download-authorized-checkbox"))
-        composeRule.onNodeWithTag("ytdl-download-authorized-checkbox").performClick()
+        composeRule.onNodeWithTag("ytdl-download-authorized-checkbox")
+            .assertIsOff()
+            .performClick()
+            .assertIsOn()
+        composeRule.onNodeWithTag("ytdl-download-start").assertIsEnabled()
         composeRule.onNodeWithTag("ytdl-screen-download")
             .performScrollToNode(hasTestTag("ytdl-download-start"))
-        composeRule.onNodeWithTag("ytdl-download-start").performClick()
+        composeRule.onNodeWithTag("ytdl-download-start")
+            .assertIsEnabled()
+            .performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { capturedRequest.get() != null }
         return capturedRequest.get()
     }
