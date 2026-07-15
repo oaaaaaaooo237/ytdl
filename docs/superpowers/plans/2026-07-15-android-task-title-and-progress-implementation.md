@@ -256,17 +256,35 @@ private fun TaskCardTitle(
 
 ```kotlin
 private val StorageCapacityIcon = tabIcon("StorageCapacity") {
-    moveTo(4f, 5f)
-    lineTo(20f, 5f)
+    moveTo(4f, 4f)
+    lineTo(20f, 4f)
     lineTo(22f, 11f)
-    lineTo(22f, 19f)
-    lineTo(2f, 19f)
     lineTo(2f, 11f)
     close()
-    moveTo(5f, 14f)
-    lineTo(19f, 14f)
-    lineTo(19f, 17f)
-    lineTo(5f, 17f)
+    moveTo(2f, 11f)
+    lineTo(4f, 11f)
+    lineTo(4f, 20f)
+    lineTo(2f, 20f)
+    close()
+    moveTo(20f, 11f)
+    lineTo(22f, 11f)
+    lineTo(22f, 20f)
+    lineTo(20f, 20f)
+    close()
+    moveTo(2f, 18f)
+    lineTo(22f, 18f)
+    lineTo(22f, 20f)
+    lineTo(2f, 20f)
+    close()
+    moveTo(6f, 13f)
+    lineTo(14f, 13f)
+    lineTo(14f, 15f)
+    lineTo(6f, 15f)
+    close()
+    moveTo(17f, 13f)
+    lineTo(20f, 13f)
+    lineTo(20f, 16f)
+    lineTo(17f, 16f)
     close()
 }
 ```
@@ -350,7 +368,7 @@ git commit -m "feat(android): marquee task titles and show progress icons"
 - Modify: `docs/qa/android-mvp-smoke.md`
 - Modify: `docs/superpowers/plans/2026-07-15-android-task-title-and-progress-implementation.md`
 
-- [ ] **Step 1: 测试前代码审计**
+- [x] **Step 1: 测试前代码审计**
 
 用 `rg` 检查并清理仅由本轮改动产生的无用声明：
 

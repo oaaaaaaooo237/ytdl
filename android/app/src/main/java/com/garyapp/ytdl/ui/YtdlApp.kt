@@ -279,22 +279,35 @@ private val DownloadTabIcon = tabIcon("DownloadTab") {
 }
 
 private val StorageCapacityIcon = tabIcon("StorageCapacity") {
-    moveTo(5f, 4f)
-    lineTo(19f, 4f)
+    moveTo(4f, 4f)
+    lineTo(20f, 4f)
     lineTo(22f, 11f)
-    lineTo(22f, 20f)
-    lineTo(2f, 20f)
     lineTo(2f, 11f)
     close()
-    moveTo(5f, 14f)
-    lineTo(19f, 14f)
-    lineTo(19f, 18f)
-    lineTo(5f, 18f)
+    moveTo(2f, 11f)
+    lineTo(4f, 11f)
+    lineTo(4f, 20f)
+    lineTo(2f, 20f)
     close()
-    moveTo(15f, 15f)
-    lineTo(18f, 15f)
-    lineTo(18f, 17f)
-    lineTo(15f, 17f)
+    moveTo(20f, 11f)
+    lineTo(22f, 11f)
+    lineTo(22f, 20f)
+    lineTo(20f, 20f)
+    close()
+    moveTo(2f, 18f)
+    lineTo(22f, 18f)
+    lineTo(22f, 20f)
+    lineTo(2f, 20f)
+    close()
+    moveTo(6f, 13f)
+    lineTo(14f, 13f)
+    lineTo(14f, 15f)
+    lineTo(6f, 15f)
+    close()
+    moveTo(17f, 13f)
+    lineTo(20f, 13f)
+    lineTo(20f, 16f)
+    lineTo(17f, 16f)
     close()
 }
 
@@ -3777,7 +3790,7 @@ private fun QueueProgressMetaRow(meta: QueueProgressMeta) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = meta.contentDescription },
+            .semantics(mergeDescendants = true) { contentDescription = meta.contentDescription },
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
