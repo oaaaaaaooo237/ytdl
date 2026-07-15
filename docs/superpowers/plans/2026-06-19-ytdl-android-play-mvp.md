@@ -808,3 +808,12 @@ After each task commit:
 ## Completion Gate
 
 The API37 emulator GUI release gate for M9/T12 passed on 2026-07-09 with fresh Computer Use evidence. The broader Android MVP goal remains open until the post-M9 requirements are also resolved: M11 visual fidelity/Codex appearance audit and the remaining M10 Xiaomi 14 real-device items recorded above. Play signing, privacy-policy URL, Data safety, and store-material work is temporarily deferred by the user and is not a blocker for the current D2 checkpoint. Passing unit tests alone is never enough for a user-visible Android acceptance claim.
+
+#### Android 1.0.2 原生元数据网络与发布记录（2026-07-15）
+
+- `versionCode=3`、`versionName=1.0.2`。本版把安全 HTTPS GET 元数据请求改为 Android 原生网络优先，并使用 Android 自己的 User-Agent；原生不适用或失败时回到 yt-dlp Python 网络层。实际媒体下载、POST、Range、HTTP 和非文本大响应仍由 Python 处理。
+- 删除旧 410 专用回退分支；M3U8 412 来源头重试和 Eporner 精确 HTTP→HTTPS 元数据规则继续独立。4 MiB 仍是原生元数据安全上限，不是平台固定限制。
+- 发布前代码审计和完整顺序验证已完成：Python `275/275`、Android JVM `386/386`、debug 和 debugAndroidTest 构建通过；NoodleMagazine、Pornhub、Eporner、YouTube 真实地址均只分析成功。
+- 唯一可见 API37 模拟器用完整 Gboard 逐键输入 NoodleMagazine 地址并成功显示标题、时长和格式；设置页前台显示版本 `1.0.2`。本轮没有重复真实下载，也没有测试字幕。
+- 本地发布目录只保留一个 v2 调试签名 APK：`dist/android/1.0.2-latest/ytdl-android-1.0.2-debug.apk`，SHA-256 `A818574D3DB9E5DE66B0639389589D8141A4B4DC1118F04BE06EAA7B16ABC6E8`；测试 APK未复制到发布目录。
+- 本节完成 1.0.2 的本地调试签名包和 API37 模拟器范围，不替代小米 14 的 M10/D2 最终真机验收；Play 正式签名、隐私政策 URL、Data safety 和商店素材仍未完成。

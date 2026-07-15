@@ -76,6 +76,10 @@ class FakeHTTPError(Exception):
 
 
 class RecordingYoutubeDL:
+    def __init__(self, params=None, *_args, **_kwargs):
+        self.params = params or {}
+        self.cookiejar = EmptyCookieJar()
+
     def urlopen(self, request):
         return request
 
@@ -117,7 +121,8 @@ class CookieErrorYoutubeDL(ErroringYoutubeDL):
 
 
 class NotFoundYoutubeDL:
-    def __init__(self, *_args, **_kwargs):
+    def __init__(self, params=None, *_args, **_kwargs):
+        self.params = params or {}
         self.cookiejar = EmptyCookieJar()
 
     def urlopen(self, _request):
@@ -160,6 +165,25 @@ class RecordingFallback:
         )
 
 
+class RejectingFallback:
+    def __init__(self):
+        self.calls = []
+
+    def fetch(self, url, headers_json):
+        self.calls.append((url, json.loads(headers_json)))
+        return json.dumps({"ok": False})
+
+
+class RejectFirstM3u8Fallback(RecordingFallback):
+    def fetch(self, url, headers_json):
+        headers = json.loads(headers_json)
+        matching_calls = [call for call in self.calls if call[0] == url]
+        if url.split("?", 1)[0].lower().endswith(".m3u8") and not matching_calls:
+            self.calls.append((url, headers))
+            return json.dumps({"ok": False})
+        return super().fetch(url, headers_json)
+
+
 def test_eporner_metadata_request_uses_https_without_mutating_original_request():
     bridge = load_android_ytdl_bridge(RecordingYoutubeDL)
     downloader = bridge.AndroidYoutubeDL()
@@ -175,7 +199,7 @@ def test_eporner_metadata_request_uses_https_without_mutating_original_request()
     assert request.url.startswith("http://")
 
 
-def test_http_410_https_get_uses_android_metadata_fallback_once():
+def test_native_metadata_success_avoids_python_http_410():
     bridge = load_android_ytdl_bridge(ErroringYoutubeDL)
     fallback = RecordingFallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
@@ -219,7 +243,7 @@ def test_android_metadata_fallback_merges_global_headers_with_request_overrides(
     ]
 
 
-def test_cookie_header_failure_rethrows_original_http_410_without_using_fallback():
+def test_cookie_header_failure_falls_back_to_original_python_error():
     bridge = load_android_ytdl_bridge(CookieErrorYoutubeDL)
     fallback = RecordingFallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
@@ -234,7 +258,7 @@ def test_cookie_header_failure_rethrows_original_http_410_without_using_fallback
     assert fallback.calls == []
 
 
-def test_eporner_http_upgrade_410_does_not_use_android_metadata_fallback():
+def test_eporner_http_upgrade_uses_native_metadata_on_rewritten_https_url():
     bridge = load_android_ytdl_bridge(ErroringYoutubeDL)
     fallback = RecordingFallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
@@ -242,20 +266,18 @@ def test_eporner_http_upgrade_410_does_not_use_android_metadata_fallback():
         "http://www.eporner.com/xhr/video/5czAhpxw6bT?hash=test&device=generic"
     )
 
-    try:
-        downloader.urlopen(request)
-    except FakeHTTPError as exc:
-        assert exc.status == 410
-    else:
-        raise AssertionError("Eporner upgrade unexpectedly used Android fallback")
+    response = downloader.urlopen(request)
 
-    assert fallback.calls == []
+    assert response.read() == b"<html>native</html>"
+    assert fallback.calls[0][0].startswith(
+        "https://www.eporner.com/xhr/video/5czAhpxw6bT"
+    )
     assert request.url.startswith("http://")
 
 
-def test_http_404_does_not_use_android_metadata_fallback():
+def test_native_rejection_then_python_404_does_not_retry_native():
     bridge = load_android_ytdl_bridge(NotFoundYoutubeDL)
-    fallback = RecordingFallback()
+    fallback = RejectingFallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
 
     try:
@@ -263,14 +285,56 @@ def test_http_404_does_not_use_android_metadata_fallback():
     except FakeHTTPError as exc:
         assert exc.status == 404
     else:
-        raise AssertionError("non-410 error unexpectedly used Android fallback")
+        raise AssertionError("Python HTTP 404 was unexpectedly replaced")
+
+    assert fallback.calls == [("https://example.com/page", {})]
+
+
+def test_android_metadata_https_get_uses_native_before_python():
+    bridge = load_android_ytdl_bridge(RecordingYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+    url = "https://noodlemagazine.com/watch/-207085431_456241493"
+
+    response = downloader.urlopen(CopyableRequest(url, headers={"User-Agent": "agent"}))
+
+    assert response.read() == b"<html>native</html>"
+    assert fallback.calls == [(url, {"User-Agent": "agent"})]
+
+
+def test_android_metadata_falls_back_to_python_when_native_rejects():
+    bridge = load_android_ytdl_bridge(RecordingYoutubeDL)
+    fallback = RejectingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+    request = CopyableRequest("https://example.com/page")
+
+    response = downloader.urlopen(request)
+
+    assert response is request
+    assert fallback.calls == [("https://example.com/page", {})]
+
+
+def test_android_metadata_keeps_unsafe_requests_on_python_network():
+    bridge = load_android_ytdl_bridge(RecordingYoutubeDL)
+    fallback = RecordingFallback()
+    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
+
+    for request in (
+        CopyableRequest("http://example.com/page"),
+        CopyableRequest("https://example.com/page", method="POST", data=b"x"),
+        CopyableRequest(
+            "https://example.com/page",
+            headers={"Range": "bytes=0-9"},
+        ),
+    ):
+        assert downloader.urlopen(request) is request
 
     assert fallback.calls == []
 
 
-def test_http_412_m3u8_get_uses_android_metadata_fallback_once():
+def test_http_412_m3u8_retries_native_metadata_with_source_headers():
     bridge = load_android_ytdl_bridge(PreconditionErrorYoutubeDL)
-    fallback = RecordingFallback()
+    fallback = RejectFirstM3u8Fallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
 
     response = downloader.urlopen(
@@ -281,12 +345,12 @@ def test_http_412_m3u8_get_uses_android_metadata_fallback_once():
     )
 
     assert response.read() == b"<html>native</html>"
-    assert len(fallback.calls) == 1
+    assert len(fallback.calls) == 2
 
 
 def test_http_412_m3u8_uses_headers_captured_before_python_handler_mutation():
     bridge = load_android_ytdl_bridge(MutatingPreconditionErrorYoutubeDL)
-    fallback = RecordingFallback()
+    fallback = RejectFirstM3u8Fallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
 
     downloader.urlopen(
@@ -300,19 +364,23 @@ def test_http_412_m3u8_uses_headers_captured_before_python_handler_mutation():
         (
             "https://cdn.example.com/master.m3u8",
             {"Origin": "https://example.com", "Referer": "https://example.com/"},
-        )
+        ),
+        (
+            "https://cdn.example.com/master.m3u8",
+            {"Origin": "https://example.com", "Referer": "https://example.com/"},
+        ),
     ]
 
 
 def test_http_412_m3u8_uses_root_origin_from_successful_metadata_fallback():
     bridge = load_android_ytdl_bridge(MetadataThenPreconditionYoutubeDL)
-    fallback = RecordingFallback()
+    fallback = RejectFirstM3u8Fallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
 
     downloader.urlopen(CopyableRequest("https://www.example.com/watch"))
     downloader.urlopen(CopyableRequest("https://cdn.example.net/master.m3u8"))
 
-    assert fallback.calls[1] == (
+    assert fallback.calls[2] == (
         "https://cdn.example.net/master.m3u8",
         {
             "Origin": "https://www.example.com",
@@ -323,17 +391,20 @@ def test_http_412_m3u8_uses_root_origin_from_successful_metadata_fallback():
 
 def test_http_412_m3u8_does_not_invent_source_without_metadata_fallback():
     bridge = load_android_ytdl_bridge(PreconditionErrorYoutubeDL)
-    fallback = RecordingFallback()
+    fallback = RejectFirstM3u8Fallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
 
     downloader.urlopen(CopyableRequest("https://cdn.example.net/master.m3u8"))
 
-    assert fallback.calls == [("https://cdn.example.net/master.m3u8", {})]
+    assert fallback.calls == [
+        ("https://cdn.example.net/master.m3u8", {}),
+        ("https://cdn.example.net/master.m3u8", {}),
+    ]
 
 
 def test_http_412_non_m3u8_does_not_use_android_metadata_fallback():
     bridge = load_android_ytdl_bridge(PreconditionErrorYoutubeDL)
-    fallback = RecordingFallback()
+    fallback = RejectingFallback()
     downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
 
     try:
@@ -343,7 +414,7 @@ def test_http_412_non_m3u8_does_not_use_android_metadata_fallback():
     else:
         raise AssertionError("non-m3u8 HTTP 412 unexpectedly used Android fallback")
 
-    assert fallback.calls == []
+    assert fallback.calls == [("https://example.com/page", {})]
 
 
 def test_http_412_m3u8_fallback_rejects_http_post_and_range():
@@ -365,26 +436,6 @@ def test_http_412_m3u8_fallback_rejects_http_post_and_range():
             assert exc.status == 412
         else:
             raise AssertionError("unsafe HTTP 412 request unexpectedly used Android fallback")
-
-    assert fallback.calls == []
-
-
-def test_android_metadata_fallback_rejects_http_post_and_range():
-    bridge = load_android_ytdl_bridge(ErroringYoutubeDL)
-    fallback = RecordingFallback()
-    downloader = bridge.AndroidYoutubeDL(android_http_fallback=fallback)
-
-    for request in (
-        CopyableRequest("http://example.com/page"),
-        CopyableRequest("https://example.com/page", method="POST", data=b"x"),
-        CopyableRequest("https://example.com/page", headers={"Range": "bytes=0-9"}),
-    ):
-        try:
-            downloader.urlopen(request)
-        except FakeHTTPError as exc:
-            assert exc.status == 410
-        else:
-            raise AssertionError("unsafe request unexpectedly used fallback")
 
     assert fallback.calls == []
 

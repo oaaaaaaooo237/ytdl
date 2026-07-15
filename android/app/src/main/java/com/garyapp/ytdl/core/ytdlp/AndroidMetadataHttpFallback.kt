@@ -211,7 +211,6 @@ class AndroidMetadataHttpFallback(
         private val REDIRECT_STATUS_CODES = setOf(301, 302, 303, 307, 308)
 
         private val ALLOWED_REQUEST_HEADERS = mapOf(
-            "user-agent" to "User-Agent",
             "accept" to "Accept",
             "accept-language" to "Accept-Language",
             "cookie" to "Cookie",
@@ -221,7 +220,6 @@ class AndroidMetadataHttpFallback(
         )
 
         private val CROSS_ORIGIN_REQUEST_HEADERS = mapOf(
-            "user-agent" to "User-Agent",
             "accept" to "Accept",
             "accept-language" to "Accept-Language",
             "sec-fetch-mode" to "Sec-Fetch-Mode",

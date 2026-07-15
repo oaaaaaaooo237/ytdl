@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 修复深色主题地址框可读性和 Android Pornhub `HTTP 410` 解析失败，并把启动更新提示升级为可下载、选择和删除 `yt-dlp` 版本的完整管理功能。
+**Goal:** 修复深色主题地址框可读性和 Android 站点元数据联网兼容问题，并把启动更新提示升级为可下载、选择和删除 `yt-dlp` 版本的完整管理功能。
 
-**Architecture:** `yt-dlp` 仍是唯一解析器和默认网络路径。Android 原生 HTTPS 仅在 Python 请求网页收到 410 后，对受限的 HTTPS GET 元数据请求重试，并把有限大小的文本响应交回 yt-dlp；同一次分析随后读取 `.m3u8` 收到 412 时，才允许使用请求原有来源头，或使用前一步成功网页响应的站点根地址补齐缺失来源头后读取一次。解析器版本从官方 PyPI 下载 wheel、校验 SHA-256 后存入 App 私有目录，选择后在下一次启动复制到运行时缓存并加入 Python `sys.path`，APK 内置版本始终兜底。
+**Architecture:** `yt-dlp` 仍是唯一解析器。安全的 HTTPS GET 元数据请求先由 Android 原生网络读取，原生请求使用 Android 自己的 User-Agent；原生请求不适用或被拒绝时，再交给 yt-dlp 的 Python 网络层。POST、Range、HTTP、媒体或其他大体积二进制请求仍由 Python 处理。同一次分析随后读取 `.m3u8` 收到 412 时，才允许使用请求原有来源头，或使用前一步成功网页响应的站点根地址补齐缺失来源头后再试一次原生请求。解析器版本从官方 PyPI 下载 wheel、校验 SHA-256 后存入 App 私有目录，选择后在下一次启动复制到运行时缓存并加入 Python `sys.path`，APK 内置版本始终兜底。
 
 **Tech Stack:** Kotlin 2.3、Compose Material 3、Chaquopy 17、Python 3.12、yt-dlp wheel、Robolectric、Android instrumentation、API37 Play AVD。
 
@@ -12,8 +12,8 @@
 
 - 默认中文界面和错误提示。
 - 不提交 `AGENTS.md`、附件目录或 `.qa-data`。
-- Android 原生网络回退不得处理登录、授权、DRM、`401/403/451`、POST、Range 或媒体大文件。
-- 原生回退只允许 HTTPS GET，只有 Python 首次返回 410 才触发一次；响应体上限 4 MiB，内容类型限网页、JSON、XML 和 M3U8 文本。
+- Android 原生元数据网络不得处理登录、授权、DRM、`401/403/451`、POST、Range 或媒体大文件；原生不适用或失败时由 Python 继续处理。
+- 原生元数据网络只允许 HTTPS GET，响应体上限 4 MiB，内容类型限网页、JSON、XML 和 M3U8 文本；不转发 yt-dlp 的 User-Agent。
 - Eporner 的精确 HTTP 元数据升级规则保持独立，不泛化为全站协议替换。
 - 解析器只从 `https://pypi.org/pypi/yt-dlp/json` 元数据和 `https://files.pythonhosted.org/` wheel 下载；版本、文件名和 SHA-256 必须全部校验。
 - 下载版本保存在 App 私有目录；内置版本不可删除。选择和删除后的版本切换在重启应用后生效。
@@ -37,7 +37,7 @@
 - [x] 运行聚焦测试并确认通过。
 - [x] 在最终可见模拟器中切换深色主题，目测 URL 和提示文字清晰可读。
 
-### Task 2: Android 原生元数据 410 回退
+### Task 2: Android 原生元数据网络接入
 
 **Files:**
 - Create: `android/app/src/main/java/com/garyapp/ytdl/core/ytdlp/AndroidMetadataHttpFallback.kt`
@@ -49,12 +49,12 @@
 
 **Interfaces:**
 - Produces: `AndroidMetadataHttpFallback.fetch(url: String, headersJson: String): String`，返回不含敏感日志的 JSON 响应。
-- Consumes: Python `AndroidYoutubeDL` 在原请求抛出 `HTTPError(status=410)` 后调用该接口；成功时构造 yt-dlp `Response`，失败时重新抛出原异常。
+- Consumes: Python `AndroidYoutubeDL` 在安全 HTTPS GET 发出前调用该接口；成功时构造 yt-dlp `Response`，不适用或失败时继续使用 Python 网络层。
 
-- [x] 为 HTTPS GET、410 单次触发、POST/Range/非 HTTPS 拒绝、4 MiB 上限和内容类型白名单编写失败测试。
-- [x] 实现 Kotlin 原生 HTTPS 获取器，保留安全请求头和 cookies，不转发 Host、Content-Length、Accept-Encoding。
-- [x] 为 Python 410 回退、非 410 不回退、Eporner 规则不回退编写失败测试。
-- [x] 在 `AndroidYoutubeDL.urlopen` 中实现一次性受限回退，并将回调注入分析及各下载入口。
+- [x] 为 HTTPS GET 原生优先、原生拒绝后转 Python、POST/Range/非 HTTPS 拒绝、4 MiB 上限和内容类型白名单编写测试。
+- [x] 实现 Kotlin 原生 HTTPS 获取器，保留安全请求头和 cookies，不转发 Host、Content-Length、Accept-Encoding 或 yt-dlp User-Agent。
+- [x] 为 Eporner 精确协议升级、M3U8 412 来源头重试和非 M3U8 不重复请求编写测试。
+- [x] 在 `AndroidYoutubeDL.urlopen` 中实现受限的原生优先元数据请求，并将回调注入分析及各下载入口；删除旧 410 专用分支。
 - [x] 删除本轮临时异常/IP/UA 诊断函数和诊断断言，只保留默认跳过的真实 Pornhub 成功回归。
 - [x] 在干净 API37 上运行给定 Pornhub URL 的真实分析测试，断言标题和格式非空，不下载媒体。
 
@@ -118,3 +118,13 @@
 - Python 网络处理器可能在失败前改写请求头，所以来源头在发出 Python 请求前复制；对应回归覆盖请求头被改写、同次网页根地址、没有网页前置成功时不猜来源、非 `.m3u8` 412 以及不安全请求拒绝。`tests/test_android_ytdl_bridge.py` 当前 `18/18` 通过。
 - 可见 API37 模拟器按顺序连续分析四个用户指定地址，逐键输入和只读核对均精确匹配。四次显示的标题和时长分别为 `TS Dominatrix...` / `15:59`、`He delivers a pizza...` / `07:10`、`TRANSEROTICA...` / `12:01`、`POV: A goth girl...` / `23:20`，没有沿用前一次结果；均只分析、不下载。
 - 本轮没有恢复或新增输出原始异常、IP、UA、完整地址或原始响应的调试接口；Eporner 精确 `http -> https` 修正规则继续独立。
+
+## 1.0.2 Android 原生元数据网络优先（2026-07-15）
+
+- 安全的 HTTPS GET 元数据请求改为先走 Android 原生网络。原生连接使用 Android 自己的 User-Agent，不再转发 yt-dlp 的桌面 User-Agent；NoodleMagazine 因此不再触发其针对该 User-Agent 的 403。
+- 原生请求不适用或返回失败时，继续使用 yt-dlp 的 Python 网络层。HTTP、POST、Range、带请求体、媒体或其他非白名单二进制响应不会由原生通道读取；4 MiB 上限继续作为元数据安全边界，不是 Android 平台限制。
+- 旧的“Python 收到 410 后再调用原生网络”专用分支和可选开关已删除。M3U8 的 412 来源头重试仍独立保留，Eporner 精确 HTTP 元数据地址升级规则也保持独立。
+- 发布前代码审计未发现本轮遗留的临时探针、重复网络实现、无用声明或新增的原始异常、完整地址、IP、User-Agent、cookies 内容日志。
+- Python bridge `20/20`、Python 全量 `275/275`、Android JVM `386/386` 通过；`:app:assembleDebug --no-parallel` 和 `:app:assembleDebugAndroidTest --no-parallel` 成功。NoodleMagazine、Pornhub、Eporner 和 YouTube 四项真实地址仪器测试均为 `OK (1 test)`，只分析标题与格式，没有下载。
+- 唯一可见 API37 模拟器中，NoodleMagazine 地址通过底部完整 Gboard 逐键输入，每键间隔至少 `0.22` 秒、键盘页切换等待 `0.7` 秒；核对完整地址后点击分析，前台显示标题 `Group of girls at pool party 4`、时长 `53:01` 和 `360p/240p` 格式。设置页前台显示解析器 `2026.7.4` 和应用版本 `1.0.2`。
+- 本地发布目录只放一个可安装包：`dist/android/1.0.2-latest/ytdl-android-1.0.2-debug.apk`，大小 `55,916,157` bytes，SHA-256 `A818574D3DB9E5DE66B0639389589D8141A4B4DC1118F04BE06EAA7B16ABC6E8`；`aapt2` 确认版本 `1.0.2 (3)`，Android debug 证书 v2 签名校验通过。

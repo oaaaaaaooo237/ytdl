@@ -35,7 +35,7 @@ class AndroidMetadataHttpFallbackTest {
         )
 
         assertTrue(result.getBoolean("ok"))
-        assertEquals("agent", connection.requestProperties["User-Agent"])
+        assertFalse(connection.requestProperties.containsKey("User-Agent"))
         assertEquals("age=1", connection.requestProperties["Cookie"])
         assertFalse(connection.requestProperties.containsKey("Range"))
         assertFalse(connection.requestProperties.containsKey("Host"))
@@ -105,7 +105,7 @@ class AndroidMetadataHttpFallbackTest {
 
         assertTrue(result.getBoolean("ok"))
         assertEquals(listOf(initialUrl, finalUrl), connectionUrls)
-        assertEquals("agent", finalConnection.requestProperties["User-Agent"])
+        assertFalse(finalConnection.requestProperties.containsKey("User-Agent"))
         assertEquals("text/html", finalConnection.requestProperties["Accept"])
         assertEquals("zh-CN", finalConnection.requestProperties["Accept-Language"])
         assertEquals("age=1", finalConnection.requestProperties["Cookie"])
@@ -151,10 +151,10 @@ class AndroidMetadataHttpFallbackTest {
             finalConnection.requestProperties,
         )) {
             assertEquals(
-                setOf("Accept-Encoding", "User-Agent", "Accept", "Accept-Language", "Sec-Fetch-Mode"),
+                setOf("Accept-Encoding", "Accept", "Accept-Language", "Sec-Fetch-Mode"),
                 requestProperties.keys,
             )
-            assertEquals("agent", requestProperties["User-Agent"])
+            assertFalse(requestProperties.containsKey("User-Agent"))
             assertEquals("text/html", requestProperties["Accept"])
             assertEquals("zh-CN", requestProperties["Accept-Language"])
             assertEquals("navigate", requestProperties["Sec-Fetch-Mode"])

@@ -1748,3 +1748,14 @@ API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboar
 - 最终本地发布目录只保留 `ytdl-android-1.0.1-debug.apk` 一个 APK，大小 `61,735,848` bytes，SHA-256 为 `F94A150AF59370D0B4DADD3919B66BC1EC99A275A0F4B478EE01EB64D28295B9`；`aapt2` 确认版本 `1.0.1 (2)`，Android debug 证书 v2 签名校验通过。
 - 手机 `a73e29a3`（型号 `23127PN0CC`）首次执行普通 `adb install -r` 虽返回 `Success`，但主用户状态仍为 `installed=false`，因此没有桌面启动入口。随后明确执行 `adb install --user 0 -r`，再次返回 `Success`，主用户状态变为 `installed=true`；系统解析到启动入口 `com.garyapp.ytdl/.MainActivity`，并已成功启动到手机前台。`dumpsys package` 确认 `versionName=1.0.1`、`versionCode=2`。本项证明安装、启动入口和包版本正确，不替代小米 14 的完整前台 M10/D2 功能验收。
 - 本节只证明本次任务卡片和进度展示更新通过；Play 正式签名、商店材料及小米 14 的 M10/D2 最终真机验收边界不变。
+
+### 2026-07-15 Android 1.0.2 原生元数据网络与发布验收
+
+- 版本：`versionCode=3`、`versionName=1.0.2`。安全 HTTPS GET 元数据请求先走 Android 原生网络，原生连接使用 Android 自己的 User-Agent；原生不适用或失败时继续使用 yt-dlp Python 网络层。POST、Range、HTTP、媒体和其他非白名单二进制请求不进入原生元数据通道。
+- 代码审计在全量测试前完成：删除旧 410 专用分支、可选开关和无用测试类；保留 M3U8 412 来源头重试与 Eporner 精确协议修正规则。未发现临时探针、重复网络实现、无用声明或新增的原始异常、完整地址、IP、User-Agent、cookies 内容日志。
+- 自动验证：Python bridge `20/20`，Python 全量 `275/275`；Android 36 个 JVM 套件共 `386/386`，0 失败、0 错误、0 跳过；`:app:assembleDebug --no-parallel`、`:app:assembleDebugAndroidTest --no-parallel` 均顺序成功。
+- 真实地址仪器测试：NoodleMagazine、Pornhub、Eporner 和 YouTube 各执行一项，只断言标题与格式非空，均为 `OK (1 test)`；没有下载媒体。
+- 前台可见验收：只使用 `ytdl_api37_play_x86_64:5554`。点击地址栏后完整 Gboard 从底部自然弹出；NoodleMagazine 地址全部通过可见软键盘逐键输入，每键等待 `0.22` 秒，符号页切换等待 `0.7` 秒，未使用剪贴板、`type_text`、ADB 输入、SendKeys 或硬件键。核对完整地址后才点击“分析”。
+- 前台结果：显示缩略图、标题 `Group of girls at pool party 4`、时长 `53:01`，并列出 `360p`、`240p` 等格式；没有勾选授权或开始下载。深色主题地址输入框对比清楚，设置页显示解析器 `2026.7.4` 和“版本 1.0.2”。
+- 发布包：`dist/android/1.0.2-latest/ytdl-android-1.0.2-debug.apk`，大小 `55,916,157` bytes，SHA-256 `A818574D3DB9E5DE66B0639389589D8141A4B4DC1118F04BE06EAA7B16ABC6E8`。目录中只有这一个 APK；`aapt2` 确认 `versionCode=3`、`versionName=1.0.2`，debug 证书 v2 签名校验通过。
+- 边界：本节证明 1.0.2 在 API37 模拟器的网络分析和前台关键路径通过，不替代小米 14 `arm64-v8a` 的 M10/D2 最终真机验收。Play 正式签名和商店材料仍未完成。
