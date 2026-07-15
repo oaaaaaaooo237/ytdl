@@ -471,8 +471,11 @@ internal val YtdlColorPresetIdKey = SemanticsPropertyKey<String>("YtdlColorPrese
 internal var SemanticsPropertyReceiver.ytdlColorPresetId by YtdlColorPresetIdKey
 internal val YtdlSettingsAccentArgbKey = SemanticsPropertyKey<String>("YtdlSettingsAccentArgb")
 internal var SemanticsPropertyReceiver.ytdlSettingsAccentArgb by YtdlSettingsAccentArgbKey
-internal val YtdlTaskTitleMarqueeKey = SemanticsPropertyKey<Boolean>("YtdlTaskTitleMarquee")
-private var SemanticsPropertyReceiver.ytdlTaskTitleMarquee by YtdlTaskTitleMarqueeKey
+internal const val TaskTitleMarqueeIterations = Int.MAX_VALUE
+internal const val TaskTitleMarqueeVelocityDp = 30
+internal const val TaskTitleMaxLines = 1
+internal const val TaskTitleSoftWrap = false
+internal const val TaskProgressIconSizeDp = 14
 
 internal fun colorArgbHexForUiTest(color: Color): String = String.format(Locale.US, "#%08X", color.toArgb())
 
@@ -3773,13 +3776,15 @@ private fun TaskCardTitle(
         text = text,
         modifier = Modifier
             .fillMaxWidth()
-            .basicMarquee(iterations = Int.MAX_VALUE)
-            .semantics { ytdlTaskTitleMarquee = true }
+            .basicMarquee(
+                iterations = TaskTitleMarqueeIterations,
+                velocity = TaskTitleMarqueeVelocityDp.dp,
+            )
             .testTag(tag),
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
-        maxLines = 1,
-        softWrap = false,
+        maxLines = TaskTitleMaxLines,
+        softWrap = TaskTitleSoftWrap,
         overflow = TextOverflow.Clip,
     )
 }
@@ -3802,7 +3807,7 @@ private fun QueueProgressMetaRow(meta: QueueProgressMeta) {
                 DownloadTabIcon,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(14.dp)
+                    .size(TaskProgressIconSizeDp.dp)
                     .testTag("ytdl-queue-download-speed-icon"),
                 tint = color,
             )
@@ -3816,7 +3821,7 @@ private fun QueueProgressMetaRow(meta: QueueProgressMeta) {
                 StorageCapacityIcon,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(14.dp)
+                    .size(TaskProgressIconSizeDp.dp)
                     .testTag("ytdl-queue-storage-icon"),
                 tint = color,
             )

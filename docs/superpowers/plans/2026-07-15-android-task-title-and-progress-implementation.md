@@ -194,17 +194,23 @@ git commit -m "feat(android): format compact download progress"
 
 - [x] **Step 1: 写 Compose 失败测试**
 
-渲染一个正在下载的长标题任务、一个等待任务和一条长标题历史，断言三类标题都带跑马灯语义，当前任务显示两个图标：
+渲染一个正在下载的长标题任务、一个等待任务和一条长标题历史，断言三类标题都使用公共标题组件，当前任务显示两个 14dp 图标；同时直接约束公共组件的无限循环、正向速度、单行和不换行参数：
 
 ```kotlin
-composeRule.onNodeWithTag("ytdl-current-task-title")
-    .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
-composeRule.onNodeWithTag("ytdl-pending-task-title-0")
-    .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
-composeRule.onNodeWithTag("ytdl-history-title-301")
-    .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
-composeRule.onNodeWithTag("ytdl-queue-download-speed-icon").assertExists()
-composeRule.onNodeWithTag("ytdl-queue-storage-icon").assertExists()
+assertTrue(titleComponent.contains(".basicMarquee("))
+assertTrue(titleComponent.contains("iterations = TaskTitleMarqueeIterations"))
+assertTrue(titleComponent.contains("velocity = TaskTitleMarqueeVelocityDp.dp"))
+assertTrue(titleComponent.contains("maxLines = TaskTitleMaxLines"))
+assertTrue(titleComponent.contains("softWrap = TaskTitleSoftWrap"))
+composeRule.onNodeWithTag("ytdl-current-task-title").assertExists()
+composeRule.onNodeWithTag("ytdl-pending-task-title-0").assertExists()
+composeRule.onNodeWithTag("ytdl-history-title-301").assertExists()
+composeRule.onNodeWithTag("ytdl-queue-download-speed-icon", useUnmergedTree = true)
+    .assertWidthIsEqualTo(14.dp)
+    .assertHeightIsEqualTo(14.dp)
+composeRule.onNodeWithTag("ytdl-queue-storage-icon", useUnmergedTree = true)
+    .assertWidthIsEqualTo(14.dp)
+    .assertHeightIsEqualTo(14.dp)
 composeRule.onNodeWithText("400.0 B/s").assertExists()
 composeRule.onNodeWithText("300.0 B/1000.0 B").assertExists()
 ```
@@ -214,18 +220,20 @@ composeRule.onNodeWithText("300.0 B/1000.0 B").assertExists()
 Run:
 
 ```powershell
-D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests "com.garyapp.ytdl.ui.DownloadGuiBindingTest.taskTitlesMarqueeAndProgressUsesMatchingIcons" --no-parallel
+D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests "com.garyapp.ytdl.ui.DownloadGuiBindingTest" --no-parallel
 ```
 
-Expected: 标题标签、跑马灯语义和图标标签尚不存在，测试失败。
+Expected: 公共标题组件、滚动参数和进度图标尚不存在，测试失败。
 
 - [x] **Step 3: 添加跑马灯标题组件**
 
-在 `YtdlApp.kt` 中引入 `androidx.compose.foundation.basicMarquee`，定义测试语义并复用一个标题组件：
+在 `YtdlApp.kt` 中引入 `androidx.compose.foundation.basicMarquee`，定义由生产组件直接使用且受测试约束的滚动参数，并复用一个标题组件：
 
 ```kotlin
-internal val YtdlTaskTitleMarqueeKey = SemanticsPropertyKey<Boolean>("YtdlTaskTitleMarquee")
-private var SemanticsPropertyReceiver.ytdlTaskTitleMarquee by YtdlTaskTitleMarqueeKey
+internal const val TaskTitleMarqueeIterations = Int.MAX_VALUE
+internal const val TaskTitleMarqueeVelocityDp = 30
+internal const val TaskTitleMaxLines = 1
+internal const val TaskTitleSoftWrap = false
 
 @Composable
 private fun TaskCardTitle(
@@ -236,13 +244,15 @@ private fun TaskCardTitle(
         text = text,
         modifier = Modifier
             .fillMaxWidth()
-            .basicMarquee(iterations = Int.MAX_VALUE)
-            .semantics { ytdlTaskTitleMarquee = true }
+            .basicMarquee(
+                iterations = TaskTitleMarqueeIterations,
+                velocity = TaskTitleMarqueeVelocityDp.dp,
+            )
             .testTag(tag),
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
-        maxLines = 1,
-        softWrap = false,
+        maxLines = TaskTitleMaxLines,
+        softWrap = TaskTitleSoftWrap,
         overflow = TextOverflow.Clip,
     )
 }
@@ -380,7 +390,9 @@ git status --short
 
 Expected: 运行时代码不再显示旧进度汉字或历史文件名；没有无用导入、重复图标、临时探针或空白错误；`.codex-remote-attachments/` 保持未跟踪。
 
-- [ ] **Step 2: 顺序运行 Android 测试和构建**
+2026-07-15 审计结果：独立只读审查未发现功能、隐私或冗余代码问题；审查指出原测试只检查滚动标题的自报语义和图标标签，回归保护不足。已删除自报语义，改为直接约束 `TaskCardTitle` 的无限循环、正向速度、单行和不换行参数连接，并直接检查两个进度图标的身份、共同颜色和 14dp 宽高；复审确认问题关闭。
+
+- [x] **Step 2: 顺序运行 Android 测试和构建**
 
 所有 Gradle 命令使用固定版本、`--no-parallel` 和超时，逐条执行：
 
@@ -392,7 +404,9 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:assembleDebugAndroidTest --no-paral
 
 Expected: 单元测试、debug APK 和 androidTest APK 均构建成功。
 
-- [ ] **Step 3: 前台可见 API 37 模拟器验收**
+2026-07-15 实际结果：`:app:testDebugUnitTest --no-parallel` 共 `386/386` 通过；`:app:assembleDebug --no-parallel` 与 `:app:assembleDebugAndroidTest --no-parallel` 均为 `BUILD SUCCESSFUL`，三项任务按顺序执行。
+
+- [x] **Step 3: 前台可见 API 37 模拟器验收**
 
 先检查在线设备和 `qemu-system-x86_64`，只启动一个 `ytdl_api37_play_x86_64` 可见窗口，并移动到主屏幕右侧完整可见。覆盖安装 debug APK，真实打开 App：
 
@@ -401,9 +415,13 @@ Expected: 单元测试、debug APK 和 androidTest APK 均构建成功。
 3. 在实际下载进行时确认进度行显示同画风下载图标和硬盘图标，格式为 `3.2 MB/s` 与 `126.4 MB/512.0 MB`，没有旧汉字且不与右侧徽标重叠。
 4. 不通过 ADB、UIAutomator 或测试代码伪造前台展示；ADB 只用于安装和辅助读取状态。
 
-- [ ] **Step 4: 更新 QA、归档唯一 APK 并安装到手机**
+2026-07-15 实际结果：唯一可见 API 37 模拟器中，标题关键词 `gender` 只保留匹配的历史任务；历史卡片不显示文件名，长标题单行从右向左循环，右侧三枚状态标签不重叠。用户随后用真实地址完成下载前台复核并提供两张截图，确认下载中显示下载图标、硬盘图标、`1.7 MB/s` 和 `19.9 MB/35.5 MB`，完成后切换为历史任务样式；用户明确确认本项通过。
+
+- [x] **Step 4: 更新 QA、归档唯一 APK 并安装到手机**
 
 把本轮自动化与前台结果写入 `docs/qa/android-mvp-smoke.md`。复制 `android/app/build/outputs/apk/debug/app-debug.apk` 到 `dist/android/1.0.1-latest/ytdl-android-1.0.1-debug.apk`，重新生成 `SHA256SUMS.txt`，确认发布目录只有一个 APK。手机 `a73e29a3` 在线时使用 `adb -s a73e29a3 install -r` 覆盖安装并核对 `versionName=1.0.1`、`versionCode=2`。
+
+2026-07-15 实际结果：发布目录只有 `ytdl-android-1.0.1-debug.apk` 一个 APK，大小 `61,735,848` bytes，SHA-256 为 `F94A150AF59370D0B4DADD3919B66BC1EC99A275A0F4B478EE01EB64D28295B9`；`aapt2` 确认 `versionName=1.0.1`、`versionCode=2`，`apksigner` 确认 debug 证书 v2 签名有效。手机 `a73e29a3`（`23127PN0CC`）覆盖安装返回 `Success`，`dumpsys package` 再次确认版本号。
 
 - [ ] **Step 5: 提交、推送和核对远程**
 

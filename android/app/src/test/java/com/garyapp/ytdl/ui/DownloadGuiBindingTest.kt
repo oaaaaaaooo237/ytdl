@@ -16,8 +16,10 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -30,6 +32,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.settings.AppearanceSettings
@@ -315,7 +318,41 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun taskTitlesMarqueeAndProgressUsesMatchingIcons() {
+    fun taskTitleMarqueeContractIsSingleLineAndMovesLeftContinuously() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+        val titleComponent = source
+            .substringAfter("private fun TaskCardTitle(")
+            .substringBefore("private fun QueueProgressMetaRow(")
+
+        assertEquals(Int.MAX_VALUE, TaskTitleMarqueeIterations)
+        assertTrue(TaskTitleMarqueeVelocityDp > 0)
+        assertEquals(1, TaskTitleMaxLines)
+        assertFalse(TaskTitleSoftWrap)
+        assertTrue(titleComponent.contains(".basicMarquee("))
+        assertTrue(titleComponent.contains("iterations = TaskTitleMarqueeIterations"))
+        assertTrue(titleComponent.contains("velocity = TaskTitleMarqueeVelocityDp.dp"))
+        assertTrue(titleComponent.contains("maxLines = TaskTitleMaxLines"))
+        assertTrue(titleComponent.contains("softWrap = TaskTitleSoftWrap"))
+    }
+
+    @Test
+    fun allTaskTitlesUseSharedMarqueeAndProgressUsesMatchingIcons() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText()
+        val progressRow = source
+            .substringAfter("private fun QueueProgressMetaRow(")
+            .substringBefore("private fun YtdlQueueProgressBar(")
+
+        assertEquals(14, TaskProgressIconSizeDp)
+        assertTrue(progressRow.contains("DownloadTabIcon"))
+        assertTrue(progressRow.contains("StorageCapacityIcon"))
+        assertEquals(2, "size\\(TaskProgressIconSizeDp\\.dp\\)".toRegex().findAll(progressRow).count())
+        assertEquals(2, "tint = color".toRegex().findAll(progressRow).count())
         val request = requestFor(progressiveFormat("18", 360)).copy(
             title = "这是一个长到无法在任务卡片一行完整显示并需要持续循环滚动的当前下载标题",
         )
@@ -350,11 +387,15 @@ class DownloadGuiBindingTest {
         renderTasksPage(active, listOf(pending), listOf(history))
 
         composeRule.onNodeWithTag("ytdl-current-task-title")
-            .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
+            .assertExists()
         composeRule.onNodeWithTag("ytdl-pending-task-title-0")
-            .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
-        composeRule.onNodeWithTag("ytdl-queue-download-speed-icon", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-storage-icon", useUnmergedTree = true).assertExists()
+            .assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-download-speed-icon", useUnmergedTree = true)
+            .assertWidthIsEqualTo(14.dp)
+            .assertHeightIsEqualTo(14.dp)
+        composeRule.onNodeWithTag("ytdl-queue-storage-icon", useUnmergedTree = true)
+            .assertWidthIsEqualTo(14.dp)
+            .assertHeightIsEqualTo(14.dp)
         composeRule.onNodeWithText("400.0 B/s", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("300.0 B/1000.0 B", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("temporary-file.mp4", substring = true).assertDoesNotExist()
@@ -362,7 +403,7 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithTag("test-tasks-list")
             .performScrollToNode(hasTestTag("ytdl-history-title-301"))
         composeRule.onNodeWithTag("ytdl-history-title-301")
-            .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
+            .assertExists()
     }
 
     @Test

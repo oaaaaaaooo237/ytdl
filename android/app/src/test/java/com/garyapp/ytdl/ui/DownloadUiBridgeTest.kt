@@ -1174,11 +1174,11 @@ class DownloadUiBridgeTest {
 
         assertFalse(items[0].meta.contains("媒体文件"))
         assertFalse(items[0].meta.contains("字幕"))
-        assertTrue(items[0].meta.contains("merged-299-140.mp4"))
+        assertFalse(items[0].meta.contains("merged-299-140.mp4"))
         assertFalse(items[0].meta.contains("captions.en.vtt"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[0]))
         assertFalse(items[1].meta.contains("独立字幕文件"))
-        assertTrue(items[1].meta.contains("video.mp4"))
+        assertFalse(items[1].meta.contains("video.mp4"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[1]))
     }
 
@@ -1244,13 +1244,13 @@ class DownloadUiBridgeTest {
         assertEquals("", item.formatBadge)
         assertTrue(item.meta.contains("视频+音频"))
         assertFalse(item.meta.contains("原生合并"))
-        assertTrue(item.meta.contains("merged-137-140.mp4"))
+        assertFalse(item.meta.contains("merged-137-140.mp4"))
         assertEquals("", shorts.formatBadge)
-        assertTrue(shorts.meta.contains("merged-136-140.mp4"))
+        assertFalse(shorts.meta.contains("merged-136-140.mp4"))
         assertEquals("", multiSubtitle.formatBadge)
         assertTrue(multiSubtitle.meta.contains("视频+音频"))
         assertFalse(multiSubtitle.meta.contains("原生合并"))
-        assertTrue(multiSubtitle.meta.contains("merged-299-140.mp4"))
+        assertFalse(multiSubtitle.meta.contains("merged-299-140.mp4"))
 
         val shortVideoRequest = DownloadRequest(
             url = "https://www.youtube.com/shorts/example",
