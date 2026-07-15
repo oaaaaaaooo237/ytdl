@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuites tests="1" failures="0" errors="0" skipped="0" time="1.407" timestamp="2026-07-06T10:53:04" hostname="localhost">
+  <testsuite name="com.garyapp.ytdl.data.YtdlDatabaseMigrationTest" tests="1" failures="0" errors="0" skipped="0" time="0.275" timestamp="2026-07-06T10:53:04" hostname="localhost">
+    <properties>
+      <property name="device" value="ytdl_api37_play_x86_64(AVD) - 17" />
+      <property name="flavor" value="" />
+      <property name="project" value=":app" />
+    </properties>
+    <testcase name="migration1To2AddsThumbnailUrlWithoutDroppingHistoryRows" classname="com.garyapp.ytdl.data.YtdlDatabaseMigrationTest" time="0.275" />
+  </testsuite>
+</testsuites>

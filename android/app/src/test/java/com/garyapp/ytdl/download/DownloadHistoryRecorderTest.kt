@@ -1,0 +1,387 @@
+package com.garyapp.ytdl.download
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
+import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
+import com.garyapp.ytdl.core.ytdlp.VideoFormat
+import com.garyapp.ytdl.data.HistoryItemEntity
+import com.garyapp.ytdl.data.YtdlDatabase
+import com.garyapp.ytdl.ui.FormatMode
+import com.garyapp.ytdl.ui.FormatSelection
+import java.io.File
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class DownloadHistoryRecorderTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    private lateinit var database: YtdlDatabase
+
+    @Before
+    fun createDatabase() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, YtdlDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+    }
+
+    @After
+    fun closeDatabase() {
+        database.close()
+    }
+
+    @Test
+    fun recordsTerminalCompletedFailedAndCanceledStatesToHistory() {
+        val output = temp.newFile("completed.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 42_000L },
+        )
+        val completed = DownloadTaskState.waiting(request(title = "完成视频")).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+        val failed = DownloadTaskState.waiting(request(title = "失败视频"))
+            .failed("network failed Cookie: SID=secret")
+        val canceled = DownloadTaskState.waiting(request(title = "取消视频")).canceled()
+
+        assertTrue(recorder.recordTerminal(completed, "360p").isSuccess)
+        assertTrue(recorder.recordTerminal(failed, "360p").isSuccess)
+        assertTrue(recorder.recordTerminal(canceled, "360p").isSuccess)
+
+        val rows = database.historyDao().listRecent(10)
+
+        assertEquals(
+            listOf(
+                HistoryItemEntity.STATUS_CANCELED,
+                HistoryItemEntity.STATUS_FAILED,
+                HistoryItemEntity.STATUS_COMPLETED,
+            ),
+            rows.map { it.status },
+        )
+        assertEquals(42_000L, rows.first().completedAt)
+        listOf("SID=secret", "Cookie:", "watch?v=").forEach {
+            assertTrue("history should not leak $it", !rows.joinToString().contains(it))
+        }
+    }
+
+    @Test
+    fun refusesToRecordCompletedHistoryWhenMediaOutputIsMissing() {
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 43_000L },
+        )
+        val missingOutput = File(temp.root, "missing.mp4")
+        val forgedCompleted = DownloadTaskState(
+            stage = DownloadStage.Completed,
+            request = request(title = "伪完成"),
+            outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, missingOutput.absolutePath, 1024L)),
+        )
+
+        val result = recorder.recordTerminal(forgedCompleted, "1080p")
+
+        assertTrue(result.isFailure)
+        assertTrue(database.historyDao().listRecent(10).isEmpty())
+    }
+
+    @Test
+    fun recordsSafeThumbnailUrlForCompletedHistory() {
+        val output = temp.newFile("completed-with-thumb.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 44_000L },
+        )
+        val completed = DownloadTaskState.waiting(
+            request(
+                title = "带缩略图视频",
+                thumbnailUrl = "https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg?token=secret#frag",
+            ),
+        ).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "1080p").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals("https://i.ytimg.com/vi/tkxzMEfp49Q/hqdefault.jpg", row.thumbnailUrl)
+        assertTrue(!row.toString().contains("token=secret"))
+        assertTrue(!row.toString().contains("#frag"))
+    }
+
+    @Test
+    fun recordsSubtitleOutputUrisAlongsideCompletedMediaHistory() {
+        val outputRoot = temp.newFolder("gui-downloads")
+        val taskDir = File(outputRoot, "task-subtitle").apply { mkdirs() }
+        val media = File(taskDir, "merged-299-140.mp4").apply { writeText("media") }
+        val subtitle = File(taskDir, "captions.en.vtt").apply {
+            writeText("WEBVTT\n\n00:00.000 --> 00:01.000\nsecret subtitle text")
+        }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 47_000L },
+        )
+        val completed = DownloadTaskState.waiting(requestWithSubtitle(title = "带字幕视频")).completeWith(
+            listOf(
+                DownloadOutputFile(DownloadOutputKind.Media, media.absolutePath, media.length(), outputRoot.absolutePath),
+                DownloadOutputFile(DownloadOutputKind.Subtitle, subtitle.absolutePath, subtitle.length(), outputRoot.absolutePath),
+            ),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "视频 299 + 音频 140 + 字幕 en.vtt").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals("app-private://outputs/task-subtitle/merged-299-140.mp4", row.outputUri)
+        assertEquals("app-private://outputs/task-subtitle/captions.en.vtt", subtitleOutputUris(row))
+        val stored = row.toString()
+        assertTrue(!stored.contains(outputRoot.absolutePath))
+        assertTrue(!stored.contains("WEBVTT"))
+        assertTrue(!stored.contains("secret subtitle text"))
+    }
+
+    @Test
+    fun recordsExternalDocumentUrisInPreferenceToPrivateOutputUris() {
+        val outputRoot = temp.newFolder("gui-downloads-external")
+        val media = File(outputRoot, "task-external/video.mp4").apply {
+            parentFile?.mkdirs()
+            writeText("media")
+        }
+        val subtitle = File(outputRoot, "task-external/subtitle.vtt").apply { writeText("subtitle") }
+        val externalMediaUri = "content://documents/document/exported-media"
+        val externalSubtitleUri = "content://documents/document/exported-subtitle"
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 47_500L },
+        )
+        val completed = DownloadTaskState.waiting(requestWithSubtitle(title = "外部保存视频")).completeWith(
+            listOf(
+                DownloadOutputFile(DownloadOutputKind.Media, media.absolutePath, media.length(), outputRoot.absolutePath),
+                DownloadOutputFile(DownloadOutputKind.Subtitle, subtitle.absolutePath, subtitle.length(), outputRoot.absolutePath),
+            ),
+        ).getOrThrow().withExternalDocumentUris(
+            listOf(externalMediaUri, externalSubtitleUri),
+        ).getOrThrow()
+        assertTrue(media.delete())
+        assertTrue(subtitle.delete())
+
+        assertTrue(recorder.recordTerminal(completed).isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals(externalMediaUri, row.outputUri)
+        assertEquals(externalSubtitleUri, subtitleOutputUris(row))
+        assertFalse(media.exists())
+        assertFalse(subtitle.exists())
+    }
+
+    @Test
+    fun defaultHistoryFormatSummaryUsesUserReadableFormatDetails() {
+        val output = temp.newFile("merged-137-140.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 48_000L },
+        )
+        val completed = DownloadTaskState.waiting(mergeRequest(title = "合并视频")).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed).isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals("1080p MP4 H.264 需原生合并", row.formatSummary)
+        assertTrue("history summary should not expose video format id", !row.formatSummary.orEmpty().contains("137"))
+        assertTrue("history summary should not expose audio format id", !row.formatSummary.orEmpty().contains("140"))
+    }
+
+    @Test
+    fun rejectsSensitiveThumbnailUrlPartsBeforeHistoryPersistence() {
+        val output = temp.newFile("completed-with-sensitive-thumb.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 45_000L },
+        )
+        val completed = DownloadTaskState.waiting(
+            request(
+                title = "敏感缩略图视频",
+                thumbnailUrl = "https://user:pass@example.com/path/token-secret/hqdefault.jpg?token=secret#frag",
+            ),
+        ).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "1080p").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals(null, row.thumbnailUrl)
+        listOf("user:pass", "token-secret", "token=secret", "#frag").forEach {
+            assertTrue("thumbnail history leaked $it", !row.toString().contains(it))
+        }
+    }
+
+    @Test
+    fun rejectsSensitiveThumbnailUrlHostBeforeHistoryPersistence() {
+        val output = temp.newFile("completed-with-sensitive-host-thumb.mp4").apply { writeText("media") }
+        val recorder = DownloadHistoryRecorder(
+            historyDao = database.historyDao(),
+            clock = { 46_000L },
+        )
+        val completed = DownloadTaskState.waiting(
+            request(
+                title = "敏感主机缩略图视频",
+                thumbnailUrl = "https://token-secret.example.com/hqdefault.jpg",
+            ),
+        ).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        assertTrue(recorder.recordTerminal(completed, "1080p").isSuccess)
+
+        val row = database.historyDao().listRecent(1).single()
+        assertEquals(null, row.thumbnailUrl)
+        assertTrue(!row.toString().contains("token-secret"))
+    }
+
+    @Test
+    fun historyRecordingFailureCreatesVisibleSafeFailureState() {
+        val output = temp.newFile("completed-before-history-failure.mp4").apply { writeText("media") }
+        val completed = DownloadTaskState.waiting(request(title = "完成视频")).completeWith(
+            listOf(DownloadOutputFile(DownloadOutputKind.Media, output.absolutePath, output.length())),
+        ).getOrThrow()
+
+        val finalState = applyHistoryRecordingResult(
+            state = completed,
+            recordResult = Result.failure(IllegalStateException("insert failed --cookies D:/private/cookies.txt Authorization: Bearer raw-token")),
+        )
+
+        assertEquals(DownloadStage.Failed, finalState.stage)
+        assertTrue(finalState.errorMessage.orEmpty().contains("历史"))
+        listOf("--cookies", "D:/private", "raw-token", "Authorization").forEach {
+            assertTrue("history write failure leaked $it", !finalState.errorMessage.orEmpty().contains(it))
+        }
+    }
+
+    private fun request(title: String, thumbnailUrl: String? = null): DownloadRequest {
+        return DownloadRequest.fromAnalysis(
+            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            analysis = VideoAnalysis(
+                title = title,
+                durationSeconds = 60,
+                thumbnailUrl = thumbnailUrl,
+                formats = listOf(
+                    VideoFormat(
+                        id = "18",
+                        ext = "mp4",
+                        height = 360,
+                        label = "360p",
+                        hasVideo = true,
+                        hasAudio = true,
+                        mergeRequired = false,
+                        isSupported = true,
+                        videoCodec = "avc1",
+                        audioCodec = "mp4a",
+                    ),
+                ),
+                subtitles = emptyList(),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+    }
+
+    private fun requestWithSubtitle(title: String): DownloadRequest {
+        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+        return DownloadRequest.fromAnalysis(
+            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            analysis = VideoAnalysis(
+                title = title,
+                durationSeconds = 60,
+                thumbnailUrl = null,
+                formats = listOf(
+                    VideoFormat(
+                        id = "18",
+                        ext = "mp4",
+                        height = 360,
+                        label = "360p",
+                        hasVideo = true,
+                        hasAudio = true,
+                        mergeRequired = false,
+                        isSupported = true,
+                        videoCodec = "avc1",
+                        audioCodec = "mp4a",
+                    ),
+                ),
+                subtitles = listOf(subtitle),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+    }
+
+    private fun mergeRequest(title: String): DownloadRequest {
+        return DownloadRequest.fromAnalysis(
+            url = "https://www.youtube.com/watch?v=tkxzMEfp49Q",
+            analysis = VideoAnalysis(
+                title = title,
+                durationSeconds = 60,
+                thumbnailUrl = null,
+                formats = listOf(
+                    VideoFormat(
+                        id = "137",
+                        ext = "mp4",
+                        height = 1080,
+                        label = "1080p",
+                        hasVideo = true,
+                        hasAudio = false,
+                        mergeRequired = true,
+                        isSupported = true,
+                        videoCodec = "avc1",
+                        audioCodec = "none",
+                    ),
+                    VideoFormat(
+                        id = "140",
+                        ext = "m4a",
+                        height = null,
+                        label = "音频",
+                        hasVideo = false,
+                        hasAudio = true,
+                        mergeRequired = false,
+                        isSupported = true,
+                        videoCodec = "none",
+                        audioCodec = "mp4a",
+                    ),
+                ),
+                subtitles = emptyList(),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+    }
+
+    private fun subtitleOutputUris(row: HistoryItemEntity): String? {
+        val field = HistoryItemEntity::class.java.getDeclaredField("subtitleOutputUris")
+        field.isAccessible = true
+        return field.get(row) as String?
+    }
+}

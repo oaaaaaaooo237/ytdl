@@ -1,0 +1,1004 @@
+package com.garyapp.ytdl.download
+
+import com.garyapp.ytdl.core.ytdlp.AnalysisErrorCategory
+import com.garyapp.ytdl.core.ytdlp.DownloadFormatRole
+import com.garyapp.ytdl.core.ytdlp.DownloadProgress
+import com.garyapp.ytdl.core.ytdlp.DownloadProgressListener
+import com.garyapp.ytdl.core.ytdlp.DownloadResult
+import com.garyapp.ytdl.core.ytdlp.SubtitleDownloadResult
+import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
+import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
+import com.garyapp.ytdl.core.ytdlp.VideoFormat
+import com.garyapp.ytdl.core.ytdlp.YtdlpDownloadException
+import com.garyapp.ytdl.data.HistoryItemEntity
+import com.garyapp.ytdl.media.MediaMergeRequest
+import com.garyapp.ytdl.media.MediaProcessingResult
+import com.garyapp.ytdl.media.MediaProcessor
+import com.garyapp.ytdl.storage.ExportController
+import com.garyapp.ytdl.ui.FormatMode
+import com.garyapp.ytdl.ui.FormatSelection
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNoException
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.nio.file.Files
+
+class DownloadRequestRoutingTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    @Test
+    fun directSingleFileRouteDownloadsChosenProgressiveFormatWithoutSingleFileFallback() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+                mergeRequired = false,
+            ),
+        ).getOrThrow()
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "18"), request.route)
+
+        val engine = RecordingDownloadEngine(temp.root)
+        val mediaProcessor = RecordingMediaProcessor()
+        val stages = mutableListOf<DownloadStage>()
+        val result = DownloadPipeline(engine, mediaProcessor).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(listOf("format:media:18"), engine.calls)
+        assertEquals(
+            "测试视频.mp4",
+            File(result.outputs.single { it.kind == DownloadOutputKind.Media }.path).name,
+        )
+        assertTrue(
+            ExportController.isIncompleteTaskDirectory(
+                requireNotNull(File(result.outputs.single().path).parentFile),
+            ),
+        )
+        assertTrue(mediaProcessor.mergeRequests.isEmpty())
+        assertFalse(stages.contains(DownloadStage.Exporting))
+    }
+
+    @Test
+    fun successfulCleanupDeletesSymlinkNodeWithoutTouchingExternalTarget() {
+        val outsideDirectory = temp.newFolder("outside-link-target")
+        val outsideSentinel = File(outsideDirectory, "keep.txt").apply { writeText("keep") }
+        val probeLink = temp.root.toPath().resolve("symlink-probe")
+        try {
+            Files.createSymbolicLink(probeLink, outsideDirectory.toPath())
+            Files.deleteIfExists(probeLink)
+        } catch (error: Exception) {
+            assumeNoException("当前文件系统不支持符号链接测试", error)
+        }
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+        lateinit var taskLink: File
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            afterFormatDownload = { taskDirectory ->
+                taskLink = File(taskDirectory, "external-link")
+                Files.createSymbolicLink(taskLink.toPath(), outsideDirectory.toPath())
+            }
+        }
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertFalse(taskLink.exists())
+        assertTrue(outsideSentinel.isFile)
+        assertEquals("keep", outsideSentinel.readText())
+    }
+
+    @Test
+    fun videoAndAudioSelectionRejectsVideoOnlyFormatWithoutExplicitAudio() {
+        val result = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(videoOnlyFormat(id = "137", height = 1080)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                mergeRequired = false,
+            ),
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("音频"))
+    }
+
+    @Test
+    fun videoDownloadRoutesProgressiveAndUnknownSingleFilesDirectly() {
+        val progressive = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+        val unknown = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(unknownSingleFileFormat(id = "single-file", height = 1080)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "single-file",
+            ),
+        ).getOrThrow()
+
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "18"), progressive.route)
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "single-file"), unknown.route)
+        assertFalse(progressive.formatSummary.contains("18"))
+        assertFalse(unknown.formatSummary.contains("single-file"))
+    }
+
+    @Test
+    fun videoAndAudioRejectsSingleFileMediaInsteadOfRoutingItDirectly() {
+        val result = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("独立视频流"))
+    }
+
+    @Test
+    fun selectedVideoFormatIdEntersDirectRouteWithoutFallback() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "first", height = 1080),
+            progressiveFormat(id = "chosen", height = 720),
+        )
+
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysis,
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 720,
+                selectedVideoFormatId = "chosen",
+            ),
+        ).getOrThrow()
+
+        assertEquals(DownloadRoute.DirectSingleFile(formatId = "chosen"), request.route)
+        assertFalse(request.formatSummary.contains("first"))
+        assertFalse(request.formatSummary.contains("chosen"))
+    }
+
+    @Test
+    fun audioOnlyRouteRejectsProgressiveFormatWithVideo() {
+        val result = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.AudioOnly,
+                selectedAudioFormatId = "18",
+            ),
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("独立音频流"))
+    }
+
+    @Test
+    fun incompatibleWebmVp9AndOpusPairCannotCreateMergeRequiredRoute() {
+        val result = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "248", height = 1080, ext = "webm", videoCodec = "vp9"),
+                audioOnlyFormat(id = "251", ext = "webm", audioCodec = "opus"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "248",
+                selectedAudioFormatId = "251",
+                mergeRequired = true,
+            ),
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("原生 MP4 合并"))
+    }
+
+    @Test
+    fun nativeMp4CompatiblePairCreatesMergeRequiredRouteAndDownloadsBeforeMerge() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        assertEquals(DownloadRoute.MergeRequired(videoFormatId = "137", audioFormatId = "140"), request.route)
+
+        val engine = RecordingDownloadEngine(temp.root)
+        val mediaProcessor = RecordingMediaProcessor()
+        val stages = mutableListOf<DownloadStage>()
+        val result = DownloadPipeline(engine, mediaProcessor).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(listOf("format:video:137", "format:audio:140"), engine.calls)
+        assertEquals(1, mediaProcessor.mergeRequests.size)
+        assertEquals("137", mediaProcessor.mergeRequests.single().expectedVideoFormatId)
+        assertEquals("140", mediaProcessor.mergeRequests.single().expectedAudioFormatId)
+        assertEquals("测试视频.mp4", mediaProcessor.mergeRequests.single().outputFile.name)
+        assertEquals(
+            "测试视频.mp4",
+            File(result.outputs.single { it.kind == DownloadOutputKind.Media }.path).name,
+        )
+        assertFalse(engine.calls.contains("single"))
+        assertTrue(stages.indexOf(DownloadStage.Merging) < stages.indexOf(DownloadStage.Completed))
+        assertFalse(stages.contains(DownloadStage.Exporting))
+    }
+
+    @Test
+    fun mergeRequiredRouteCleansIntermediateStreamsAfterSuccessfulMerge() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+
+        val mediaProcessor = RecordingMediaProcessor()
+        val result = DownloadPipeline(RecordingDownloadEngine(temp.root), mediaProcessor).run(request, temp.root)
+        val mergeRequest = mediaProcessor.mergeRequests.single()
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertTrue(File(result.outputs.single { it.kind == DownloadOutputKind.Media }.path).isFile)
+        assertFalse("合并成功后应清理独立视频流", mergeRequest.videoInput.exists())
+        assertFalse("合并成功后应清理独立音频流", mergeRequest.audioInput.exists())
+    }
+
+    @Test
+    fun mergeRequiredRouteFailsWhenIntermediateStreamCannotBeDeleted() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val mediaProcessor = RecordingMediaProcessor()
+        val result = DownloadPipeline(
+            engine = RecordingDownloadEngine(temp.root),
+            mediaProcessor = mediaProcessor,
+            deleteIntermediateFile = { false },
+        ).run(request, temp.root)
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertTrue(result.state.errorMessage.orEmpty().isNotBlank())
+        assertTrue(File(result.outputs.single().path).isFile)
+    }
+
+    @Test
+    fun mergeRequiredRouteCleansIntermediateStreamsAfterMergeFailure() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val mediaProcessor = RecordingMediaProcessor().apply { mergeFailure = true }
+
+        val result = DownloadPipeline(RecordingDownloadEngine(temp.root), mediaProcessor).run(request, temp.root)
+        val mergeRequest = mediaProcessor.mergeRequests.single()
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertTrue(result.outputs.isEmpty())
+        assertFalse("合并失败后应清理独立视频流", mergeRequest.videoInput.exists())
+        assertFalse("合并失败后应清理独立音频流", mergeRequest.audioInput.exists())
+    }
+
+    @Test
+    fun mergeRequiredRouteRetriesOnlyFailedFormatPartOnceForNetworkFailure() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            failOnceByRole[DownloadFormatRole.Audio] = YtdlpDownloadException(
+                category = AnalysisErrorCategory.Network,
+                safeMessage = "HTTP Error 403: Forbidden",
+            )
+        }
+        val mediaProcessor = RecordingMediaProcessor()
+
+        val result = DownloadPipeline(engine, mediaProcessor).run(request, temp.root)
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(
+            listOf("format:video:137", "format:audio:140", "format:audio:140"),
+            engine.calls,
+        )
+        assertEquals(1, mediaProcessor.mergeRequests.size)
+    }
+
+    @Test
+    fun repeatedMergeRunsCreateDistinctHistoryUrisThatResolveToOriginalFiles() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val outputRoot = temp.newFolder("app-private-outputs")
+
+        val first = DownloadPipeline(RecordingDownloadEngine(temp.root), RecordingMediaProcessor())
+            .run(request, outputRoot)
+        val second = DownloadPipeline(RecordingDownloadEngine(temp.root), RecordingMediaProcessor())
+            .run(request, outputRoot)
+        val firstHistory = HistoryItemEntity.fromTaskState(first.state, "1080p", 1_000L)
+        val secondHistory = HistoryItemEntity.fromTaskState(second.state, "1080p", 2_000L)
+        val firstOutput = ExportController.discoverAppPrivateOutputUri(firstHistory.outputUri, outputRoot).getOrThrow()
+        val secondOutput = ExportController.discoverAppPrivateOutputUri(secondHistory.outputUri, outputRoot).getOrThrow()
+
+        assertEquals(DownloadStage.Completed, first.state.stage)
+        assertEquals(DownloadStage.Completed, second.state.stage)
+        assertNotEquals(first.outputs.single { it.kind == DownloadOutputKind.Media }.path, second.outputs.single { it.kind == DownloadOutputKind.Media }.path)
+        assertNotEquals(firstHistory.outputUri, secondHistory.outputUri)
+        assertEquals(File(first.outputs.single { it.kind == DownloadOutputKind.Media }.path).canonicalFile, firstOutput.sourceFile.canonicalFile)
+        assertEquals(File(second.outputs.single { it.kind == DownloadOutputKind.Media }.path).canonicalFile, secondOutput.sourceFile.canonicalFile)
+    }
+
+    @Test
+    fun videoOnlyRouteUsesExplicitVideoFormatDownload() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(videoOnlyFormat(id = "137", height = 1080)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 1080,
+                selectedVideoFormatId = "137",
+            ),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root)
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadRoute.VideoOnly(videoFormatId = "137"), request.route)
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(listOf("format:video:137"), engine.calls)
+        assertEquals("测试视频.mp4", File(result.outputs.single().path).name)
+    }
+
+    @Test
+    fun audioOnlyRouteUsesExplicitAudioFormatDownload() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(audioOnlyFormat(id = "140")),
+            selection = FormatSelection(
+                mode = FormatMode.AudioOnly,
+                selectedAudioFormatId = "140",
+            ),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root)
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadRoute.AudioOnly(audioFormatId = "140"), request.route)
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(listOf("format:audio:140"), engine.calls)
+        assertEquals("测试视频.m4a", File(result.outputs.single().path).name)
+    }
+
+    @Test
+    fun mediaFileBaseNameKeepsTitleButRemovesUnsafePathCharacters() {
+        assertEquals("节目_第一集_最终版", mediaFileBaseNameForTest("  节目/第一集:最终版?  "))
+        assertEquals("_CON", mediaFileBaseNameForTest("CON"))
+        assertEquals("未命名媒体", mediaFileBaseNameForTest(" . "))
+        assertTrue(mediaFileBaseNameForTest("好".repeat(200)).toByteArray().size <= 180)
+    }
+
+    @Test
+    fun subtitleChoiceDownloadsSeparateSubtitleFileBeforeCompletion() {
+        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+                subtitles = listOf(subtitle),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root)
+        val stages = mutableListOf<DownloadStage>()
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(listOf("format:media:18", "subtitle:automatic:en:vtt"), engine.calls)
+        assertEquals(1, result.outputs.count { it.kind == DownloadOutputKind.Subtitle })
+        assertTrue(stages.indexOf(DownloadStage.DownloadingSubtitles) < stages.indexOf(DownloadStage.Completed))
+    }
+
+    @Test
+    fun subtitleDownloadFailurePreservesCompletedMediaOutputAndNamesSubtitleProblem() {
+        val subtitle = SubtitleInfo(language = "zh-Hans", ext = "vtt", source = SubtitleSource.Automatic)
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+                subtitles = listOf(subtitle),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            subtitleFailure = YtdlpDownloadException(
+                AnalysisErrorCategory.Unsupported,
+                "Unable to download video subtitles for 'zh-Hans': HTTP Error 429: Too Many Requests",
+            )
+        }
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertEquals(1, result.state.outputs.count { it.kind == DownloadOutputKind.Media })
+        assertEquals(0, result.state.outputs.count { it.kind == DownloadOutputKind.Subtitle })
+        assertTrue(result.state.errorMessage.orEmpty().contains("所选字幕 zh-Hans 不可用"))
+    }
+
+    @Test
+    fun finalValidationFailureAfterSubtitleSuccessDoesNotBlameSubtitle() {
+        val subtitle = SubtitleInfo(language = "en", ext = "vtt", source = SubtitleSource.Automatic)
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                progressiveFormat(id = "18", height = 360),
+                subtitles = listOf(subtitle),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = listOf(subtitle),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            afterSubtitleDownload = {
+                temp.root.walkTopDown()
+                    .firstOrNull { it.isFile && it.extension.equals("mp4", ignoreCase = true) }
+                    ?.delete()
+            }
+        }
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertFalse(result.state.errorMessage.orEmpty().contains("字幕"))
+    }
+
+    @Test
+    fun emptySubtitleSelectionCompletesWithOnlyMediaOutputAndNoSubtitleStage() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = 360,
+                selectedVideoFormatId = "18",
+            ),
+            selectedSubtitles = emptyList(),
+        ).getOrThrow()
+
+        val engine = RecordingDownloadEngine(temp.root)
+        val stages = mutableListOf<DownloadStage>()
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(listOf("format:media:18"), engine.calls)
+        assertEquals(1, result.outputs.size)
+        assertEquals(DownloadOutputKind.Media, result.outputs.single().kind)
+        assertFalse(stages.contains(DownloadStage.DownloadingSubtitles))
+    }
+
+    @Test
+    fun cancellationStopsBeforeNextRouteAndDoesNotComplete() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val cancellation = MutableDownloadCancellation()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            onVideoDownload = { cancellation.cancel() }
+        }
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(
+            request = request,
+            outputDirectory = temp.root,
+            cancellation = cancellation,
+        ) { stages += it.stage }
+
+        assertEquals(DownloadStage.Canceled, result.state.stage)
+        assertEquals(listOf("format:video:137"), engine.calls)
+        assertFalse(stages.contains(DownloadStage.Completed))
+        assertFalse(
+            "取消前已下载的中间视频流不应遗留。",
+            temp.root.walkTopDown().any { it.isFile },
+        )
+        assertFalse(
+            "取消后不应遗留空任务目录。",
+            temp.root.listFiles().orEmpty().any { it.isDirectory },
+        )
+    }
+
+    @Test
+    fun cancellationDuringProgressEventStopsBeforeDownloadContinuesAndDoesNotComplete() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+        val cancellation = MutableDownloadCancellation()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            beforeProgress = { cancellation.cancel() }
+        }
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(
+            request = request,
+            outputDirectory = temp.root,
+            cancellation = cancellation,
+        ) { stages += it.stage }
+
+        assertEquals(DownloadStage.Canceled, result.state.stage)
+        assertFalse(engine.continuedAfterProgress)
+        assertFalse(stages.contains(DownloadStage.Completed))
+    }
+
+    @Test
+    fun canceledYtdlpDownloadFailureMapsToCanceledState() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            downloadFailure = YtdlpDownloadException(
+                category = AnalysisErrorCategory.Canceled,
+                safeMessage = "下载已取消。",
+            )
+        }
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Canceled, result.state.stage)
+        assertFalse(stages.contains(DownloadStage.Completed))
+    }
+
+    @Test
+    fun fatalErrorsFromEngineAreNotConvertedToFailedState() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            throwableToThrow = AssertionError("fatal invariant")
+        }
+
+        assertThrows(AssertionError::class.java) {
+            DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+        }
+    }
+
+    @Test
+    fun failureRoutingDoesNotMergeOrComplete() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            failingRole = DownloadFormatRole.Audio
+        }
+        val mediaProcessor = RecordingMediaProcessor()
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, mediaProcessor).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertEquals(listOf("format:video:137", "format:audio:140"), engine.calls)
+        assertTrue(mediaProcessor.mergeRequests.isEmpty())
+        assertFalse(stages.contains(DownloadStage.Completed))
+    }
+
+    @Test
+    fun directMediaDownloadFailsWhenReturnedFormatIdDoesNotMatchRequest() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedVideoFormatId = "18",
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            returnedFormatId = "22"
+        }
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertFalse(stages.contains(DownloadStage.Completed))
+    }
+
+    @Test
+    fun videoOnlyDownloadFailsWhenReturnedRoleDoesNotMatchRequest() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(videoOnlyFormat(id = "137", height = 1080)),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedVideoFormatId = "137",
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            returnedRole = DownloadFormatRole.Media
+        }
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertFalse(stages.contains(DownloadStage.Completed))
+    }
+
+    @Test
+    fun audioOnlyDownloadFailsWhenReturnedFormatIdDoesNotMatchRequest() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(audioOnlyFormat(id = "140")),
+            selection = FormatSelection(
+                mode = FormatMode.AudioOnly,
+                selectedAudioFormatId = "140",
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            returnedFormatId = "141"
+        }
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertFalse(stages.contains(DownloadStage.Completed))
+    }
+
+    @Test
+    fun mergeRequiredDoesNotMergeWhenAudioDownloadReturnsWrongRole() {
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(
+                videoOnlyFormat(id = "137", height = 1080),
+                audioOnlyFormat(id = "140"),
+            ),
+            selection = FormatSelection(
+                mode = FormatMode.VideoAndAudio,
+                selectedVideoFormatId = "137",
+                selectedAudioFormatId = "140",
+                mergeRequired = true,
+            ),
+        ).getOrThrow()
+        val engine = RecordingDownloadEngine(temp.root).apply {
+            returnedRoleByRequestRole[DownloadFormatRole.Audio] = DownloadFormatRole.Video
+        }
+        val mediaProcessor = RecordingMediaProcessor()
+        val stages = mutableListOf<DownloadStage>()
+
+        val result = DownloadPipeline(engine, mediaProcessor).run(request, temp.root) { stages += it.stage }
+
+        assertEquals(DownloadStage.Failed, result.state.stage)
+        assertTrue(mediaProcessor.mergeRequests.isEmpty())
+        assertFalse(stages.contains(DownloadStage.Completed))
+    }
+
+    private class RecordingDownloadEngine(
+        private val fallbackRoot: File,
+    ) : DownloadEngine {
+        val calls = mutableListOf<String>()
+        var failingRole: DownloadFormatRole? = null
+        var onVideoDownload: () -> Unit = {}
+        var beforeProgress: () -> Unit = {}
+        var continuedAfterProgress = false
+        var throwableToThrow: Throwable? = null
+        var returnedFormatId: String? = null
+        var returnedRole: DownloadFormatRole? = null
+        var downloadFailure: YtdlpDownloadException? = null
+        var subtitleFailure: YtdlpDownloadException? = null
+        var afterSubtitleDownload: (() -> Unit)? = null
+        var afterFormatDownload: (File) -> Unit = {}
+        var lastMediaOutputPath: String? = null
+        val failOnceByRole = mutableMapOf<DownloadFormatRole, YtdlpDownloadException>()
+        val returnedRoleByRequestRole = mutableMapOf<DownloadFormatRole, DownloadFormatRole>()
+
+        override fun downloadFormat(
+            url: String,
+            outputDirectory: File,
+            formatId: String,
+            role: DownloadFormatRole,
+            cookiesPath: String?,
+            listener: DownloadProgressListener?,
+        ): Result<DownloadResult> {
+            throwableToThrow?.let { throw it }
+            calls += "format:${role.pythonValue}:$formatId"
+            failOnceByRole.remove(role)?.let { return Result.failure(it) }
+            downloadFailure?.let { return Result.failure(it) }
+            if (failingRole == role) {
+                return Result.failure(IllegalStateException("${role.pythonValue} failed"))
+            }
+            beforeProgress()
+            listener?.onProgress(
+                DownloadProgress(
+                    status = "downloading",
+                    percent = 5.0,
+                    downloadedBytes = 5L,
+                    totalBytes = 100L,
+                    speedBytesPerSecond = null,
+                    etaSeconds = null,
+                    filename = null,
+                ),
+            )
+            continuedAfterProgress = true
+            val file = writeFile(outputDirectory, "$formatId-${role.pythonValue}.${if (role == DownloadFormatRole.Audio) "m4a" else "mp4"}")
+            afterFormatDownload(outputDirectory)
+            if (role == DownloadFormatRole.Video) {
+                onVideoDownload()
+            }
+            if (role == DownloadFormatRole.Media) {
+                lastMediaOutputPath = file.absolutePath
+            }
+            return Result.success(
+                DownloadResult(
+                    outputPath = file.absolutePath,
+                    bytesWritten = file.length(),
+                    title = formatId,
+                    formatId = returnedFormatId ?: formatId,
+                    role = returnedRoleByRequestRole[role] ?: returnedRole ?: role,
+                ),
+            )
+        }
+
+        override fun downloadSubtitle(
+            url: String,
+            outputDirectory: File,
+            language: String,
+            ext: String,
+            source: SubtitleSource,
+            cookiesPath: String?,
+            listener: DownloadProgressListener?,
+        ): Result<SubtitleDownloadResult> {
+            calls += "subtitle:${source.pythonValue}:$language:$ext"
+            subtitleFailure?.let { return Result.failure(it) }
+            val file = writeFile(outputDirectory, "subtitle-${source.pythonValue}.$language.$ext")
+            afterSubtitleDownload?.invoke()
+            return Result.success(
+                SubtitleDownloadResult(
+                    outputPath = file.absolutePath,
+                    bytesWritten = file.length(),
+                    language = language,
+                    ext = ext,
+                    source = source,
+                    title = "subtitle",
+                ),
+            )
+        }
+
+        private fun writeFile(outputDirectory: File, name: String): File {
+            val targetRoot = outputDirectory.takeIf { it.path.isNotBlank() } ?: fallbackRoot
+            return File(targetRoot, name).apply {
+                parentFile?.mkdirs()
+                writeText("download-$name")
+            }
+        }
+    }
+
+    private class RecordingMediaProcessor : MediaProcessor {
+        override val processorName: String = "recording"
+        val mergeRequests = mutableListOf<MediaMergeRequest>()
+        var mergeFailure = false
+
+        override fun mergeVideoAndAudio(request: MediaMergeRequest): Result<MediaProcessingResult> {
+            mergeRequests += request
+            if (mergeFailure) {
+                return Result.failure(IllegalStateException("merge failed"))
+            }
+            request.outputFile.parentFile?.mkdirs()
+            request.outputFile.writeText("merged")
+            return Result.success(
+                MediaProcessingResult(
+                    outputFile = request.outputFile,
+                    bytesWritten = request.outputFile.length(),
+                    videoTrackCount = 1,
+                    audioTrackCount = 1,
+                    processorName = processorName,
+                ),
+            )
+        }
+    }
+
+    private fun analysisWith(
+        vararg formats: VideoFormat,
+        subtitles: List<SubtitleInfo> = emptyList(),
+    ) = VideoAnalysis(
+        title = "测试视频",
+        durationSeconds = 60,
+        thumbnailUrl = null,
+        formats = formats.toList(),
+        subtitles = subtitles,
+    )
+
+    private fun progressiveFormat(id: String, height: Int) = VideoFormat(
+        id = id,
+        ext = "mp4",
+        height = height,
+        label = "${height}p",
+        hasVideo = true,
+        hasAudio = true,
+        mergeRequired = false,
+        isSupported = true,
+        videoCodec = "avc1",
+        audioCodec = "mp4a",
+    )
+
+    private fun videoOnlyFormat(
+        id: String,
+        height: Int,
+        ext: String = "mp4",
+        videoCodec: String = "avc1",
+    ) = VideoFormat(
+        id = id,
+        ext = ext,
+        height = height,
+        label = "${height}p 需合并音频",
+        hasVideo = true,
+        hasAudio = false,
+        mergeRequired = true,
+        isSupported = true,
+        videoCodec = videoCodec,
+        audioCodec = "none",
+    )
+
+    private fun unknownSingleFileFormat(id: String, height: Int) = VideoFormat(
+        id = id,
+        ext = "mp4",
+        height = height,
+        label = "${height}p",
+        hasVideo = true,
+        hasAudio = true,
+        mergeRequired = false,
+        isSupported = true,
+        videoCodec = null,
+        audioCodec = null,
+    )
+
+    private fun audioOnlyFormat(
+        id: String,
+        ext: String = "m4a",
+        audioCodec: String = "mp4a",
+    ) = VideoFormat(
+        id = id,
+        ext = ext,
+        height = null,
+        label = "音频",
+        hasVideo = false,
+        hasAudio = true,
+        mergeRequired = false,
+        isSupported = true,
+        videoCodec = "none",
+        audioCodec = audioCodec,
+    )
+
+    private companion object {
+        const val TestUrl = "https://www.youtube.com/watch?v=tkxzMEfp49Q"
+    }
+}
