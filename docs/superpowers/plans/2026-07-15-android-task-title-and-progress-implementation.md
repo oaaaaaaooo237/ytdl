@@ -423,7 +423,7 @@ Expected: 单元测试、debug APK 和 androidTest APK 均构建成功。
 
 2026-07-15 实际结果：发布目录只有 `ytdl-android-1.0.1-debug.apk` 一个 APK，大小 `61,735,848` bytes，SHA-256 为 `F94A150AF59370D0B4DADD3919B66BC1EC99A275A0F4B478EE01EB64D28295B9`；`aapt2` 确认 `versionName=1.0.1`、`versionCode=2`，`apksigner` 确认 debug 证书 v2 签名有效。手机 `a73e29a3`（`23127PN0CC`）覆盖安装返回 `Success`，`dumpsys package` 再次确认版本号。
 
-- [ ] **Step 5: 提交、推送和核对远程**
+- [x] **Step 5: 提交、推送和核对远程**
 
 只暂存本计划涉及的代码、测试和文档，排除 `AGENTS.md`、`.qa-data`、附件和 APK：
 
@@ -434,3 +434,5 @@ git push origin feature/android-play-mvp-1
 ```
 
 Expected: 本地 `HEAD` 与 `origin/feature/android-play-mvp-1` 一致，现有草稿 PR #1 保持打开。
+
+2026-07-15 实际结果：本轮代码、测试和 QA 文档提交为 `f4fa344`，已推送到 `origin/feature/android-play-mvp-1`；`AGENTS.md`、`.qa-data`、APK 和 `.codex-remote-attachments/` 均未加入提交。
