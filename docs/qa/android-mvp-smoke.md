@@ -1746,5 +1746,5 @@ API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboar
 - 唯一可见 API 37 模拟器中，搜索框输入标题关键词 `gender` 后只保留两条标题匹配记录；文件名没有重新出现。长标题保持单行并从右向左循环，完成/取消、编码和分辨率三枚右侧标签不重叠。
 - 用户随后用真实地址完成一次前台下载并提供下载中与完成后截图，明确确认本项通过。下载中画面显示下载图标与 `1.7 MB/s`、硬盘图标与 `19.9 MB/35.5 MB`，没有“下载速度 / 已下载 / 总容量”等重复汉字；完成后同一任务按历史样式显示“打开 / 分享 / 删除”，文件名不显示。
 - 最终本地发布目录只保留 `ytdl-android-1.0.1-debug.apk` 一个 APK，大小 `61,735,848` bytes，SHA-256 为 `F94A150AF59370D0B4DADD3919B66BC1EC99A275A0F4B478EE01EB64D28295B9`；`aapt2` 确认版本 `1.0.1 (2)`，Android debug 证书 v2 签名校验通过。
-- 手机 `a73e29a3`（型号 `23127PN0CC`）已通过 `adb install -r` 覆盖安装该 APK 并返回 `Success`；`dumpsys package` 确认 `versionName=1.0.1`、`versionCode=2`。本项只证明安装与包版本正确，不替代小米 14 的完整前台 M10/D2 功能验收。
+- 手机 `a73e29a3`（型号 `23127PN0CC`）首次执行普通 `adb install -r` 虽返回 `Success`，但主用户状态仍为 `installed=false`，因此没有桌面启动入口。随后明确执行 `adb install --user 0 -r`，再次返回 `Success`，主用户状态变为 `installed=true`；系统解析到启动入口 `com.garyapp.ytdl/.MainActivity`，并已成功启动到手机前台。`dumpsys package` 确认 `versionName=1.0.1`、`versionCode=2`。本项证明安装、启动入口和包版本正确，不替代小米 14 的完整前台 M10/D2 功能验收。
 - 本节只证明本次任务卡片和进度展示更新通过；Play 正式签名、商店材料及小米 14 的 M10/D2 最终真机验收边界不变。

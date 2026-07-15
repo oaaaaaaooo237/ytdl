@@ -421,7 +421,7 @@ Expected: 单元测试、debug APK 和 androidTest APK 均构建成功。
 
 把本轮自动化与前台结果写入 `docs/qa/android-mvp-smoke.md`。复制 `android/app/build/outputs/apk/debug/app-debug.apk` 到 `dist/android/1.0.1-latest/ytdl-android-1.0.1-debug.apk`，重新生成 `SHA256SUMS.txt`，确认发布目录只有一个 APK。手机 `a73e29a3` 在线时使用 `adb -s a73e29a3 install -r` 覆盖安装并核对 `versionName=1.0.1`、`versionCode=2`。
 
-2026-07-15 实际结果：发布目录只有 `ytdl-android-1.0.1-debug.apk` 一个 APK，大小 `61,735,848` bytes，SHA-256 为 `F94A150AF59370D0B4DADD3919B66BC1EC99A275A0F4B478EE01EB64D28295B9`；`aapt2` 确认 `versionName=1.0.1`、`versionCode=2`，`apksigner` 确认 debug 证书 v2 签名有效。手机 `a73e29a3`（`23127PN0CC`）覆盖安装返回 `Success`，`dumpsys package` 再次确认版本号。
+2026-07-15 实际结果：发布目录只有 `ytdl-android-1.0.1-debug.apk` 一个 APK，大小 `61,735,848` bytes，SHA-256 为 `F94A150AF59370D0B4DADD3919B66BC1EC99A275A0F4B478EE01EB64D28295B9`；`aapt2` 确认 `versionName=1.0.1`、`versionCode=2`，`apksigner` 确认 debug 证书 v2 签名有效。手机 `a73e29a3`（`23127PN0CC`）首次覆盖后包记录存在但主用户状态仍为 `installed=false`；随后明确使用 `adb install --user 0 -r` 重装，返回 `Success`，主用户状态变为 `installed=true`。应用已启动到 `com.garyapp.ytdl/.MainActivity`，`dumpsys package` 再次确认版本号。
 
 - [x] **Step 5: 提交、推送和核对远程**
 
