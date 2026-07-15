@@ -149,7 +149,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun historySecondLineKeepsTypeFileNameTimeAndSafeFailureReason() {
+    fun historySecondLineKeepsTypeTimeAndSafeFailureReasonWithoutFileName() {
         val completed = HistoryItemEntity.createSafe(
             "完成任务",
             60,
@@ -206,18 +206,18 @@ class DownloadUiBridgeTest {
 
         assertTrue(
             "meta=${items[0].meta}",
-            items[0].meta.matches(Regex("视频 · video\\.mp4 · \\d{2}/\\d{2} \\d{2}:\\d{2}")),
+            items[0].meta.matches(Regex("视频 · \\d{2}/\\d{2} \\d{2}:\\d{2}")),
         )
         assertTrue(items[1].meta.startsWith("视频 · "))
         assertTrue(items[1].meta.endsWith("网络连接中断"))
-        listOf("1080p", "720p", "web", "youtube", "媒体文件", "app-private://").forEach { forbidden ->
+        listOf("video.mp4", "1080p", "720p", "web", "youtube", "媒体文件", "app-private://").forEach { forbidden ->
             assertFalse(items.joinToString { it.meta }.contains(forbidden, ignoreCase = true))
         }
         assertEquals("", items[2].meta)
     }
 
     @Test
-    fun longHistoryFileNameKeepsItsExtensionWhenShortenedForDisplay() {
+    fun historyKeepsOutputUriInternallyWhileHidingLongFileName() {
         val longFileName = "a".repeat(180) + ".mp4"
         val row = HistoryItemEntity.createSafe(
             "很长的标题",
@@ -237,10 +237,11 @@ class DownloadUiBridgeTest {
             1_000,
         )
 
-        val meta = historyUiItemsFromRows(listOf(row)).single().meta
+        val item = historyUiItemsFromRows(listOf(row)).single()
 
-        assertTrue("meta=$meta", meta.contains("….mp4"))
-        assertFalse("meta=$meta", meta.contains(longFileName))
+        assertEquals("app-private://outputs/$longFileName", item.outputUri)
+        assertFalse("meta=${item.meta}", item.meta.contains(".mp4"))
+        assertFalse("meta=${item.meta}", item.meta.contains(longFileName))
     }
 
     @Test
@@ -952,6 +953,7 @@ class DownloadUiBridgeTest {
         val items = listOf(video, audio)
 
         assertEquals(listOf(video), filterHistoryItemsForUiTest(items, query = "航拍", selectedFilterIndex = 0))
+        assertEquals(emptyList<HistoryUiItem>(), filterHistoryItemsForUiTest(items, query = "720p", selectedFilterIndex = 0))
         assertEquals(listOf(video), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 1))
         assertEquals(listOf(audio), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 2))
         assertEquals(emptyList<HistoryUiItem>(), filterHistoryItemsForUiTest(items, query = "不存在", selectedFilterIndex = 0))
@@ -981,8 +983,9 @@ class DownloadUiBridgeTest {
 
         assertTrue(
             "meta=${item.meta}",
-            item.meta.matches(Regex("仅音频 · audio\\.m4a · \\d{2}/\\d{2} \\d{2}:\\d{2}")),
+            item.meta.matches(Regex("仅音频 · \\d{2}/\\d{2} \\d{2}:\\d{2}")),
         )
+        assertFalse(item.meta.contains("audio.m4a"))
         assertFalse(item.meta.contains("web", ignoreCase = true))
         assertFalse(item.meta.contains("单文件"))
         assertTrue(item.isAudioOnly)

@@ -748,7 +748,7 @@ class DownloadGuiBindingTest {
         assertFalse(cards.first().meta.contains("app-private://"))
         assertFalse(cards.first().meta.contains("%20"))
         assertFalse(cards.first().meta.contains("媒体文件"))
-        assertTrue(cards.first().meta.contains("测试 video.mp4"))
+        assertFalse(cards.first().meta.contains("测试 video.mp4"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(cards.first()))
         assertEquals(listOf("删除"), historyActionLabelsForUiTest(cards.last()))
         listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {

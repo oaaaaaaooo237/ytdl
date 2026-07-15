@@ -2903,7 +2903,7 @@ private fun filterHistoryItems(
 ): List<HistoryUiItem> {
     val normalizedQuery = query.trim().lowercase(Locale.ROOT)
     return historyItems.filter { item ->
-        val searchable = listOf(item.title, item.meta, item.badge, item.formatBadge).joinToString(" ").lowercase(Locale.ROOT)
+        val searchable = item.title.lowercase(Locale.ROOT)
         val matchesQuery = normalizedQuery.isBlank() || searchable.contains(normalizedQuery)
         val matchesType = when (selectedFilterIndex) {
             1 -> !isAudioOnlyHistory(item)

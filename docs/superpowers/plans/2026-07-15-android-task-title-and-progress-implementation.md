@@ -17,7 +17,7 @@
 - Modify: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt`
 - Test: `android/app/src/test/java/com/garyapp/ytdl/ui/DownloadUiBridgeTest.kt`
 
-- [ ] **Step 1: 写历史映射和标题搜索的失败测试**
+- [x] **Step 1: 写历史映射和标题搜索的失败测试**
 
 在 `DownloadUiBridgeTest` 中修改 `historyAudioFilterUsesHiddenFormatClassification`，要求第二行只保留类型和时间；扩展 `historySearchAndTypeFilterUseLoadedLocalItems`，证明标题可以命中，但 `meta` 中的文字不能命中：
 
@@ -35,7 +35,7 @@ assertEquals(
 )
 ```
 
-- [ ] **Step 2: 运行聚焦测试并确认 RED**
+- [x] **Step 2: 运行聚焦测试并确认 RED**
 
 Run:
 
@@ -45,7 +45,7 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests "com.gary
 
 Expected: 当前 `meta` 仍包含 `audio.m4a`，并且搜索仍匹配 `meta` 中的 `720p`，测试失败。
 
-- [ ] **Step 3: 完成最小实现**
+- [x] **Step 3: 完成最小实现**
 
 把 `historyMeta` 中的文件名删除：
 
@@ -69,13 +69,13 @@ val matchesQuery = normalizedQuery.isBlank() || searchable.contains(normalizedQu
 
 类型筛选继续使用 `item.isAudioOnly`，不受标题搜索收紧影响。
 
-- [ ] **Step 4: 运行聚焦测试并确认 GREEN**
+- [x] **Step 4: 运行聚焦测试并确认 GREEN**
 
 Run: 与 Step 2 相同。
 
 Expected: 两项测试通过，标题搜索和音视频分类保持正常。
 
-- [ ] **Step 5: 提交历史文案与搜索改动**
+- [x] **Step 5: 提交历史文案与搜索改动**
 
 ```powershell
 git add -- android/app/src/main/java/com/garyapp/ytdl/ui/DownloadUiBridge.kt android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt android/app/src/test/java/com/garyapp/ytdl/ui/DownloadUiBridgeTest.kt

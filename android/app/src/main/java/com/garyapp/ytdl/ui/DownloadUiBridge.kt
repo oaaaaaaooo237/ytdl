@@ -12,8 +12,6 @@ import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRequestException
 import com.garyapp.ytdl.download.DownloadStage
 import java.io.File
-import java.net.URI
-import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -134,7 +132,6 @@ fun prepareTemporaryCookiesForDownload(
 private fun historyMeta(row: HistoryItemEntity): String {
     val parts = listOfNotNull(
         historyTypeLabel(row.formatSummary.orEmpty()).takeIf { it.isNotBlank() },
-        historyOutputFileName(row.outputUri.orEmpty()),
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
         row.errorSummary?.takeIf { it.isNotBlank() && !it.contains("字幕") },
     )
@@ -198,33 +195,6 @@ private fun isHistoryOutputUri(value: String): Boolean {
     val normalized = value.trim()
     return normalized.startsWith("app-private://outputs/") ||
         normalized.startsWith("content://") && normalized.length > "content://".length
-}
-
-private fun historyOutputFileName(outputUri: String): String? {
-    if (!isHistoryOutputUri(outputUri)) return null
-    val rawLeaf = runCatching { URI(outputUri).rawPath.orEmpty().substringAfterLast('/') }
-        .getOrDefault("")
-    val decoded = runCatching { URLDecoder.decode(rawLeaf, Charsets.UTF_8.name()) }
-        .getOrDefault(rawLeaf)
-    val fileName = decoded
-        .substringAfterLast('/')
-        .substringAfterLast(':')
-        .replace(Regex("""[\u0000-\u001F\u007F]"""), "")
-        .trim()
-    if (fileName.isBlank() || fileName.contains("://")) return null
-    return redactHistoryUiText(fileName)
-        .truncateHistoryFileName()
-        .takeIf { it.isNotBlank() }
-}
-
-private fun String.truncateHistoryFileName(maxChars: Int = 120): String {
-    if (length <= maxChars) return this
-    val extension = substringAfterLast('.', missingDelimiterValue = "")
-        .takeIf { it.matches(Regex("""[A-Za-z0-9]{1,10}""")) }
-        ?.let { ".$it" }
-        .orEmpty()
-    val prefixLength = (maxChars - extension.length - 1).coerceAtLeast(1)
-    return take(prefixLength).trimEnd() + "…" + extension
 }
 
 private fun formatHistoryTime(timestampMillis: Long): String {
