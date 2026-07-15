@@ -17,11 +17,44 @@ import com.garyapp.ytdl.ui.theme.ytdlAppPaletteForPreset
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
 class DownloadUiBridgeTest {
+    @Test
+    fun downloadRequestFailureMessageDoesNotExposeRawExceptionText() {
+        val raw = "https://example.com/private?token=secret Cookie: SID=secret"
+
+        assertEquals(
+            "格式选择错误，请重新分析或选择格式。",
+            downloadRequestFailureMessageForUiTest(IllegalStateException(raw)),
+        )
+        assertFalse(downloadRequestFailureMessageForUiTest(IllegalStateException(raw)).contains(raw))
+    }
+
+    @Test
+    fun taskScrollbarMetricsTrackVisibleRange() {
+        assertNull(
+            lazyListScrollbarMetricsForUiTest(
+                totalItemsCount = 4,
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0,
+                averageVisibleItemExtent = 100f,
+                viewportSize = 400,
+            ),
+        )
+        val top = lazyListScrollbarMetricsForUiTest(20, 0, 0, 100f, 500)!!
+        val middle = lazyListScrollbarMetricsForUiTest(20, 8, 0, 100f, 500)!!
+        val bottom = lazyListScrollbarMetricsForUiTest(20, 15, 0, 100f, 500)!!
+
+        assertEquals(0.25f, top.thumbFraction, 0.01f)
+        assertTrue(top.offsetFraction < middle.offsetFraction)
+        assertTrue(middle.offsetFraction < bottom.offsetFraction)
+        assertEquals(1f, bottom.offsetFraction, 0.01f)
+    }
+
     @Test
     fun analysisFailureMessageDoesNotExposeRawExceptionText() {
         val message = analysisFailureMessageForUiTest(
@@ -893,21 +926,6 @@ class DownloadUiBridgeTest {
                 ),
             ),
         )
-    }
-
-    @Test
-    fun queueScrollIndicatorOnlyAppearsForRealQueueState() {
-        assertFalse(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState()))
-        assertTrue(
-            shouldShowQueueScrollIndicatorForUiTest(
-                RuntimeDownloadState(
-                    isDownloading = true,
-                    activeStage = DownloadStage.DownloadingVideo,
-                    downloadStatus = "下载视频",
-                ),
-            ),
-        )
-        assertFalse(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState(downloadStatus = "下载视频")))
     }
 
     @Test

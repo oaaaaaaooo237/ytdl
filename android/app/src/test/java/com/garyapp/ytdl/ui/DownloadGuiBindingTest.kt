@@ -27,6 +27,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.platform.testTag
 import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.core.policy.UrlPolicy
@@ -40,8 +42,6 @@ import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.data.HistoryItemEntity
-import com.garyapp.ytdl.download.DownloadOutputFile
-import com.garyapp.ytdl.download.DownloadOutputKind
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
@@ -990,6 +990,65 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithTag("ytdl-pending-queue-card-0").assertExists()
         composeRule.onNodeWithText("等待中（1）").assertExists()
         composeRule.onNodeWithText("下一条视频").assertExists()
+    }
+
+    @Test
+    fun tasksScrollbarAppearsForOverflowAndTracksScroll() {
+        val historyItems = (1L..20L).map { id ->
+            HistoryUiItem(
+                id = id,
+                title = "历史任务 $id",
+                meta = "07/15 12:00",
+                badge = "完成",
+                outputUri = "app-private://outputs/video-$id.mp4",
+                status = HistoryItemEntity.STATUS_COMPLETED,
+                completedAt = id,
+                formatBadge = "720p",
+                codecBadge = "H.264",
+            )
+        }
+        composeRule.setContent {
+            YtdlApp(historyItemsProvider = { historyItems })
+        }
+
+        composeRule.onNodeWithTag("ytdl-tab-tasks").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("ytdl-tasks-scroll-thumb")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        val initialTop = composeRule.onNodeWithTag("ytdl-tasks-scroll-thumb")
+            .getUnclippedBoundsInRoot().top
+
+        composeRule.onNodeWithTag("ytdl-screen-tasks").performTouchInput { swipeUp() }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onNodeWithTag("ytdl-tasks-scroll-thumb")
+                .getUnclippedBoundsInRoot().top > initialTop
+        }
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w411dp-h891dp")
+    fun tasksScrollbarStaysHiddenWhenHistoryFits() {
+        val historyItem = HistoryUiItem(
+            id = 1L,
+            title = "单条历史任务",
+            meta = "07/15 12:00",
+            badge = "完成",
+            outputUri = "app-private://outputs/video.mp4",
+            status = HistoryItemEntity.STATUS_COMPLETED,
+            completedAt = 1L,
+        )
+        composeRule.setContent {
+            YtdlApp(historyItemsProvider = { listOf(historyItem) })
+        }
+
+        composeRule.onNodeWithTag("ytdl-tab-tasks").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("单条历史任务").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("单条历史任务").assertExists()
+        composeRule.onAllNodesWithTag("ytdl-tasks-scroll-indicator").assertCountEquals(0)
     }
 
     @Test

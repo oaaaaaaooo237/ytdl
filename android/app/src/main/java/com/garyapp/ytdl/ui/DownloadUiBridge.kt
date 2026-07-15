@@ -9,7 +9,7 @@ import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
-import com.garyapp.ytdl.download.DownloadRoute
+import com.garyapp.ytdl.download.DownloadRequestException
 import com.garyapp.ytdl.download.DownloadStage
 import java.io.File
 import java.net.URI
@@ -41,6 +41,20 @@ fun buildAppliedDownloadRequest(
             cookiesPath = cookiesPath,
         ).getOrThrow()
     }
+}
+
+internal fun downloadRequestFailureMessageForUiTest(error: Throwable?): String = downloadRequestFailureMessage(error)
+
+internal fun downloadRequestFailureMessage(error: Throwable?): String {
+    val controlledMessage = when (error) {
+        is DownloadRequestException -> error.message
+        is IllegalArgumentException -> error.message?.takeIf { it == "请先输入公开视频页面地址。" }
+        is IllegalStateException -> error.message?.takeIf { it == "请先分析视频。" }
+        else -> null
+    }
+    return controlledMessage
+        ?.let { if (it.startsWith("请先")) it else "格式选择错误：$it" }
+        ?: "格式选择错误，请重新分析或选择格式。"
 }
 
 data class HistoryUiItem(

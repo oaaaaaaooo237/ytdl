@@ -114,7 +114,7 @@ class DownloadService : Service() {
                 historyRecordResult = historyRecordResult,
                 retryStore = retryDraftStore,
             ).onFailure {
-                Log.w(LogTag, "Retry draft persistence did not complete.", it)
+                Log.w(LogTag, "Retry draft persistence did not complete.")
             }
             val finalState = applyHistoryRecordingResult(
                 state = terminalState,

@@ -66,7 +66,7 @@ class YtdlAppUiTest {
         tapTag("ytdl-tab-tasks")
         assertTagVisible("ytdl-screen-tasks")
         assertTagVisible("ytdl-tasks-summary-card")
-        assertTagNotVisible("ytdl-queue-scroll-indicator")
+        assertTagNotVisible("ytdl-tasks-scroll-indicator")
         assertTrue(
             "任务页应显示空状态或真实历史卡片",
             findTag("ytdl-history-empty-card", timeoutMs = 1_000) != null ||
@@ -104,7 +104,7 @@ class YtdlAppUiTest {
     fun tasksScreenShowsEmptyCurrentAreaWithoutDemoFailureCard() {
         tapTag("ytdl-tab-tasks")
         assertTagVisible("ytdl-tasks-summary-card")
-        assertTagNotVisible("ytdl-queue-scroll-indicator")
+        assertTagNotVisible("ytdl-tasks-scroll-indicator")
         assertTextContains("当前没有进行中或等待任务", timeoutMs = 1_000)
     }
 

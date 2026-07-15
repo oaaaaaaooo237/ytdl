@@ -13,7 +13,6 @@ import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.core.ytdlp.YtdlpDownloadException
 import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.media.MediaMergeRequest
-import com.garyapp.ytdl.media.MediaOutputContainer
 import com.garyapp.ytdl.media.MediaProcessingResult
 import com.garyapp.ytdl.media.MediaProcessor
 import com.garyapp.ytdl.storage.ExportController

@@ -33,6 +33,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -49,12 +50,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,7 +70,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -74,6 +78,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -1124,11 +1129,9 @@ internal fun YtdlApp(
         )
         if (requestResult.isFailure) {
             temporaryCookies?.delete()
-            val message = requestResult.exceptionOrNull()?.message.orEmpty()
-                .ifBlank { "格式选择错误，请重新分析或选择格式。" }
             runtimeState = runtimeState.copy(
                 isDownloading = false,
-                userMessage = if (message.contains("请先")) message else "格式选择错误：$message",
+                userMessage = downloadRequestFailureMessage(requestResult.exceptionOrNull()),
             )
             return
         }
@@ -1317,7 +1320,9 @@ internal fun YtdlApp(
                     .padding(innerPadding),
             ) {
                 key(selected.route) {
+                    val pageListState = rememberLazyListState()
                     LazyColumn(
+                    state = pageListState,
                     modifier = Modifier
                         .fillMaxSize()
                         .semantics {
@@ -1420,17 +1425,15 @@ internal fun YtdlApp(
                         )
                     }
                     }
-                }
-                if (selected.route == "tasks" &&
-                    (shouldShowQueueScrollIndicator(runtimeState) || pendingDownloadRequests.isNotEmpty())
-                ) {
-                    QueueScrollIndicator(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 5.dp)
-                            .semantics { testTagsAsResourceId = true }
-                            .testTag("ytdl-queue-scroll-indicator"),
-                    )
+
+                    if (selected.route == "tasks") {
+                        TaskListScrollIndicator(
+                            state = pageListState,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 5.dp),
+                        )
+                    }
                 }
             }
         }
@@ -2012,29 +2015,71 @@ private fun PageHeader(destination: YtdlDestination) {
 }
 
 @Composable
-private fun QueueScrollIndicator(modifier: Modifier = Modifier) {
-    val palette = LocalYtdlAppPalette.current
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Text("⌃", color = palette.softText.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
-        Box(
-            modifier = Modifier
-                .size(width = 3.dp, height = 250.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(palette.borderColor),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(88.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(palette.softText),
+private fun TaskListScrollIndicator(
+    state: LazyListState,
+    modifier: Modifier = Modifier,
+) {
+    val metrics by remember(state) {
+        derivedStateOf {
+            if (!state.canScrollBackward && !state.canScrollForward) {
+                return@derivedStateOf null
+            }
+            val layoutInfo = state.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) {
+                return@derivedStateOf null
+            }
+            val firstItem = visibleItems.first()
+            val lastItem = visibleItems.last()
+            val visibleExtent = (lastItem.offset + lastItem.size - firstItem.offset).coerceAtLeast(1)
+            val calculated = lazyListScrollbarMetrics(
+                totalItemsCount = layoutInfo.totalItemsCount,
+                firstVisibleItemIndex = state.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = state.firstVisibleItemScrollOffset,
+                averageVisibleItemExtent = visibleExtent.toFloat() / visibleItems.size,
+                viewportSize = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset,
+            ) ?: return@derivedStateOf null
+            calculated.copy(
+                offsetFraction = when {
+                    !state.canScrollBackward -> 0f
+                    !state.canScrollForward -> 1f
+                    else -> calculated.offsetFraction
+                },
             )
         }
-        Text("⌄", color = palette.softText.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
+    }
+    val currentMetrics = metrics ?: return
+    val palette = LocalYtdlAppPalette.current
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(8.dp)
+            .padding(vertical = 16.dp)
+            .semantics { testTagsAsResourceId = true }
+            .testTag("ytdl-tasks-scroll-indicator"),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxHeight()
+                .width(3.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(palette.borderColor.copy(alpha = 0.65f)),
+        )
+        val thumbHeight = (maxHeight * currentMetrics.thumbFraction)
+            .coerceAtLeast(44.dp)
+            .coerceAtMost(maxHeight)
+        val thumbOffset = (maxHeight - thumbHeight) * currentMetrics.offsetFraction
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = thumbOffset)
+                .width(3.dp)
+                .height(thumbHeight)
+                .clip(RoundedCornerShape(3.dp))
+                .background(palette.softText.copy(alpha = 0.9f))
+                .testTag("ytdl-tasks-scroll-thumb"),
+        )
     }
 }
 
@@ -2608,9 +2653,42 @@ private fun formatSettingSummaries(
     )
 }
 
-internal fun shouldShowQueueScrollIndicatorForUiTest(state: RuntimeDownloadState): Boolean = shouldShowQueueScrollIndicator(state)
+internal data class LazyListScrollbarMetrics(
+    val thumbFraction: Float,
+    val offsetFraction: Float,
+)
 
-private fun shouldShowQueueScrollIndicator(state: RuntimeDownloadState): Boolean = shouldShowCurrentTask(state)
+internal fun lazyListScrollbarMetricsForUiTest(
+    totalItemsCount: Int,
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffset: Int,
+    averageVisibleItemExtent: Float,
+    viewportSize: Int,
+): LazyListScrollbarMetrics? = lazyListScrollbarMetrics(
+    totalItemsCount = totalItemsCount,
+    firstVisibleItemIndex = firstVisibleItemIndex,
+    firstVisibleItemScrollOffset = firstVisibleItemScrollOffset,
+    averageVisibleItemExtent = averageVisibleItemExtent,
+    viewportSize = viewportSize,
+)
+
+private fun lazyListScrollbarMetrics(
+    totalItemsCount: Int,
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffset: Int,
+    averageVisibleItemExtent: Float,
+    viewportSize: Int,
+): LazyListScrollbarMetrics? {
+    if (totalItemsCount <= 0 || averageVisibleItemExtent <= 0f || viewportSize <= 0) return null
+    val estimatedContentSize = averageVisibleItemExtent * totalItemsCount
+    if (estimatedContentSize <= viewportSize) return null
+    val maximumScroll = estimatedContentSize - viewportSize
+    val currentScroll = firstVisibleItemIndex * averageVisibleItemExtent + firstVisibleItemScrollOffset
+    return LazyListScrollbarMetrics(
+        thumbFraction = (viewportSize / estimatedContentSize).coerceIn(0f, 1f),
+        offsetFraction = (currentScroll / maximumScroll).coerceIn(0f, 1f),
+    )
+}
 
 internal fun shouldShowCurrentTaskForUiTest(state: RuntimeDownloadState): Boolean = shouldShowCurrentTask(state)
 
