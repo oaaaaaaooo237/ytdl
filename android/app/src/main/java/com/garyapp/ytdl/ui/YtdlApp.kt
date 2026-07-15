@@ -707,6 +707,7 @@ internal fun YtdlApp(
     var selectedRoute by rememberSaveable { mutableStateOf("download") }
     val currentSelectedRoute by rememberUpdatedState(selectedRoute)
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
+    val analysisRequestRevision = remember { AtomicLong(0L) }
     var hasUserConfirmed by rememberSaveable { mutableStateOf(false) }
     var historyQuery by rememberSaveable { mutableStateOf("") }
     var historyFilterIndex by rememberSaveable { mutableStateOf(0) }
@@ -1017,6 +1018,7 @@ internal fun YtdlApp(
             runtimeState = runtimeState.copy(userMessage = "请先输入公开视频页面地址。")
             return
         }
+        val requestRevision = analysisRequestRevision.incrementAndGet()
 
         hasUserConfirmed = false
         runtimeState = runtimeState.copy(
@@ -1037,10 +1039,12 @@ internal fun YtdlApp(
             )
             if (temporaryCookiesResult.isFailure) {
                 mainHandler.post {
-                    runtimeState = runtimeState.copy(
-                        isAnalyzing = false,
-                        userMessage = "cookies 文件读取失败，请重新选择 cookies 文件。",
-                    )
+                    if (analysisRequestRevision.get() == requestRevision) {
+                        runtimeState = runtimeState.copy(
+                            isAnalyzing = false,
+                            userMessage = "cookies 文件读取失败，请重新选择 cookies 文件。",
+                        )
+                    }
                 }
                 return@Thread
             }
@@ -1052,6 +1056,9 @@ internal fun YtdlApp(
                 temporaryCookies?.delete()
             }
             mainHandler.post {
+                if (analysisRequestRevision.get() != requestRevision) {
+                    return@post
+                }
                 runtimeState = result.fold(
                     onSuccess = { analysis ->
                         val analyzed = runtimeState.withAnalysisResult(analysis)
@@ -1331,9 +1338,12 @@ internal fun YtdlApp(
                             hasUserConfirmed = hasUserConfirmed,
                             onUrlChange = { updatedUrl ->
                                 if (updatedUrl != runtimeState.url) {
+                                    analysisRequestRevision.incrementAndGet()
                                     hasUserConfirmed = false
                                     runtimeState = runtimeState.copy(
                                         url = updatedUrl,
+                                        isAnalyzing = false,
+                                        userMessage = DefaultRuntimeMessage,
                                         analysis = null,
                                         formatSelection = FormatSelection(),
                                         appliedFormatSelection = FormatSelection(),
@@ -3704,7 +3714,7 @@ private fun HistoryCard(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    actions.filterNot { it == "删除" }.forEach { action ->
+                    actions.forEach { action ->
                         val callback = when (action) {
                             "打开" -> onOpen
                             "分享" -> onShare
@@ -3719,15 +3729,6 @@ private fun HistoryCard(
                             modifier = Modifier.testTag("ytdl-history-action-${item.id}-$action"),
                         )
                     }
-                }
-                if ("删除" in actions) {
-                    HistoryActionChip(
-                        action = "删除",
-                        icon = historyActionIcon("删除"),
-                        accent = palette.downloadAccent,
-                        onClick = onDelete,
-                        modifier = Modifier.testTag("ytdl-history-action-${item.id}-删除"),
-                    )
                 }
             }
             CardTrailingBadges(

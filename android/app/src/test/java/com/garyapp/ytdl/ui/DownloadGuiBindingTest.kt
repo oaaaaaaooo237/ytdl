@@ -1015,6 +1015,46 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithText("已完成的视频").assertExists()
     }
 
+    @Test
+    fun historyCardKeepsDeleteBesideOtherActions() {
+        val completed = HistoryUiItem(
+            id = 101L,
+            title = "已完成的视频",
+            meta = "07/15 12:00",
+            badge = "完成",
+            outputUri = "app-private://outputs/video.mp4",
+            status = HistoryItemEntity.STATUS_COMPLETED,
+            completedAt = 101L,
+        )
+        val canceled = HistoryUiItem(
+            id = 102L,
+            title = "已取消的视频",
+            meta = "07/15 12:01",
+            badge = "取消",
+            outputUri = "",
+            status = HistoryItemEntity.STATUS_CANCELED,
+            completedAt = 102L,
+            retryAvailable = true,
+        )
+
+        renderTasksPage(RuntimeDownloadState(), emptyList(), listOf(completed, canceled))
+
+        val openTop = composeRule.onNodeWithTag("ytdl-history-action-101-打开")
+            .getUnclippedBoundsInRoot().top
+        val shareTop = composeRule.onNodeWithTag("ytdl-history-action-101-分享")
+            .getUnclippedBoundsInRoot().top
+        val completedDeleteTop = composeRule.onNodeWithTag("ytdl-history-action-101-删除")
+            .getUnclippedBoundsInRoot().top
+        assertEquals(openTop, shareTop)
+        assertEquals(openTop, completedDeleteTop)
+
+        val retryTop = composeRule.onNodeWithTag("ytdl-history-action-102-再次下载")
+            .getUnclippedBoundsInRoot().top
+        val canceledDeleteTop = composeRule.onNodeWithTag("ytdl-history-action-102-删除")
+            .getUnclippedBoundsInRoot().top
+        assertEquals(retryTop, canceledDeleteTop)
+    }
+
     private fun requestFor(vararg formats: VideoFormat): DownloadRequest {
         val analysis = analysisWith(*formats)
         return DownloadRequest.fromAnalysis(

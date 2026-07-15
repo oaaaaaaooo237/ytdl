@@ -41,7 +41,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
@@ -159,6 +161,64 @@ class YtdlAppDownloadFlowTest {
         composeRule.onAllNodesWithTag("ytdl-format-subtitle-toggle").assertCountEquals(0)
     }
 
+    @Test
+    fun latePreviousAnalysisCannotReplaceCurrentUrlResult() {
+        val appContext = ApplicationProvider.getApplicationContext<Context>()
+        SettingsRepository.fromContext(appContext).setCookiesReference(null)
+        val firstAnalysisStarted = CountDownLatch(1)
+        val releaseFirstAnalysis = CountDownLatch(1)
+        val firstAnalysisReturned = CountDownLatch(1)
+        lateinit var hostContext: Context
+        composeRule.setContent {
+            hostContext = LocalContext.current
+            YtdlApp(
+                parserUpdateCoordinator = offlineParserCoordinator(),
+                analysisProvider = { url, _ ->
+                    if (url == FirstUrl) {
+                        firstAnalysisStarted.countDown()
+                        check(releaseFirstAnalysis.await(5, TimeUnit.SECONDS)) {
+                            "第一条分析等待超时"
+                        }
+                        firstAnalysisReturned.countDown()
+                        Result.success(analysisNamed("第一条结果"))
+                    } else {
+                        Result.success(analysisNamed("第二条结果"))
+                    }
+                },
+            )
+        }
+
+        composeRule.runOnIdle {
+            hostContext.requireActivity()
+                .findViewById<EditText>(R.id.ytdl_url_input)
+                .setText(FirstUrl)
+        }
+        composeRule.onNodeWithTag("ytdl-analyze-button").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { firstAnalysisStarted.count == 0L }
+
+        composeRule.runOnIdle {
+            hostContext.requireActivity()
+                .findViewById<EditText>(R.id.ytdl_url_input)
+                .setText(SecondUrl)
+        }
+        try {
+            composeRule.onNodeWithTag("ytdl-analyze-button")
+                .assertIsEnabled()
+                .performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithText("第二条结果", substring = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            releaseFirstAnalysis.countDown()
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { firstAnalysisReturned.count == 0L }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("第二条结果", substring = true).assertExists()
+        composeRule.onAllNodesWithText("第一条结果", substring = true).assertCountEquals(0)
+    }
+
     private fun runDownloadFlow(
         analysis: VideoAnalysis,
         formatRowTag: String,
@@ -241,6 +301,14 @@ class YtdlAppDownloadFlowTest {
         subtitles = emptyList<SubtitleInfo>(),
     )
 
+    private fun analysisNamed(title: String) = VideoAnalysis(
+        title = title,
+        durationSeconds = 60,
+        thumbnailUrl = null,
+        formats = listOf(progressiveFormat(id = title, height = 360)),
+        subtitles = emptyList<SubtitleInfo>(),
+    )
+
     private fun progressiveFormat(
         id: String,
         height: Int,
@@ -295,5 +363,7 @@ class YtdlAppDownloadFlowTest {
 
     private companion object {
         const val TestUrl = "https://example.com/video"
+        const val FirstUrl = "https://example.com/first"
+        const val SecondUrl = "https://example.com/second"
     }
 }
