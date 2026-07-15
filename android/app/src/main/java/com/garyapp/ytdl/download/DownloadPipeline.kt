@@ -15,6 +15,7 @@ import com.garyapp.ytdl.media.MediaProcessor
 import com.garyapp.ytdl.storage.ExportController
 import java.io.File
 import java.nio.file.Files
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -154,7 +155,12 @@ class DownloadPipeline(
                         role = DownloadFormatRole.Media,
                         listener = progressListener(),
                     )
-                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "媒体", appPrivateRoot)
+                    finalOutputs += download.toTitledOutputFile(
+                        kind = DownloadOutputKind.Media,
+                        label = "媒体",
+                        title = request.title,
+                        appPrivateRoot = appPrivateRoot,
+                    )
                     ensureActive()
                 }
                 is DownloadRoute.VideoOnly -> {
@@ -166,7 +172,12 @@ class DownloadPipeline(
                         role = DownloadFormatRole.Video,
                         listener = progressListener(),
                     )
-                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "视频", appPrivateRoot)
+                    finalOutputs += download.toTitledOutputFile(
+                        kind = DownloadOutputKind.Media,
+                        label = "视频",
+                        title = request.title,
+                        appPrivateRoot = appPrivateRoot,
+                    )
                     ensureActive()
                 }
                 is DownloadRoute.AudioOnly -> {
@@ -178,18 +189,24 @@ class DownloadPipeline(
                         role = DownloadFormatRole.Audio,
                         listener = progressListener(),
                     )
-                    finalOutputs += download.toOutputFile(DownloadOutputKind.Media, "音频", appPrivateRoot)
+                    finalOutputs += download.toTitledOutputFile(
+                        kind = DownloadOutputKind.Media,
+                        label = "音频",
+                        title = request.title,
+                        appPrivateRoot = appPrivateRoot,
+                    )
                     ensureActive()
                 }
                 is DownloadRoute.MergeRequired -> {
-                    val video = downloadFormatPart(request, taskOutputDirectory, route.videoFormatId, DownloadFormatRole.Video, ::transition, ::progressListener)
+                    val intermediateDirectory = File(taskOutputDirectory, ".parts").apply { mkdirs() }
+                    val video = downloadFormatPart(request, intermediateDirectory, route.videoFormatId, DownloadFormatRole.Video, ::transition, ::progressListener)
                     ensureActive()
-                    val audio = downloadFormatPart(request, taskOutputDirectory, route.audioFormatId, DownloadFormatRole.Audio, ::transition, ::progressListener)
+                    val audio = downloadFormatPart(request, intermediateDirectory, route.audioFormatId, DownloadFormatRole.Audio, ::transition, ::progressListener)
                     ensureActive()
                     transition(DownloadStage.Merging)
                     val mergedOutput = File(
                         taskOutputDirectory,
-                        "merged-${route.videoFormatId.safeFileToken()}-${route.audioFormatId.safeFileToken()}.${MediaOutputContainer.Mp4.extension}",
+                        "${mediaFileBaseName(request.title)}.${MediaOutputContainer.Mp4.extension}",
                     )
                     val merged = mediaProcessor.mergeVideoAndAudio(
                         MediaMergeRequest(
@@ -351,12 +368,26 @@ class DownloadPipeline(
         }
     }
 
-    private fun DownloadResult.toOutputFile(
+    private fun DownloadResult.toTitledOutputFile(
         kind: DownloadOutputKind,
         label: String,
+        title: String,
         appPrivateRoot: File,
     ): DownloadOutputFile {
-        val file = requireExistingFile(label)
+        val downloadedFile = requireExistingFile(label)
+        val extension = downloadedFile.extension.takeIf { it.matches(Regex("""[A-Za-z0-9]{1,10}""")) }
+        val targetName = buildString {
+            append(mediaFileBaseName(title))
+            if (extension != null) {
+                append('.')
+                append(extension)
+            }
+        }
+        val file = File(downloadedFile.parentFile, targetName)
+        if (file != downloadedFile) {
+            check(!file.exists()) { "主文件命名冲突。" }
+            check(downloadedFile.renameTo(file) && file.isFile) { "无法按媒体标题命名主文件。" }
+        }
         return DownloadOutputFile(
             kind = kind,
             path = file.absolutePath,
@@ -447,11 +478,6 @@ class DownloadPipeline(
         return candidate.delete() || !candidate.exists()
     }
 
-    private fun String.safeFileToken(): String {
-        return replace(Regex("""[^A-Za-z0-9._-]"""), "_")
-            .ifBlank { "format" }
-    }
-
     private fun createTaskOutputDirectory(appPrivateRoot: File): File {
         val dir = File(appPrivateRoot, "task-${System.currentTimeMillis()}-${TaskSequence.incrementAndGet().toString(36)}")
         dir.mkdirs()
@@ -461,6 +487,44 @@ class DownloadPipeline(
     private companion object {
         const val MaxFormatDownloadAttempts = 2
         private val TaskSequence = AtomicLong()
+    }
+}
+
+internal fun mediaFileBaseNameForTest(title: String): String = mediaFileBaseName(title)
+
+private fun mediaFileBaseName(title: String): String {
+    val cleaned = title
+        .replace(Regex("""[\u0000-\u001F\u007F<>:"/\\|?*]+"""), "_")
+        .trim()
+        .trim('.', '_', ' ')
+        .ifBlank { "未命名媒体" }
+    val safeReservedName = if (cleaned.substringBefore('.').uppercase(Locale.ROOT) in WindowsReservedFileNames) {
+        "_$cleaned"
+    } else {
+        cleaned
+    }
+    return safeReservedName.takeUtf8Prefix(180).ifBlank { "未命名媒体" }
+}
+
+private fun String.takeUtf8Prefix(maxBytes: Int): String {
+    var endIndex = 0
+    var byteCount = 0
+    while (endIndex < length) {
+        val codePoint = codePointAt(endIndex)
+        val codePointText = String(Character.toChars(codePoint))
+        val codePointBytes = codePointText.toByteArray(Charsets.UTF_8).size
+        if (byteCount + codePointBytes > maxBytes) break
+        byteCount += codePointBytes
+        endIndex += Character.charCount(codePoint)
+    }
+    return substring(0, endIndex).trimEnd('.', ' ')
+}
+
+private val WindowsReservedFileNames = buildSet {
+    addAll(listOf("CON", "PRN", "AUX", "NUL"))
+    (1..9).forEach { index ->
+        add("COM$index")
+        add("LPT$index")
     }
 }
 

@@ -206,8 +206,7 @@ class DownloadGuiBindingTest {
             mapOf(
                 "下载" to "#FFFF5B55",
                 "格式" to "#FF138F88",
-                "队列" to "#FFFF7A1A",
-                "历史" to "#FF7357C8",
+                "任务" to "#FFFF7A1A",
                 "设置" to "#FF2E86DE",
             ),
             ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetReferenceV3),
@@ -217,8 +216,7 @@ class DownloadGuiBindingTest {
             mapOf(
                 "下载" to "#FF315C6B",
                 "格式" to "#FF7C705E",
-                "队列" to "#FFA26E35",
-                "历史" to "#FF5D5D79",
+                "任务" to "#FFA26E35",
                 "设置" to "#FF2F6D80",
             ),
             ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetCodex),
@@ -453,15 +451,6 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun queueRuntimeMessagesOnlyShowUserActionFeedback() {
-        assertFalse(shouldShowQueueRuntimeMessageForUiTest("等待输入公开视频页面地址。"))
-        assertFalse(shouldShowQueueRuntimeMessageForUiTest("正在下载视频..."))
-        assertFalse(shouldShowQueueRuntimeMessageForUiTest("下载完成：merged-299-140.mp4"))
-        assertTrue(shouldShowQueueRuntimeMessageForUiTest("已请求取消当前下载。"))
-        assertTrue(shouldShowQueueRuntimeMessageForUiTest("下载失败：请检查网络或授权状态。"))
-    }
-
-    @Test
     fun formatRowsComeFromCurrentAnalysisAndDisabledRowsExplainWhy() {
         val analysis = analysisWith(
             progressiveFormat(id = "18", height = 360),
@@ -690,93 +679,6 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun terminalQueueCardPinsStatusAboveResolutionWithMatchedBadgeSize() {
-        val request = DownloadRequest(
-            url = TestUrl,
-            title = "队列徽标测试",
-            route = DownloadRoute.MergeRequired(videoFormatId = "137", audioFormatId = "140"),
-            formatSummary = "1080p MP4 H.264 需原生合并",
-        )
-        val completed = RuntimeDownloadState().withPipelineStateForUiTest(
-            DownloadTaskState(
-                stage = DownloadStage.Completed,
-                request = request,
-                outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, "done.mp4", 4096L)),
-            ),
-        )
-
-        renderQueuePage(completed)
-
-        composeRule.onNodeWithText("完成").assertExists()
-        composeRule.onNodeWithText("1080p").assertExists()
-        composeRule.onNodeWithText("H.264").assertExists()
-
-        val statusBounds = composeRule.onNodeWithTag("ytdl-queue-status-badge").getUnclippedBoundsInRoot()
-        val codecBounds = composeRule.onNodeWithTag("ytdl-queue-codec-badge").getUnclippedBoundsInRoot()
-        val formatBounds = composeRule.onNodeWithTag("ytdl-queue-format-badge").getUnclippedBoundsInRoot()
-        val statusWidth = statusBounds.right.value - statusBounds.left.value
-        val codecWidth = codecBounds.right.value - codecBounds.left.value
-        val formatWidth = formatBounds.right.value - formatBounds.left.value
-        val statusHeight = statusBounds.bottom.value - statusBounds.top.value
-        val codecHeight = codecBounds.bottom.value - codecBounds.top.value
-        val formatHeight = formatBounds.bottom.value - formatBounds.top.value
-
-        assertTrue(statusBounds.top < codecBounds.top)
-        assertTrue(codecBounds.top < formatBounds.top)
-        assertTrue(kotlin.math.abs(statusWidth - codecWidth) < 0.5f)
-        assertTrue(kotlin.math.abs(codecWidth - formatWidth) < 0.5f)
-        assertTrue(kotlin.math.abs(statusHeight - codecHeight) < 0.5f)
-        assertTrue(kotlin.math.abs(codecHeight - formatHeight) < 0.5f)
-        assertTrue(kotlin.math.abs(statusBounds.left.value - codecBounds.left.value) < 0.5f)
-        assertTrue(kotlin.math.abs(codecBounds.left.value - formatBounds.left.value) < 0.5f)
-    }
-
-    @Test
-    fun emptyQueuePageKeepsReferenceDensityWithoutFakeProgress() {
-        renderQueuePage(RuntimeDownloadState())
-
-        composeRule.onNodeWithTag("ytdl-queue-empty-steps-card").assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-empty-stage-strip").assertExists()
-        composeRule.onNodeWithText("下载视频").assertExists()
-        composeRule.onNodeWithText("下载音频").assertExists()
-        composeRule.onNodeWithText("原生合并").assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-empty-running-group").assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-empty-waiting-group").assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-empty-completed-group").assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-empty-failed-group").assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-empty-output-card").assertExists()
-        composeRule.onNodeWithText("正在下载（0）").assertExists()
-        composeRule.onNodeWithText("等待中（0）").assertExists()
-        composeRule.onNodeWithText("已完成（0）").assertExists()
-        composeRule.onNodeWithText("失败（0）").assertExists()
-        composeRule.onNodeWithText("开始后显示文件大小、速度和剩余时间").assertExists()
-        composeRule.onNodeWithText("不会显示假进度或占位百分比").assertExists()
-        composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("ytdl-queue-cancel-action").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("ytdl-queue-stage-strip").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("ytdl-queue-format-badge").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("ytdl-queue-codec-badge").assertCountEquals(0)
-    }
-
-    @Test
-    fun failedQueueRetryActionInvokesCallback() {
-        val request = requestFor(progressiveFormat(id = "retry-format", height = 720))
-        val failed = RuntimeDownloadState().withPipelineStateForUiTest(
-            DownloadTaskState(
-                stage = DownloadStage.Failed,
-                request = request,
-                errorMessage = "network disconnected",
-            ),
-        )
-        var retried = false
-
-        renderQueuePage(failed, onRetryDownload = { retried = true })
-        composeRule.onNodeWithTag("ytdl-queue-retry-action").performClick()
-
-        composeRule.runOnIdle { assertTrue(retried) }
-    }
-
-    @Test
     fun modeSelectionFallsBackToExecutableChoiceForCurrentAnalysis() {
         val analysis = analysisWith(
             progressiveFormat(id = "18", height = 360),
@@ -863,8 +765,8 @@ class DownloadGuiBindingTest {
         assertTrue(serialized.contains("app-private://outputs/%E6%B5%8B%E8%AF%95%20video.mp4"))
         assertFalse(cards.first().meta.contains("app-private://"))
         assertFalse(cards.first().meta.contains("%20"))
-        assertTrue(cards.first().meta.contains("媒体文件"))
-        assertFalse(cards.first().meta.contains("测试 video.mp4"))
+        assertFalse(cards.first().meta.contains("媒体文件"))
+        assertTrue(cards.first().meta.contains("测试 video.mp4"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(cards.first()))
         assertEquals(listOf("删除"), historyActionLabelsForUiTest(cards.last()))
         listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {
@@ -945,14 +847,14 @@ class DownloadGuiBindingTest {
         assertTrue(state.hasRealTask)
         assertTrue(state.isDownloading)
         assertEquals("等待中", state.downloadStatus)
-        assertEquals("下载进行中", queueHeaderTitleForUiTest(state))
+        assertTrue(shouldShowCurrentTaskForUiTest(state))
         assertEquals("当前阶段 · 等待中", queueCardSubtitleForUiTest(state))
         assertTrue(state.userMessage.contains("已加入前台队列"))
         assertTrue(state.userMessage.contains("当前阶段：等待中"))
     }
 
     @Test
-    fun queueActionsOnlyExposeRealCancelForRunningTask() {
+    fun currentTaskOnlyExposesCancelAction() {
         val request = requestFor(progressiveFormat(id = "18", height = 360))
         val running = RuntimeDownloadState()
             .withPipelineStateForUiTest(
@@ -970,37 +872,12 @@ class DownloadGuiBindingTest {
                         ),
                     ),
             )
-        val completed = RuntimeDownloadState().withPipelineStateForUiTest(
-            DownloadTaskState(
-                stage = DownloadStage.Completed,
-                request = request,
-                outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, "completed.mp4", 100L)),
-            ),
-        )
+        var canceled = false
 
-        assertEquals(listOf("取消"), queueCardActionsForUiTest(running))
-        assertTrue(queueCardActionsForUiTest(completed).isEmpty())
-        assertTrue(
-            queueCardActionsForUiTest(
-                RuntimeDownloadState(
-                    downloadStatus = "下载失败",
-                    activeStage = DownloadStage.Failed,
-                ),
-            ).isEmpty(),
-        )
-    }
+        renderTasksPage(running, emptyList(), emptyList(), onCancelDownload = { canceled = true })
+        composeRule.onNodeWithTag("ytdl-queue-cancel-action").performClick()
 
-    @Test
-    fun realQueueCardUsesAnalysisThumbnailWhenAvailableAndFallsBackWhenMissing() {
-        val request = requestFor(progressiveFormat(id = "18", height = 360))
-        val thumbnail = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
-        val runningWithThumbnail = RuntimeDownloadState(thumbnailBitmap = thumbnail)
-            .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
-        val runningWithoutThumbnail = RuntimeDownloadState()
-            .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
-
-        assertEquals("ytdl-queue-thumbnail-image", queueThumbnailTagForUiTest(runningWithThumbnail))
-        assertEquals("ytdl-queue-thumbnail-placeholder", queueThumbnailTagForUiTest(runningWithoutThumbnail))
+        composeRule.runOnIdle { assertTrue(canceled) }
     }
 
     @Test
@@ -1010,7 +887,7 @@ class DownloadGuiBindingTest {
         val runningWithThumbnail = RuntimeDownloadState(thumbnailBitmap = thumbnail)
             .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
 
-        renderQueuePage(runningWithThumbnail)
+        renderTasksPage(runningWithThumbnail, emptyList(), emptyList())
 
         composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(1)
         composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-image").assertCountEquals(1)
@@ -1023,7 +900,7 @@ class DownloadGuiBindingTest {
         val runningWithoutThumbnail = RuntimeDownloadState()
             .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
 
-        renderQueuePage(runningWithoutThumbnail)
+        renderTasksPage(runningWithoutThumbnail, emptyList(), emptyList())
 
         composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(1)
         composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-image").assertCountEquals(0)
@@ -1117,6 +994,45 @@ class DownloadGuiBindingTest {
         assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("http"))
     }
 
+    @Test
+    fun tasksPageShowsCurrentAndWaitingCardsTogether() {
+        val current = requestFor(progressiveFormat(id = "18", height = 360))
+        val pending = requestFor(progressiveFormat(id = "22", height = 720)).copy(title = "下一条视频")
+        val running = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState.waiting(current),
+        )
+
+        renderTasksPage(running, listOf(pending), emptyList())
+
+        composeRule.onNodeWithTag("ytdl-real-queue-card").assertExists()
+        composeRule.onNodeWithTag("ytdl-pending-queue-card-0").assertExists()
+        composeRule.onNodeWithText("等待中（1）").assertExists()
+        composeRule.onNodeWithText("下一条视频").assertExists()
+    }
+
+    @Test
+    fun tasksPageUsesHistoryCardAfterCurrentTaskEnds() {
+        val history = HistoryUiItem(
+            id = 99L,
+            title = "已完成的视频",
+            meta = "07/15 12:00",
+            badge = "完成",
+            outputUri = "app-private://outputs/video.mp4",
+            status = HistoryItemEntity.STATUS_COMPLETED,
+            completedAt = 99L,
+        )
+        val completed = RuntimeDownloadState(
+            activeStage = DownloadStage.Completed,
+            downloadStatus = "下载完成",
+        )
+
+        renderTasksPage(completed, emptyList(), listOf(history))
+
+        composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(0)
+        composeRule.onNodeWithTag("ytdl-history-real-card").assertExists()
+        composeRule.onNodeWithText("已完成的视频").assertExists()
+    }
+
     private fun requestFor(vararg formats: VideoFormat): DownloadRequest {
         val analysis = analysisWith(*formats)
         return DownloadRequest.fromAnalysis(
@@ -1126,17 +1042,29 @@ class DownloadGuiBindingTest {
         ).getOrThrow()
     }
 
-    private fun renderQueuePage(
+    private fun renderTasksPage(
         state: RuntimeDownloadState,
-        onRetryDownload: (DownloadRequest) -> Unit = {},
+        pendingRequests: List<DownloadRequest>,
+        historyItems: List<HistoryUiItem>,
+        onCancelDownload: () -> Unit = {},
     ) {
         composeRule.setContent {
             YtdlTheme {
                 LazyColumn {
-                    queuePageItems(
+                    tasksPageItems(
                         state = state,
-                        onCancelDownload = {},
-                        onRetryDownload = onRetryDownload,
+                        pendingRequests = pendingRequests,
+                        historyItems = historyItems,
+                        historyQuery = "",
+                        selectedFilterIndex = 0,
+                        userMessage = "",
+                        onCancelDownload = onCancelDownload,
+                        onHistoryQueryChange = {},
+                        onHistoryFilterChange = {},
+                        onOpen = {},
+                        onShare = {},
+                        onRetry = {},
+                        onDelete = {},
                     )
                 }
             }

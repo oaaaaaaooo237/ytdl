@@ -290,7 +290,6 @@ object ExportController {
 
     private fun String.safeDisplayName(): String {
         val normalized = replace(Regex("""[\\/:*?"<>|\r\n\t]"""), "_")
-            .take(96)
             .trim('.', ' ')
         return normalized.ifBlank { "output" }
     }

@@ -12,6 +12,7 @@ import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import java.io.File
+import java.net.URI
 import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,6 +55,7 @@ data class HistoryUiItem(
     val formatBadge: String = "",
     val codecBadge: String = "",
     val retryAvailable: Boolean = false,
+    val isAudioOnly: Boolean = false,
 ) {
     val hasOutput: Boolean
         get() = isHistoryOutputUri(outputUri) &&
@@ -76,7 +78,11 @@ fun historyUiItemsFromRows(
             thumbnailUrl = row.thumbnailUrl?.takeIf { it.isNotBlank() },
             formatBadge = formatResolutionBadgeForSummary(row.formatSummary.orEmpty()),
             codecBadge = formatCodecBadgeForSummary(row.formatSummary.orEmpty()),
-            retryAvailable = row.status == HistoryItemEntity.STATUS_FAILED && retryDraftAvailable(row.id),
+            isAudioOnly = isAudioOnlyFormatSummary(row.formatSummary.orEmpty()),
+            retryAvailable = row.status in setOf(
+                HistoryItemEntity.STATUS_FAILED,
+                HistoryItemEntity.STATUS_CANCELED,
+            ) && retryDraftAvailable(row.id),
         )
     }
 }
@@ -113,50 +119,12 @@ fun prepareTemporaryCookiesForDownload(
 
 private fun historyMeta(row: HistoryItemEntity): String {
     val parts = listOfNotNull(
-        row.formatSummary
-            ?.takeIf { it.isNotBlank() }
-            ?.let(::userVisibleFormatSummaryLabel)
-            ?.takeIf { it.isNotBlank() },
-        row.sourceCategory?.takeIf { it.isNotBlank() },
+        historyTypeLabel(row.formatSummary.orEmpty()).takeIf { it.isNotBlank() },
+        historyOutputFileName(row.outputUri.orEmpty()),
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
-        row.outputUri?.takeIf { it.isNotBlank() }?.let {
-            if (isHistoryOutputUri(it)) {
-                "媒体文件"
-            } else {
-                historyOutputLabel(it)
-            }
-        },
         row.errorSummary?.takeIf { it.isNotBlank() && !it.contains("字幕") },
     )
-    return redactHistoryUiText(parts.joinToString(" · ")).ifBlank { "本地记录" }
-}
-
-internal fun userVisibleFormatSummaryLabel(formatSummary: String): String {
-    val normalized = formatSummary.trim()
-        .replace(Regex("""\s*·\s*独立字幕文件\s*$"""), "")
-    Regex("""^视频\s*(\S+)\s*(?:\+\s*)?音频\s*\S+(?:\s*\+\s*字幕\s+.+)?$""")
-        .matchEntire(normalized)
-        ?.let { return "视频+音频 · 原生合并" }
-
-    return when {
-        Regex("""^格式\s+(\S+)$""").matchEntire(normalized) != null -> {
-            "单文件格式"
-        }
-        Regex("""^仅视频\s+(\S+)$""").matchEntire(normalized) != null -> {
-            "仅视频"
-        }
-        Regex("""^仅音频\s+\S+$""").matches(normalized) -> "仅音频"
-        else -> removeResolutionFromFormatMeta(normalized)
-    }
-}
-
-private fun removeResolutionFromFormatMeta(value: String): String {
-    return value
-        .replace(Regex("""(?i)(^| · )\d{3,4}p(?:\d{2})?\s*"""), "$1")
-        .replace(Regex("""\s+"""), " ")
-        .trim()
-        .trim('·')
-        .trim()
+    return redactHistoryUiText(parts.joinToString(" · ")).trim()
 }
 
 internal fun formatResolutionBadgeForRequest(request: DownloadRequest?): String {
@@ -193,17 +161,56 @@ private fun formatResolutionLabelFromSummary(formatSummary: String): String? {
     return match.value.lowercase(Locale.ROOT)
 }
 
+private fun isAudioOnlyFormatSummary(formatSummary: String): Boolean {
+    return historyTypeLabel(formatSummary) == "仅音频"
+}
+
+private fun historyTypeLabel(formatSummary: String): String {
+    val normalized = formatSummary.trim()
+    return when {
+        normalized.contains("仅音频") ||
+            (normalized.contains("音频") && !normalized.contains("视频")) -> "仅音频"
+        normalized.contains("仅视频") -> "仅视频"
+        normalized.contains("需原生合并") ||
+            (normalized.contains("视频") && normalized.contains("音频")) -> "视频+音频"
+        Regex("""(?i)\b\d{3,4}p(?:\d{2})?\b""").containsMatchIn(normalized) ||
+            normalized.startsWith("格式 ") ||
+            normalized.contains("单文件") -> "视频"
+        else -> ""
+    }
+}
+
 private fun isHistoryOutputUri(value: String): Boolean {
     val normalized = value.trim()
     return normalized.startsWith("app-private://outputs/") ||
         normalized.startsWith("content://") && normalized.length > "content://".length
 }
 
-private fun historyOutputLabel(outputUri: String): String {
-    val leaf = outputUri.substringAfterLast('/').substringBefore('?').trim()
-    return runCatching {
-        URLDecoder.decode(leaf, Charsets.UTF_8.name())
-    }.getOrDefault(leaf).ifBlank { "本地文件" }
+private fun historyOutputFileName(outputUri: String): String? {
+    if (!isHistoryOutputUri(outputUri)) return null
+    val rawLeaf = runCatching { URI(outputUri).rawPath.orEmpty().substringAfterLast('/') }
+        .getOrDefault("")
+    val decoded = runCatching { URLDecoder.decode(rawLeaf, Charsets.UTF_8.name()) }
+        .getOrDefault(rawLeaf)
+    val fileName = decoded
+        .substringAfterLast('/')
+        .substringAfterLast(':')
+        .replace(Regex("""[\u0000-\u001F\u007F]"""), "")
+        .trim()
+    if (fileName.isBlank() || fileName.contains("://")) return null
+    return redactHistoryUiText(fileName)
+        .truncateHistoryFileName()
+        .takeIf { it.isNotBlank() }
+}
+
+private fun String.truncateHistoryFileName(maxChars: Int = 120): String {
+    if (length <= maxChars) return this
+    val extension = substringAfterLast('.', missingDelimiterValue = "")
+        .takeIf { it.matches(Regex("""[A-Za-z0-9]{1,10}""")) }
+        ?.let { ".$it" }
+        .orEmpty()
+    val prefixLength = (maxChars - extension.length - 1).coerceAtLeast(1)
+    return take(prefixLength).trimEnd() + "…" + extension
 }
 
 private fun formatHistoryTime(timestampMillis: Long): String {

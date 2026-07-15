@@ -58,7 +58,7 @@ class YtdlAppUiTest {
     }
 
     @Test
-    fun bottomTabsNavigateAcrossFiveReferenceScreens() {
+    fun bottomTabsNavigateAcrossFourReferenceScreens() {
         assertTagVisible("ytdl-screen-download")
         assertTagVisible("ytdl-download-start")
 
@@ -67,15 +67,12 @@ class YtdlAppUiTest {
         assertTagVisible("ytdl-format-empty-card")
         assertTextContains("请先分析视频", timeoutMs = 1_000)
 
-        tapTag("ytdl-tab-queue")
-        assertTagVisible("ytdl-screen-queue")
-        assertTagVisible("ytdl-queue-active-card")
+        tapTag("ytdl-tab-tasks")
+        assertTagVisible("ytdl-screen-tasks")
+        assertTagVisible("ytdl-tasks-summary-card")
         assertTagNotVisible("ytdl-queue-scroll-indicator")
-
-        tapTag("ytdl-tab-history")
-        assertTagVisible("ytdl-screen-history")
         assertTrue(
-            "历史页应显示空状态或真实历史卡片",
+            "任务页应显示空状态或真实历史卡片",
             findTag("ytdl-history-empty-card", timeoutMs = 1_000) != null ||
                 findTag("ytdl-history-real-card", timeoutMs = 1_000) != null,
         )
@@ -108,11 +105,11 @@ class YtdlAppUiTest {
     }
 
     @Test
-    fun queueScreenShowsEmptyStateWithoutDemoFailureCard() {
-        tapTag("ytdl-tab-queue")
-        assertTagVisible("ytdl-queue-active-card")
+    fun tasksScreenShowsEmptyCurrentAreaWithoutDemoFailureCard() {
+        tapTag("ytdl-tab-tasks")
+        assertTagVisible("ytdl-tasks-summary-card")
         assertTagNotVisible("ytdl-queue-scroll-indicator")
-        assertTextContains("暂无真实下载任务", timeoutMs = 1_000)
+        assertTextContains("当前没有进行中或等待任务", timeoutMs = 1_000)
     }
 
     @Test
@@ -134,7 +131,7 @@ class YtdlAppUiTest {
             expectedTitleText = null,
         )
 
-        tapTag("ytdl-tab-queue")
+        tapTag("ytdl-tab-tasks")
         assertTagVisible("ytdl-real-queue-card", timeoutMs = 30_000)
         val cancelRequestedAt = System.currentTimeMillis()
         tapTag("ytdl-queue-cancel-action")
@@ -178,7 +175,7 @@ class YtdlAppUiTest {
                 expectedTitleText = null,
             )
 
-            tapTag("ytdl-tab-queue")
+            tapTag("ytdl-tab-tasks")
             assertTagVisible("ytdl-real-queue-card", timeoutMs = 30_000)
             assertTagVisible("ytdl-queue-stage-strip", timeoutMs = 60_000)
             assertTextContains("下载视频", timeoutMs = 5_000)
@@ -236,7 +233,7 @@ class YtdlAppUiTest {
         )
 
         try {
-            tapTag("ytdl-tab-history")
+            tapTag("ytdl-tab-tasks")
             assertTextContains(title, timeoutMs = 5_000)
 
             tapTag("ytdl-history-action-$id-删除")
@@ -288,7 +285,7 @@ class YtdlAppUiTest {
         )
 
         try {
-            tapTag("ytdl-tab-history")
+            tapTag("ytdl-tab-tasks")
             assertTextContains(title, timeoutMs = 5_000)
 
             tapTag("ytdl-history-action-$id-打开")
@@ -612,7 +609,7 @@ class YtdlAppUiTest {
         )
 
         try {
-            tapTag("ytdl-tab-history")
+            tapTag("ytdl-tab-tasks")
             assertTextContains(title, timeoutMs = 5_000)
             assertTagVisible("ytdl-history-thumbnail-image", timeoutMs = 20_000)
             saveScreen("11-history-thumbnail.png")
@@ -674,7 +671,7 @@ class YtdlAppUiTest {
         tapTag("ytdl-download-start")
         saveScreen("${screenshotPrefix}04-download-started.png")
 
-        tapTag("ytdl-tab-queue")
+        tapTag("ytdl-tab-tasks")
         assertTagVisible("ytdl-real-queue-card", timeoutMs = 30_000)
         assertAnyTextContains(
             texts = listOf("下载视频", "下载音频", "原生合并", "正在下载", "下载进行中"),
@@ -683,14 +680,15 @@ class YtdlAppUiTest {
         saveScreen("${screenshotPrefix}05-queue-active.png")
 
         assertAnyTextContains(
-            texts = listOf("下载完成", "最近任务已完成"),
+            texts = listOf("下载完成", "完成"),
             timeoutMs = 600_000,
         )
-        assertTagVisible("ytdl-real-queue-card", timeoutMs = 5_000)
+        assertTagNotVisible("ytdl-real-queue-card")
+        assertTagVisible("ytdl-history-real-card", timeoutMs = 30_000)
         saveScreen("${screenshotPrefix}06-queue-complete.png")
         assertLatestHistoryBelongsToCurrentDownload(downloadStartedAt, expectedTitleText)
 
-        tapTag("ytdl-tab-history")
+        tapTag("ytdl-tab-tasks")
         assertTagVisible("ytdl-history-real-card", timeoutMs = 30_000)
         expectedTitleText?.let { assertTextContains(it, timeoutMs = 5_000) }
         assertTextContains("完成", timeoutMs = 5_000)

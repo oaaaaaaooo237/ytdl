@@ -33,24 +33,44 @@ class RetryHistoryPersistenceTest {
     }
 
     @Test
-    fun nonFailedOrUnrecordedHistoryNeverCreatesRetryPayload() {
+    fun canceledHistoryAlsoStoresRetryDraftWithoutCookies() {
+        val request = DownloadRequest(
+            url = "https://example.com/canceled",
+            title = "canceled",
+            route = DownloadRoute.VideoOnly("137"),
+            cookiesPath = "/private/stale-cookies.txt",
+        )
+        val store = RecordingRetryDraftStore()
+
+        val result = updateRetryDraftForHistory(
+            state = DownloadTaskState(stage = DownloadStage.Canceled, request = request),
+            historyRecordResult = Result.success(72L),
+            retryStore = store,
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(72L, store.savedHistoryId)
+        assertEquals(RetryDownloadDraft(request.url, request.route), store.savedDraft)
+        assertNull(store.deletedHistoryId)
+    }
+
+    @Test
+    fun completedOrUnrecordedHistoryNeverCreatesRetryPayload() {
         val request = DownloadRequest(
             url = "https://example.com/completed",
             title = "completed",
             route = DownloadRoute.AudioOnly("140"),
         )
-        listOf(DownloadStage.Completed, DownloadStage.Canceled).forEachIndexed { index, stage ->
-            val store = RecordingRetryDraftStore()
-            assertTrue(
-                updateRetryDraftForHistory(
-                    state = DownloadTaskState(stage = stage, request = request),
-                    historyRecordResult = Result.success(index.toLong() + 1L),
-                    retryStore = store,
-                ).isSuccess,
-            )
-            assertNull(store.savedDraft)
-            assertEquals(index.toLong() + 1L, store.deletedHistoryId)
-        }
+        val store = RecordingRetryDraftStore()
+        assertTrue(
+            updateRetryDraftForHistory(
+                state = DownloadTaskState(stage = DownloadStage.Completed, request = request),
+                historyRecordResult = Result.success(1L),
+                retryStore = store,
+            ).isSuccess,
+        )
+        assertNull(store.savedDraft)
+        assertEquals(1L, store.deletedHistoryId)
 
         val failedInsert = RecordingRetryDraftStore()
         assertTrue(

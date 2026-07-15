@@ -23,6 +23,28 @@ import java.io.File
 
 class DownloadUiBridgeTest {
     @Test
+    fun analysisFailureMessageDoesNotExposeRawExceptionText() {
+        val message = analysisFailureMessageForUiTest(
+            IllegalStateException(
+                "failed https://example.com/watch?token=raw-secret Authorization: Bearer raw-token",
+            ),
+        )
+
+        assertEquals("分析失败，请检查地址或网络。", message)
+        listOf("https://", "raw-secret", "Authorization", "raw-token").forEach { forbidden ->
+            assertFalse(message.contains(forbidden))
+        }
+    }
+
+    @Test
+    fun bottomNavigationHasOnlyFourUserFacingDestinations() {
+        val destinations = ytdlNavigationDestinations()
+
+        assertEquals(listOf("download", "formats", "tasks", "settings"), destinations.map { it.route })
+        assertEquals(listOf("下载", "格式", "任务", "设置"), destinations.map { it.label })
+    }
+
+    @Test
     fun historyOutputsAcceptContentUrisWithoutRestoringManualExportActions() {
         val contentItem = HistoryUiItem(
             id = 41L,
@@ -68,6 +90,127 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun canceledHistoryOffersRetryWhenEncryptedRequestExists() {
+        val canceledRow = HistoryItemEntity.createSafe(
+            "主动取消的任务",
+            60,
+            "https",
+            "host-hash",
+            "other",
+            "",
+            "720p MP4 H.264 单文件",
+            HistoryItemEntity.STATUS_CANCELED,
+            0,
+            "",
+            "",
+            "",
+            1_000,
+            1_000,
+            1_000,
+        )
+
+        val item = historyUiItemsFromRows(listOf(canceledRow)) { true }.single()
+
+        assertTrue(item.retryAvailable)
+        assertEquals(listOf("再次下载", "删除"), historyActionLabelsForUiTest(item))
+    }
+
+    @Test
+    fun historySecondLineKeepsTypeFileNameTimeAndSafeFailureReason() {
+        val completed = HistoryItemEntity.createSafe(
+            "完成任务",
+            60,
+            "https",
+            "host-hash",
+            "web",
+            "app-private://outputs/video.mp4",
+            "1080p MP4 H.264 单文件",
+            HistoryItemEntity.STATUS_COMPLETED,
+            4096,
+            "",
+            "",
+            "",
+            1_000,
+            1_000,
+            1_000,
+        )
+        val failed = HistoryItemEntity.createSafe(
+            "失败任务",
+            60,
+            "https",
+            "host-hash",
+            "youtube",
+            "",
+            "720p WEBM VP9",
+            HistoryItemEntity.STATUS_FAILED,
+            0,
+            "",
+            "",
+            "网络连接中断",
+            2_000,
+            2_000,
+            2_000,
+        )
+        val noDetails = HistoryItemEntity.createSafe(
+            "无详情",
+            0,
+            "https",
+            "host-hash",
+            "other",
+            "",
+            "媒体文件",
+            HistoryItemEntity.STATUS_COMPLETED,
+            0,
+            "",
+            "",
+            "",
+            0,
+            0,
+            0,
+        )
+
+        val items = historyUiItemsFromRows(listOf(completed, failed, noDetails))
+
+        assertTrue(
+            "meta=${items[0].meta}",
+            items[0].meta.matches(Regex("视频 · video\\.mp4 · \\d{2}/\\d{2} \\d{2}:\\d{2}")),
+        )
+        assertTrue(items[1].meta.startsWith("视频 · "))
+        assertTrue(items[1].meta.endsWith("网络连接中断"))
+        listOf("1080p", "720p", "web", "youtube", "媒体文件", "app-private://").forEach { forbidden ->
+            assertFalse(items.joinToString { it.meta }.contains(forbidden, ignoreCase = true))
+        }
+        assertEquals("", items[2].meta)
+    }
+
+    @Test
+    fun longHistoryFileNameKeepsItsExtensionWhenShortenedForDisplay() {
+        val longFileName = "a".repeat(180) + ".mp4"
+        val row = HistoryItemEntity.createSafe(
+            "很长的标题",
+            60,
+            "https",
+            "host-hash",
+            "web",
+            "app-private://outputs/$longFileName",
+            "1080p MP4 H.264 单文件",
+            HistoryItemEntity.STATUS_COMPLETED,
+            4096,
+            "",
+            "",
+            "",
+            1_000,
+            1_000,
+            1_000,
+        )
+
+        val meta = historyUiItemsFromRows(listOf(row)).single().meta
+
+        assertTrue("meta=$meta", meta.contains("….mp4"))
+        assertFalse("meta=$meta", meta.contains(longFileName))
+    }
+
+    @Test
     fun contentHistoryTargetKeepsGrantedUriAndUsesResolverThenSuffixForMime() {
         val mediaUri = "content://media/external/video/media/41"
         val resolverTarget = historyContentOutputTargetForUiTest(mediaUri, "video/custom")
@@ -108,7 +251,8 @@ class DownloadUiBridgeTest {
         assertFalse(bridgeSource.contains("add(\"导出\")"))
         assertFalse(bridgeSource.contains("add(\"导出字幕\")"))
         assertFalse(bridgeSource.contains("suggestedExportDisplayName"))
-        assertTrue(appSource.contains("下载完成：媒体文件已保存，可在历史中打开或分享。"))
+        assertTrue(appSource.contains("DownloadStage.Completed -> \"下载完成\""))
+        assertFalse(appSource.contains("媒体文件已保存"))
         assertFalse(appSource.contains("可在历史中打开或导出"))
     }
     @Test
@@ -147,7 +291,6 @@ class DownloadUiBridgeTest {
         ).readText()
 
         assertTrue(source.contains("\"ytdl-queue-cancel-action\""))
-        assertTrue(source.contains("\"ytdl-queue-retry-action\""))
         assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)"))
     }
 
@@ -184,12 +327,18 @@ class DownloadUiBridgeTest {
         val message = historyMissingLocalOutputMessageForUiTest(
             IllegalStateException("输出文件不存在或为空，不能导出。 D:/private/cookies.txt"),
         )
+        val unexpected = historyMissingLocalOutputMessageForUiTest(
+            IllegalStateException("failed https://example.com/watch?token=raw-secret"),
+        )
 
         assertTrue(message.contains("本地文件不存在或为空"))
         assertTrue(message.contains("重新下载"))
         assertFalse(message.contains("不能导出"))
         assertFalse(message.contains("D:/private"))
         assertFalse(message.contains("cookies.txt"))
+        assertEquals(message, unexpected)
+        assertFalse(unexpected.contains("https://"))
+        assertFalse(unexpected.contains("raw-secret"))
     }
 
     @Test
@@ -219,8 +368,8 @@ class DownloadUiBridgeTest {
         assertFalse(source.contains("海边散步片段"))
         assertFalse(source.contains("SettingLineCard(\"通知权限\", \"待系统确认"))
         assertFalse(source.contains("M6 下载管线"))
-        assertTrue(source.contains("真实任务队列"))
-        assertTrue(source.contains("暂无真实下载任务"))
+        assertTrue(source.contains("当前和等待"))
+        assertTrue(source.contains("当前没有进行中或等待任务"))
         assertTrue(source.contains("暂无真实历史记录，完成下载后会显示"))
         assertTrue(source.contains("notificationPermissionSubtitle("))
         assertTrue(source.contains("ytdl-settings-notification-permission"))
@@ -240,8 +389,9 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("runtimeState.withPipelineState(state)"))
         assertTrue(source.contains("subscription.close()"))
         assertTrue(source.contains("rememberUpdatedState(selectedRoute)"))
-        assertTrue(source.contains("currentSelectedRoute == \"history\""))
-        assertFalse(source.contains("selectedRoute == \"history\""))
+        assertTrue(source.contains("currentSelectedRoute == \"tasks\""))
+        assertTrue(source.contains("DownloadCoordinator.addPendingListener"))
+        assertFalse(source.contains("selectedRoute == \"tasks\""))
     }
 
     @Test
@@ -251,11 +401,9 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertFalse(source.contains("if (state.hasRealTask) \"1 个真实任务正在处理\" else \"暂无真实下载任务\""))
-        assertFalse(source.contains("subtitle = \"真实下载中 ·"))
-        assertTrue(source.contains("最近任务已完成"))
-        assertTrue(source.contains("最近任务失败"))
-        assertTrue(source.contains("最近任务已取消"))
+        assertTrue(source.contains("state.activeStage !in TerminalDownloadStages"))
+        assertTrue(source.contains("if (hasCurrentTask)"))
+        assertTrue(source.contains("历史记录"))
         assertTrue(source.contains("当前阶段"))
     }
 
@@ -484,6 +632,90 @@ class DownloadUiBridgeTest {
     }
 
     @Test
+    fun queueProgressUpdatesSpeedAndDownloadedBytesWhileKeepingStageTotalStable() {
+        val request = mergeRequest()
+        val first = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState.waiting(request)
+                .atStage(DownloadStage.DownloadingVideo)
+                .withProgress(
+                    DownloadProgress(
+                        status = "downloading",
+                        percent = 10.0,
+                        downloadedBytes = 100L,
+                        totalBytes = 1_000L,
+                        speedBytesPerSecond = 200.0,
+                        etaSeconds = 5L,
+                        filename = "video.mp4",
+                    ),
+                ),
+        )
+        val updated = first.withPipelineStateForUiTest(
+            DownloadTaskState.waiting(request)
+                .atStage(DownloadStage.DownloadingVideo)
+                .withProgress(
+                    DownloadProgress(
+                        status = "downloading",
+                        percent = 25.0,
+                        downloadedBytes = 300L,
+                        totalBytes = 1_200L,
+                        speedBytesPerSecond = 400.0,
+                        etaSeconds = 3L,
+                        filename = "video.mp4",
+                    ),
+                ),
+        )
+
+        assertEquals(300L, updated.downloadedBytes)
+        assertEquals(1_000L, updated.totalBytes)
+        assertEquals(
+            "速度 400 B/s · 已下载 300 B · 总计 1000 B",
+            queueCardMetaForUiTest(updated),
+        )
+    }
+
+    @Test
+    fun queueProgressAcceptsNewTotalAfterDownloadStageChanges() {
+        val request = mergeRequest()
+        val video = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState.waiting(request)
+                .atStage(DownloadStage.DownloadingVideo)
+                .withProgress(
+                    DownloadProgress(
+                        status = "downloading",
+                        percent = 100.0,
+                        downloadedBytes = 1_000L,
+                        totalBytes = 1_000L,
+                        speedBytesPerSecond = 200.0,
+                        etaSeconds = 0L,
+                        filename = "video.mp4",
+                    ),
+                ),
+        )
+        val audio = video.withPipelineStateForUiTest(
+            DownloadTaskState.waiting(request)
+                .atStage(DownloadStage.DownloadingAudio)
+                .withProgress(
+                    DownloadProgress(
+                        status = "downloading",
+                        percent = 25.0,
+                        downloadedBytes = 50L,
+                        totalBytes = 200L,
+                        speedBytesPerSecond = 100.0,
+                        etaSeconds = 2L,
+                        filename = "audio.m4a",
+                    ),
+                ),
+        )
+
+        assertEquals(50L, audio.downloadedBytes)
+        assertEquals(200L, audio.totalBytes)
+        assertEquals(
+            "速度 100 B/s · 已下载 50 B · 总计 200 B",
+            queueCardMetaForUiTest(audio),
+        )
+    }
+
+    @Test
     fun mergeQueueStateMarksCompletedStagesBeforeCurrentStage() {
         val request = mergeRequest()
         val state = RuntimeDownloadState()
@@ -518,25 +750,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun terminalQueueHeaderDoesNotSayDownloading() {
-        val request = request()
-        val completed = RuntimeDownloadState().withPipelineStateForUiTest(
-            DownloadTaskState(
-                stage = DownloadStage.Completed,
-                request = request,
-                outputs = listOf(DownloadOutputFile(DownloadOutputKind.Media, "done.mp4", 10L)),
-            ),
-        )
-        val failed = RuntimeDownloadState().withPipelineStateForUiTest(DownloadTaskState.waiting(request).failed("下载失败"))
-        val canceled = RuntimeDownloadState().withPipelineStateForUiTest(DownloadTaskState.waiting(request).canceled())
-
-        assertEquals("最近任务已完成", queueHeaderTitleForUiTest(completed))
-        assertEquals("最近任务失败", queueHeaderTitleForUiTest(failed))
-        assertEquals("最近任务已取消", queueHeaderTitleForUiTest(canceled))
-    }
-
-    @Test
-    fun queueMetaExplainsPrivateOutputWithoutManualExportNaming() {
+    fun queueMetaShowsProgressWithoutInternalStorageOrFileNames() {
         val state = RuntimeDownloadState().withPipelineStateForUiTest(
             DownloadTaskState(
                 stage = DownloadStage.Completed,
@@ -553,10 +767,9 @@ class DownloadUiBridgeTest {
 
         val meta = queueCardMetaForUiTest(state)
 
-        assertTrue(meta.contains("4.0 KB / 4.0 KB"))
-        assertTrue(meta.contains("App 私有目录"))
-        assertTrue(meta.contains("App 私有目录"))
-        assertFalse(meta.contains("导出名"))
+        assertEquals("速度 -- · 已下载 4.0 KB · 总计 4.0 KB", meta)
+        assertFalse(meta.contains("App 私有目录"))
+        assertFalse(meta.contains("媒体文件"))
         assertFalse(meta.contains("merged-136-140.mp4"))
     }
 
@@ -573,7 +786,6 @@ class DownloadUiBridgeTest {
         assertEquals("下载失败", state.downloadStatus)
         assertEquals(null, state.progressPercent)
         assertFalse(state.userMessage.contains("下载完成"))
-        assertEquals("最近任务失败", queueHeaderTitleForUiTest(state))
     }
 
     @Test
@@ -583,8 +795,6 @@ class DownloadUiBridgeTest {
             .withPipelineStateForUiTest(DownloadTaskState.idle())
 
         assertFalse(state.hasRealTask)
-        assertEquals("暂无真实下载任务", queueHeaderTitleForUiTest(state))
-        assertEquals("暂无真实下载任务", queueHeaderSummaryForUiTest(state))
     }
 
     @Test
@@ -594,7 +804,6 @@ class DownloadUiBridgeTest {
         )
 
         assertFalse(state.hasRealTask)
-        assertEquals("暂无真实下载任务", queueHeaderTitleForUiTest(state))
     }
 
     @Test
@@ -642,15 +851,63 @@ class DownloadUiBridgeTest {
         assertFalse(canStartDownloadForUiTest(RuntimeDownloadState(), hasUserConfirmed = true))
         assertFalse(canStartDownloadForUiTest(analyzed, hasUserConfirmed = false))
         assertFalse(canStartDownloadForUiTest(analyzed.copy(isAnalyzing = true), hasUserConfirmed = true))
-        assertFalse(canStartDownloadForUiTest(analyzed.copy(isDownloading = true), hasUserConfirmed = true))
+        assertTrue(canStartDownloadForUiTest(analyzed.copy(isDownloading = true), hasUserConfirmed = true))
         assertTrue(canStartDownloadForUiTest(analyzed, hasUserConfirmed = true))
+    }
+
+    @Test
+    fun acceptedWaitingTaskClearsAnalyzedInputWithoutReplacingActiveProgress() {
+        val active = RuntimeDownloadState(
+            url = "https://example.com/next",
+            analysis = analysisWith(progressiveFormat(id = "22", height = 720)),
+            isDownloading = true,
+            downloadStatus = "下载视频",
+            progressPercent = 40.0,
+            downloadedBytes = 400,
+            totalBytes = 1_000,
+        )
+
+        val accepted = active.withAcceptedDownloadForUiTest(DownloadTaskState.waiting(request()))
+
+        assertTrue(accepted.isDownloading)
+        assertEquals(40.0, accepted.progressPercent)
+        assertEquals(400L, accepted.downloadedBytes)
+        assertEquals(1_000L, accepted.totalBytes)
+        assertEquals("", accepted.url)
+        assertEquals(null, accepted.analysis)
+        assertTrue(accepted.userMessage.contains("等待队列"))
+    }
+
+    @Test
+    fun terminalTaskDoesNotRenderAsCurrentQueueTask() {
+        assertTrue(
+            shouldShowCurrentTaskForUiTest(
+                RuntimeDownloadState(isDownloading = true, activeStage = DownloadStage.DownloadingVideo),
+            ),
+        )
+        assertFalse(
+            shouldShowCurrentTaskForUiTest(
+                RuntimeDownloadState(
+                    activeStage = DownloadStage.Completed,
+                    downloadStatus = "下载完成",
+                ),
+            ),
+        )
     }
 
     @Test
     fun queueScrollIndicatorOnlyAppearsForRealQueueState() {
         assertFalse(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState()))
-        assertTrue(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState(isDownloading = true)))
-        assertTrue(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState(downloadStatus = "下载视频")))
+        assertTrue(
+            shouldShowQueueScrollIndicatorForUiTest(
+                RuntimeDownloadState(
+                    isDownloading = true,
+                    activeStage = DownloadStage.DownloadingVideo,
+                    downloadStatus = "下载视频",
+                ),
+            ),
+        )
+        assertFalse(shouldShowQueueScrollIndicatorForUiTest(RuntimeDownloadState(downloadStatus = "下载视频")))
     }
 
     @Test
@@ -667,11 +924,12 @@ class DownloadUiBridgeTest {
         val audio = HistoryUiItem(
             id = 2,
             title = "访谈音频",
-            meta = "仅音频 · m4a",
+            meta = "",
             badge = "完成",
             outputUri = "app-private://outputs/audio.m4a",
             status = "completed",
             completedAt = 2_000L,
+            isAudioOnly = true,
         )
         val items = listOf(video, audio)
 
@@ -679,6 +937,39 @@ class DownloadUiBridgeTest {
         assertEquals(listOf(video), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 1))
         assertEquals(listOf(audio), filterHistoryItemsForUiTest(items, query = "", selectedFilterIndex = 2))
         assertEquals(emptyList<HistoryUiItem>(), filterHistoryItemsForUiTest(items, query = "不存在", selectedFilterIndex = 0))
+    }
+
+    @Test
+    fun historyAudioFilterUsesHiddenFormatClassification() {
+        val row = HistoryItemEntity.createSafe(
+            "访谈节目",
+            60,
+            "https",
+            "host-hash",
+            "web",
+            "app-private://outputs/audio.m4a",
+            "音频 M4A 单文件",
+            HistoryItemEntity.STATUS_COMPLETED,
+            4096,
+            "",
+            "",
+            "",
+            2_000,
+            2_000,
+            2_000,
+        )
+
+        val item = historyUiItemsFromRows(listOf(row)).single()
+
+        assertTrue(
+            "meta=${item.meta}",
+            item.meta.matches(Regex("仅音频 · audio\\.m4a · \\d{2}/\\d{2} \\d{2}:\\d{2}")),
+        )
+        assertFalse(item.meta.contains("web", ignoreCase = true))
+        assertFalse(item.meta.contains("单文件"))
+        assertTrue(item.isAudioOnly)
+        assertEquals(listOf(item), filterHistoryItemsForUiTest(listOf(item), query = "", selectedFilterIndex = 2))
+        assertEquals(emptyList<HistoryUiItem>(), filterHistoryItemsForUiTest(listOf(item), query = "", selectedFilterIndex = 1))
     }
 
     @Test
@@ -827,12 +1118,13 @@ class DownloadUiBridgeTest {
 
         val items = historyUiItemsFromRows(listOf(withSubtitle, mediaOnly))
 
-        assertTrue(items[0].meta.contains("媒体文件"))
+        assertFalse(items[0].meta.contains("媒体文件"))
         assertFalse(items[0].meta.contains("字幕"))
-        assertFalse(items[0].meta.contains("merged-299-140.mp4"))
+        assertTrue(items[0].meta.contains("merged-299-140.mp4"))
         assertFalse(items[0].meta.contains("captions.en.vtt"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[0]))
         assertFalse(items[1].meta.contains("独立字幕文件"))
+        assertTrue(items[1].meta.contains("video.mp4"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[1]))
     }
 
@@ -897,17 +1189,14 @@ class DownloadUiBridgeTest {
 
         assertEquals("", item.formatBadge)
         assertTrue(item.meta.contains("视频+音频"))
-        assertTrue(item.meta.contains("原生合并"))
-        assertFalse(item.meta.contains("137"))
-        assertFalse(item.meta.contains("140"))
+        assertFalse(item.meta.contains("原生合并"))
+        assertTrue(item.meta.contains("merged-137-140.mp4"))
         assertEquals("", shorts.formatBadge)
-        assertFalse(shorts.meta.contains("136"))
-        assertFalse(shorts.meta.contains("140"))
+        assertTrue(shorts.meta.contains("merged-136-140.mp4"))
         assertEquals("", multiSubtitle.formatBadge)
         assertTrue(multiSubtitle.meta.contains("视频+音频"))
-        assertTrue(multiSubtitle.meta.contains("原生合并"))
-        assertFalse(multiSubtitle.meta.contains("299"))
-        assertFalse(multiSubtitle.meta.contains("140"))
+        assertFalse(multiSubtitle.meta.contains("原生合并"))
+        assertTrue(multiSubtitle.meta.contains("merged-299-140.mp4"))
 
         val shortVideoRequest = DownloadRequest(
             url = "https://www.youtube.com/shorts/example",
@@ -1056,8 +1345,9 @@ class DownloadUiBridgeTest {
 
         val item = historyUiItemsFromRows(listOf(mediaSavedSubtitleFailed)).single()
 
-        assertTrue(item.meta.contains("媒体文件"))
+        assertFalse(item.meta.contains("媒体文件"))
         assertFalse(item.meta.contains("字幕"))
+        assertTrue(item.meta.contains("merged-299-140.mp4"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(item))
     }
 
@@ -1084,12 +1374,14 @@ class DownloadUiBridgeTest {
 
         val meta = queueCardMetaForUiTest(state)
 
-        assertTrue(meta.contains("媒体文件"))
+        assertEquals("速度 -- · 已下载 4.0 KB · 总计 4.0 KB", meta)
         assertFalse(meta.contains("字幕"))
+        assertFalse(meta.contains("媒体文件"))
         assertFalse(meta.contains("merged-299-140.mp4"))
         assertFalse(meta.contains("captions.en.vtt"))
-        assertTrue(state.userMessage.contains("媒体文件已保存"))
+        assertEquals("下载完成", state.userMessage)
         assertFalse(state.userMessage.contains("字幕"))
+        assertFalse(state.userMessage.contains("媒体文件"))
         assertFalse(state.userMessage.contains("merged-299-140.mp4"))
         assertFalse(state.userMessage.contains("captions.en.vtt"))
     }
@@ -1117,11 +1409,23 @@ class DownloadUiBridgeTest {
                 errorMessage = "所选字幕 en 不可用，请取消字幕或重新分析后再试。",
             ),
         )
+        val rawFailure = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(
+                stage = DownloadStage.Failed,
+                request = request(),
+                errorMessage = "failed https://example.com/watch?token=raw-secret Authorization: Bearer raw-token",
+            ),
+        )
 
         assertFalse(failed.userMessage.contains("字幕"))
         assertTrue(failed.userMessage.contains("文件处理失败"))
         assertFalse(mediaSaved.userMessage.contains("字幕"))
-        assertTrue(mediaSaved.userMessage.contains("媒体文件已保存"))
+        assertTrue(mediaSaved.userMessage.contains("文件已保存"))
+        assertFalse(mediaSaved.userMessage.contains("媒体文件"))
+        assertTrue(rawFailure.userMessage.contains("文件处理失败"))
+        listOf("https://", "raw-secret", "Authorization", "raw-token").forEach { forbidden ->
+            assertFalse(rawFailure.userMessage.contains(forbidden))
+        }
     }
 
     private fun analysisWith(vararg formats: VideoFormat) = VideoAnalysis(

@@ -188,6 +188,21 @@ class SafTreeExportTest {
         assertTrue(outputs.all { File(root, it.displayName).isFile })
     }
 
+    @Test
+    fun longTitleFileNameKeepsExtensionAndCanBeRediscoveredFromHistoryUri() {
+        val root = temp.newFolder("private-long-name")
+        val task = File(root, "task-123-long").apply { mkdirs() }
+        val fileName = "a".repeat(120) + ".mp4"
+        val media = File(task, fileName).apply { writeText("media") }
+
+        val output = ExportController.discoverAppPrivateOutput(media, root).getOrThrow()
+        val historyUri = ExportController.appPrivateOutputUri(media.absolutePath, root.absolutePath)
+        val rediscovered = ExportController.discoverAppPrivateOutputUri(historyUri, root).getOrThrow()
+
+        assertEquals(fileName, output.displayName)
+        assertEquals(media.canonicalFile, rediscovered.sourceFile)
+    }
+
     private companion object {
         const val TreeUri = "content://com.android.externalstorage.documents/tree/primary%3AMovies"
         const val TreeDocumentUri =

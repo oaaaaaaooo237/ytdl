@@ -56,7 +56,10 @@ class DownloadRequestRoutingTest {
 
         assertEquals(DownloadStage.Completed, result.state.stage)
         assertEquals(listOf("format:media:18"), engine.calls)
-        assertTrue(result.outputs.single { it.kind == DownloadOutputKind.Media }.path.endsWith("18-media.mp4"))
+        assertEquals(
+            "测试视频.mp4",
+            File(result.outputs.single { it.kind == DownloadOutputKind.Media }.path).name,
+        )
         assertTrue(
             ExportController.isIncompleteTaskDirectory(
                 requireNotNull(File(result.outputs.single().path).parentFile),
@@ -248,6 +251,11 @@ class DownloadRequestRoutingTest {
         assertEquals(1, mediaProcessor.mergeRequests.size)
         assertEquals("137", mediaProcessor.mergeRequests.single().expectedVideoFormatId)
         assertEquals("140", mediaProcessor.mergeRequests.single().expectedAudioFormatId)
+        assertEquals("测试视频.mp4", mediaProcessor.mergeRequests.single().outputFile.name)
+        assertEquals(
+            "测试视频.mp4",
+            File(result.outputs.single { it.kind == DownloadOutputKind.Media }.path).name,
+        )
         assertFalse(engine.calls.contains("single"))
         assertTrue(stages.indexOf(DownloadStage.Merging) < stages.indexOf(DownloadStage.Completed))
         assertFalse(stages.contains(DownloadStage.Exporting))
@@ -422,6 +430,7 @@ class DownloadRequestRoutingTest {
         assertEquals(DownloadRoute.VideoOnly(videoFormatId = "137"), request.route)
         assertEquals(DownloadStage.Completed, result.state.stage)
         assertEquals(listOf("format:video:137"), engine.calls)
+        assertEquals("测试视频.mp4", File(result.outputs.single().path).name)
     }
 
     @Test
@@ -441,6 +450,15 @@ class DownloadRequestRoutingTest {
         assertEquals(DownloadRoute.AudioOnly(audioFormatId = "140"), request.route)
         assertEquals(DownloadStage.Completed, result.state.stage)
         assertEquals(listOf("format:audio:140"), engine.calls)
+        assertEquals("测试视频.m4a", File(result.outputs.single().path).name)
+    }
+
+    @Test
+    fun mediaFileBaseNameKeepsTitleButRemovesUnsafePathCharacters() {
+        assertEquals("节目_第一集_最终版", mediaFileBaseNameForTest("  节目/第一集:最终版?  "))
+        assertEquals("_CON", mediaFileBaseNameForTest("CON"))
+        assertEquals("未命名媒体", mediaFileBaseNameForTest(" . "))
+        assertTrue(mediaFileBaseNameForTest("好".repeat(200)).toByteArray().size <= 180)
     }
 
     @Test
@@ -520,7 +538,9 @@ class DownloadRequestRoutingTest {
 
         val engine = RecordingDownloadEngine(temp.root).apply {
             afterSubtitleDownload = {
-                File(lastMediaOutputPath.orEmpty()).delete()
+                temp.root.walkTopDown()
+                    .firstOrNull { it.isFile && it.extension.equals("mp4", ignoreCase = true) }
+                    ?.delete()
             }
         }
         val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)

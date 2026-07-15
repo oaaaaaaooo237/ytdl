@@ -13,7 +13,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.R
@@ -26,8 +25,10 @@ import com.garyapp.ytdl.core.ytdlp.VideoFormat
 import com.garyapp.ytdl.download.DownloadCoordinator
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
-import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
+import com.garyapp.ytdl.download.RetryDownloadDraft
+import com.garyapp.ytdl.download.RetryDraftStore
+import com.garyapp.ytdl.data.HistoryItemEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -89,8 +90,9 @@ class YtdlAppDownloadFlowTest {
     }
 
     @Test
-    fun failedQueueRetryReanalyzesOriginalUrlAndRestoresPreviousFormatBeforeDownload() {
-        SettingsRepository.fromContext(ApplicationProvider.getApplicationContext())
+    fun failedHistoryRetryReanalyzesOriginalUrlAndRestoresPreviousFormatBeforeDownload() {
+        val appContext = ApplicationProvider.getApplicationContext<Context>()
+        SettingsRepository.fromContext(appContext)
             .setCookiesReference(null)
         val originalRequest = DownloadRequest(
             url = "https://example.com/video?token=original",
@@ -106,6 +108,22 @@ class YtdlAppDownloadFlowTest {
         )
         val analyzedUrl = AtomicReference<String>()
         val unexpectedDownloadRequest = AtomicReference<DownloadRequest>()
+        val historyId = 98_765L
+        val retryStore = InMemoryRetryDraftStore()
+        retryStore.save(historyId, RetryDownloadDraft.fromRequest(originalRequest))
+            .getOrThrow()
+        val historyItem = HistoryUiItem(
+            id = historyId,
+            title = originalRequest.title,
+            meta = "07/15 12:00 · 网络连接中断",
+            badge = "失败",
+            outputUri = "",
+            status = HistoryItemEntity.STATUS_FAILED,
+            completedAt = System.currentTimeMillis(),
+            formatBadge = "1080p",
+            codecBadge = "AV1",
+            retryAvailable = true,
+        )
         composeRule.setContent {
             YtdlApp(
                 parserUpdateCoordinator = offlineParserCoordinator(),
@@ -117,21 +135,15 @@ class YtdlAppDownloadFlowTest {
                     unexpectedDownloadRequest.set(request)
                     Result.success(DownloadTaskState.waiting(request))
                 },
+                retryDraftStoreOverride = retryStore,
+                historyItemsProvider = { listOf(historyItem) },
             )
         }
-        composeRule.runOnIdle {
-            DownloadCoordinator.publish(
-                DownloadTaskState(
-                    stage = DownloadStage.Failed,
-                    request = originalRequest,
-                    errorMessage = "network disconnected",
-                ),
-            )
-        }
-
-        composeRule.onNodeWithTag("ytdl-tab-queue").performClick()
+        composeRule.onNodeWithTag("ytdl-tab-tasks").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-tasks")
+            .performScrollToNode(hasTestTag("ytdl-history-action-$historyId-再次下载"))
         composeRule.onNodeWithText(originalRequest.title).assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-retry-action").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ytdl-history-action-$historyId-再次下载").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("ytdl-screen-formats").fetchSemanticsNodes().isNotEmpty()
         }
@@ -189,6 +201,22 @@ class YtdlAppDownloadFlowTest {
         composeRule.onNodeWithTag("ytdl-download-start").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { capturedRequest.get() != null }
         return capturedRequest.get()
+    }
+
+    private class InMemoryRetryDraftStore : RetryDraftStore {
+        private val drafts = mutableMapOf<Long, RetryDownloadDraft>()
+
+        override fun save(historyId: Long, draft: RetryDownloadDraft): Result<Unit> = runCatching {
+            drafts[historyId] = draft
+        }
+
+        override fun load(historyId: Long): Result<RetryDownloadDraft> = runCatching {
+            drafts[historyId] ?: error("重试信息不可用。")
+        }
+
+        override fun isAvailable(historyId: Long): Boolean = historyId in drafts
+
+        override fun delete(historyId: Long): Result<Boolean> = Result.success(drafts.remove(historyId) != null)
     }
 
     private fun offlineParserCoordinator(): ParserUpdateCoordinator {

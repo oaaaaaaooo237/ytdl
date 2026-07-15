@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import java.io.File
+import java.util.ArrayDeque
 
 data class DownloadLaunch(
     val request: DownloadRequest,
@@ -18,7 +19,10 @@ sealed interface IdleDownloadActionResult<out T> {
 object DownloadCoordinator {
     private val lock = Any()
     private val listeners = linkedSetOf<(DownloadTaskState) -> Unit>()
-    private var pendingLaunch: DownloadLaunch? = null
+    private val pendingListeners = linkedSetOf<(List<DownloadRequest>) -> Unit>()
+    private val queuedLaunches = ArrayDeque<DownloadLaunch>()
+    private val scheduledLaunches = mutableListOf<DownloadLaunch>()
+    private var activeLaunch: DownloadLaunch? = null
     private var currentState: DownloadTaskState? = null
     private var activeCancellation: MutableDownloadCancellation? = null
     private var cancellationRequested = false
@@ -40,8 +44,9 @@ object DownloadCoordinator {
             }
             Result.success(waiting)
         } catch (exc: Exception) {
-            clearPendingLaunch(request)
-            publish(DownloadTaskState.idle())
+            if (clearPendingLaunch(request)) {
+                publish(DownloadTaskState.idle())
+            }
             Result.failure(exc)
         }
     }
@@ -59,6 +64,19 @@ object DownloadCoordinator {
         }
     }
 
+    fun addPendingListener(listener: (List<DownloadRequest>) -> Unit): AutoCloseable {
+        val requests = synchronized(lock) {
+            pendingListeners += listener
+            pendingRequestsLocked()
+        }
+        listener(requests)
+        return AutoCloseable {
+            synchronized(lock) {
+                pendingListeners -= listener
+            }
+        }
+    }
+
     fun publish(state: DownloadTaskState) {
         val snapshot = synchronized(lock) {
             currentState = state
@@ -72,21 +90,30 @@ object DownloadCoordinator {
         outputDirectory: File,
     ): Result<DownloadTaskState> {
         return runCatching {
-            synchronized(lock) {
+            val waiting = DownloadTaskState.waiting(request)
+            val publishWaiting = synchronized(lock) {
                 outputDirectory.mkdirs()
-                val waiting = DownloadTaskState.waiting(request)
-                pendingLaunch = DownloadLaunch(request, outputDirectory)
-                cancellationRequested = false
-                currentState = waiting
-                waiting
+                queuedLaunches.addLast(DownloadLaunch(request, outputDirectory))
+                val hasActiveState = activeLaunch != null ||
+                    currentState?.stage?.let { it !in TerminalStages } == true
+                if (!hasActiveState) {
+                    currentState = waiting
+                }
+                !hasActiveState
             }
-                .also(::publish)
+            notifyPendingListeners()
+            if (publishWaiting) {
+                notifyStateListeners(waiting)
+            }
+            waiting
         }
     }
 
     fun <T> runWhenIdle(action: () -> T): IdleDownloadActionResult<T> {
         return synchronized(lock) {
-            val hasActiveDownload = pendingLaunch != null ||
+            val hasActiveDownload = queuedLaunches.isNotEmpty() ||
+                scheduledLaunches.isNotEmpty() ||
+                activeLaunch != null ||
                 currentState?.stage?.let { it !in TerminalStages } == true
             if (hasActiveDownload) {
                 IdleDownloadActionResult.ActiveDownload
@@ -96,21 +123,53 @@ object DownloadCoordinator {
         }
     }
 
-    internal fun consumePendingLaunch(): DownloadLaunch? {
-        return synchronized(lock) {
-            pendingLaunch.also {
-                pendingLaunch = null
+    internal fun claimPendingLaunch(): DownloadLaunch? {
+        val launch = synchronized(lock) {
+            queuedLaunches.pollFirst()?.also(scheduledLaunches::add)
+        }
+        if (launch != null) {
+            notifyPendingListeners()
+        }
+        return launch
+    }
+
+    internal fun activateLaunch(launch: DownloadLaunch) {
+        synchronized(lock) {
+            scheduledLaunches.removeIdentity(launch)
+            activeLaunch = launch
+        }
+        notifyPendingListeners()
+    }
+
+    internal fun finishActiveLaunch(launch: DownloadLaunch) {
+        synchronized(lock) {
+            if (activeLaunch === launch) {
+                activeLaunch = null
             }
         }
     }
 
-    private fun clearPendingLaunch(request: DownloadRequest) {
-        synchronized(lock) {
-            if (pendingLaunch?.request === request) {
-                pendingLaunch = null
+    private fun clearPendingLaunch(request: DownloadRequest): Boolean {
+        val (removed, becameIdle) = synchronized(lock) {
+            val queuedRemoved = queuedLaunches.removeFirstMatching { it.request === request }
+            val scheduledIndex = scheduledLaunches.indexOfFirst { it.request === request }
+            val scheduledRemoved = if (scheduledIndex >= 0) {
+                scheduledLaunches.removeAt(scheduledIndex)
+                true
+            } else {
+                false
+            }
+            val didRemove = queuedRemoved || scheduledRemoved
+            val isIdle = didRemove && activeLaunch == null && queuedLaunches.isEmpty() && scheduledLaunches.isEmpty()
+            if (isIdle && currentState?.request === request) {
                 currentState = null
             }
+            didRemove to isIdle
         }
+        if (removed) {
+            notifyPendingListeners()
+        }
+        return becameIdle
     }
 
     internal fun attachCancellation(cancellation: MutableDownloadCancellation) {
@@ -145,7 +204,10 @@ object DownloadCoordinator {
     internal fun resetForTests() {
         synchronized(lock) {
             listeners.clear()
-            pendingLaunch = null
+            pendingListeners.clear()
+            queuedLaunches.clear()
+            scheduledLaunches.clear()
+            activeLaunch = null
             currentState = null
             activeCancellation = null
             cancellationRequested = false
@@ -158,4 +220,43 @@ object DownloadCoordinator {
         DownloadStage.Canceled,
         DownloadStage.Idle,
     )
+
+    private fun notifyStateListeners(state: DownloadTaskState) {
+        val snapshot = synchronized(lock) { listeners.toList() }
+        snapshot.forEach { listener -> listener(state) }
+    }
+
+    private fun notifyPendingListeners() {
+        val (requests, snapshot) = synchronized(lock) {
+            pendingRequestsLocked() to pendingListeners.toList()
+        }
+        snapshot.forEach { listener -> listener(requests) }
+    }
+
+    private fun pendingRequestsLocked(): List<DownloadRequest> {
+        return buildList {
+            scheduledLaunches.forEach { add(it.request) }
+            queuedLaunches.forEach { add(it.request) }
+        }
+    }
+
+    private fun MutableList<DownloadLaunch>.removeIdentity(launch: DownloadLaunch): Boolean {
+        val index = indexOfFirst { it === launch }
+        if (index < 0) return false
+        removeAt(index)
+        return true
+    }
+
+    private fun ArrayDeque<DownloadLaunch>.removeFirstMatching(
+        predicate: (DownloadLaunch) -> Boolean,
+    ): Boolean {
+        val iterator = iterator()
+        while (iterator.hasNext()) {
+            if (predicate(iterator.next())) {
+                iterator.remove()
+                return true
+            }
+        }
+        return false
+    }
 }

@@ -4,7 +4,9 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.storage.StorageTarget
@@ -14,11 +16,17 @@ import com.garyapp.ytdl.media.NativeMuxerMediaProcessor
 import com.garyapp.ytdl.storage.ExportController
 import java.io.File
 import java.util.concurrent.CancellationException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class DownloadService : Service() {
     private lateinit var notificationController: NotificationController
     private lateinit var historyRecorder: DownloadHistoryRecorder
     private lateinit var retryDraftStore: RetryDraftStore
+    private lateinit var launchExecutor: ExecutorService
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var scheduledLaunchCount = 0
+    private var latestStartId = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -28,41 +36,60 @@ class DownloadService : Service() {
             historyDao = YtdlDatabaseProvider.get(this).historyDao(),
         )
         retryDraftStore = FileRetryDraftStore.fromContext(this)
+        launchExecutor = Executors.newSingleThreadExecutor()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
         if (intent?.action == ActionCancel) {
             DownloadCoordinator.cancelActive()
-            stopSelf(startId)
+            if (scheduledLaunchCount == 0) {
+                stopSelf(startId)
+            }
             return START_NOT_STICKY
         }
 
-        val launch = DownloadCoordinator.consumePendingLaunch()
+        val launch = DownloadCoordinator.claimPendingLaunch()
         if (launch == null) {
-            val idle = DownloadTaskState.idle()
-            startTypedForeground(idle)
-            DownloadCoordinator.publish(idle)
-            stopSelf(startId)
+            if (scheduledLaunchCount == 0) {
+                val idle = DownloadTaskState.idle()
+                startTypedForeground(idle)
+                DownloadCoordinator.publish(idle)
+                stopSelf(startId)
+            }
             return START_NOT_STICKY
         }
 
         val state = DownloadTaskState.waiting(launch.request)
-        startTypedForeground(state)
-        DownloadCoordinator.publish(state)
-        val storageTarget = SettingsRepository.fromContext(this).getSettings().defaultStorageTarget
-
-        Thread {
-            runLaunch(launch, storageTarget, startId)
-        }.start()
+        scheduledLaunchCount += 1
+        if (scheduledLaunchCount == 1) {
+            startTypedForeground(state)
+        }
+        launchExecutor.execute {
+            DownloadCoordinator.activateLaunch(launch)
+            publishForegroundState(state)
+            val storageTarget = SettingsRepository.fromContext(this).getSettings().defaultStorageTarget
+            try {
+                runLaunch(launch, storageTarget)
+            } finally {
+                DownloadCoordinator.finishActiveLaunch(launch)
+                mainHandler.post(::onScheduledLaunchFinished)
+            }
+        }
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onDestroy() {
+        DownloadCoordinator.cancelActive()
+        launchExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
     private fun runLaunch(
         launch: DownloadLaunch,
         storageTarget: StorageTarget,
-        startId: Int,
     ) {
         val cancellation = MutableDownloadCancellation()
         DownloadCoordinator.attachCancellation(cancellation)
@@ -96,8 +123,14 @@ class DownloadService : Service() {
             publishForegroundState(finalState)
         } finally {
             DownloadCoordinator.clearCancellation(cancellation)
+        }
+    }
+
+    private fun onScheduledLaunchFinished() {
+        scheduledLaunchCount = (scheduledLaunchCount - 1).coerceAtLeast(0)
+        if (scheduledLaunchCount == 0) {
             stopForegroundAfterTerminalState()
-            stopSelf(startId)
+            stopSelf(latestStartId)
         }
     }
 

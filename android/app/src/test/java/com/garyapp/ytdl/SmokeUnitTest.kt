@@ -19,13 +19,13 @@ import org.junit.Test
 class SmokeUnitTest {
     @Test
     fun packageVersionIsReleaseVersion() {
-        assertEquals("1.0.0", BuildConfig.VERSION_NAME)
+        assertEquals("1.0.1", BuildConfig.VERSION_NAME)
     }
 
     @Test
-    fun navigationLabelsExposeFiveAndroidTabs() {
+    fun navigationLabelsExposeFourAndroidTabs() {
         assertEquals(
-            listOf("下载", "格式", "队列", "历史", "设置"),
+            listOf("下载", "格式", "任务", "设置"),
             ytdlNavigationDestinations().map { it.label },
         )
     }
@@ -38,15 +38,14 @@ class SmokeUnitTest {
     }
 
     @Test
-    fun visibleContentModelCoversFiveReferenceScreens() {
+    fun visibleContentModelCoversFourReferenceScreens() {
         val labels = ytdlVisibleContentLabels()
 
-        assertEquals(setOf("download", "formats", "queue", "history", "settings"), labels.keys)
+        assertEquals(setOf("download", "formats", "tasks", "settings"), labels.keys)
         assertTrue(labels.getValue("download").containsAll(listOf("粘贴公开视频页面地址", "分析", "开始下载")))
         assertTrue(labels.getValue("formats").containsAll(listOf("视频+音频", "1080p", "需合并")))
         assertTrue(labels.getValue("formats").none { it.contains("字幕") })
-        assertTrue(labels.getValue("queue").containsAll(listOf("下载进行中", "当前阶段", "暂无真实下载任务", "最近任务已完成", "原生合并", "已取消")))
-        assertTrue(labels.getValue("history").containsAll(listOf("搜索历史", "暂无真实历史记录", "完成下载后会显示")))
+        assertTrue(labels.getValue("tasks").containsAll(listOf("当前任务", "等待中", "搜索历史", "暂无真实历史记录", "完成下载后会显示")))
         assertTrue(labels.getValue("settings").containsAll(listOf("Cookies 文件", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格")))
     }
 

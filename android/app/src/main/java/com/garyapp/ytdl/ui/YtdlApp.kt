@@ -118,8 +118,10 @@ import com.garyapp.ytdl.core.settings.CookiesReference as SettingsCookiesReferen
 import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.storage.StorageTargets
+import com.garyapp.ytdl.core.ytdlp.AnalysisErrorCategory
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import com.garyapp.ytdl.core.ytdlp.YtdlpAnalysisException
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateChecker
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateCoordinator
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateResult
@@ -130,6 +132,7 @@ import com.garyapp.ytdl.core.ytdlp.ParserVersionInfo
 import com.garyapp.ytdl.core.ytdlp.ParserVersionManager
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
+import com.garyapp.ytdl.download.DownloadFailureMessages
 import com.garyapp.ytdl.download.IdleDownloadActionResult
 import com.garyapp.ytdl.download.DownloadOutputKind
 import com.garyapp.ytdl.download.DownloadRequest
@@ -139,6 +142,7 @@ import com.garyapp.ytdl.download.DownloadTaskState
 import com.garyapp.ytdl.download.FileRetryDraftStore
 import com.garyapp.ytdl.download.NotificationController
 import com.garyapp.ytdl.download.RetryDownloadDraft
+import com.garyapp.ytdl.download.RetryDraftStore
 import com.garyapp.ytdl.download.deleteHistoryWithRetryPayload
 import com.garyapp.ytdl.storage.ExportController
 import com.garyapp.ytdl.storage.CacheClearResult
@@ -303,25 +307,6 @@ private val QueueTabIcon = tabIcon("QueueTab") {
     lineTo(19f, 16f)
     lineTo(19f, 18f)
     lineTo(5f, 18f)
-    close()
-}
-
-private val HistoryTabIcon = tabIcon("HistoryTab") {
-    moveTo(12f, 3f)
-    lineTo(18.5f, 6.5f)
-    lineTo(21f, 13f)
-    lineTo(17.5f, 19f)
-    lineTo(11f, 21f)
-    lineTo(5.5f, 17.5f)
-    lineTo(3f, 11f)
-    lineTo(6.5f, 5f)
-    close()
-    moveTo(11f, 7f)
-    lineTo(13f, 7f)
-    lineTo(13f, 12f)
-    lineTo(16.5f, 14f)
-    lineTo(15.5f, 15.8f)
-    lineTo(11f, 13.2f)
     close()
 }
 
@@ -612,6 +597,7 @@ internal data class RuntimeDownloadState(
     val overallProgressPercent: Double? = null,
     val downloadedBytes: Long? = null,
     val totalBytes: Long? = null,
+    val speedBytesPerSecond: Double? = null,
     val downloadStatus: String = "",
     val outputPath: String = "",
     val outputBytes: Long = 0L,
@@ -695,20 +681,12 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         accent = palette.formatAccent,
     ),
     YtdlDestination(
-        route = "queue",
-        label = "队列",
-        title = "队列",
-        summary = "查看进行中、等待、完成和失败任务。",
+        route = "tasks",
+        label = "任务",
+        title = "任务",
+        summary = "查看当前、等待和历史任务。",
         icon = QueueTabIcon,
         accent = palette.queueAccent,
-    ),
-    YtdlDestination(
-        route = "history",
-        label = "历史",
-        title = "历史",
-        summary = "搜索、打开、分享或删除本地记录。",
-        icon = HistoryTabIcon,
-        accent = palette.historyAccent,
     ),
     YtdlDestination(
         route = "settings",
@@ -731,13 +709,12 @@ internal fun ytdlNavigationAccentHexesForUiTest(
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
     "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "保存位置", "下载模式", "开始下载"),
     "formats" to listOf("视频+音频", "仅音频", "仅视频", "分辨率", "1080p", "需合并", "容器格式"),
-    "queue" to listOf("下载进行中", "当前阶段", "等待真实任务", "暂无真实下载任务", "最近任务已完成", "最近任务失败", "最近任务已取消", "下载视频", "下载音频", "原生合并", "已取消"),
-    "history" to listOf("搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
+    "tasks" to listOf("当前任务", "等待中", "搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
     "settings" to listOf("保存位置", "恢复默认路径", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格", "MVP2"),
 )
 
 @Composable
-fun YtdlApp(
+internal fun YtdlApp(
     parserUpdateCoordinator: ParserUpdateCoordinator = ProcessParserUpdateCoordinator,
     parserUiStateDeliveryExecutor: Executor = ImmediateParserUiStateExecutor,
     parserVersionControl: ParserVersionControl? = null,
@@ -749,6 +726,8 @@ fun YtdlApp(
     analysisProvider: ((String, String?) -> Result<VideoAnalysis>)? = null,
     downloadStarter: (Context, DownloadRequest, File) -> Result<DownloadTaskState> =
         DownloadCoordinator::startForegroundDownload,
+    retryDraftStoreOverride: RetryDraftStore? = null,
+    historyItemsProvider: (() -> List<HistoryUiItem>)? = null,
 ) {
     val context = LocalContext.current
     val versionOperations = remember(parserVersionOperations, parserVersionControl, parserVersionExecutor) {
@@ -763,9 +742,12 @@ fun YtdlApp(
     var historyQuery by rememberSaveable { mutableStateOf("") }
     var historyFilterIndex by rememberSaveable { mutableStateOf(0) }
     val settingsRepository = remember { SettingsRepository.fromContext(context.applicationContext) }
-    val retryDraftStore = remember { FileRetryDraftStore.fromContext(context.applicationContext) }
+    val retryDraftStore = remember(retryDraftStoreOverride) {
+        retryDraftStoreOverride ?: FileRetryDraftStore.fromContext(context.applicationContext)
+    }
     var appSettings by remember { mutableStateOf(settingsRepository.getSettings()) }
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
+    var pendingDownloadRequests by remember { mutableStateOf(emptyList<DownloadRequest>()) }
     var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
     var parserUpdateRevision by remember { mutableStateOf(-1L) }
     var parserUpdateState by remember { mutableStateOf(ParserUpdateState()) }
@@ -793,6 +775,10 @@ fun YtdlApp(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     fun refreshHistory() {
+        if (historyItemsProvider != null) {
+            historyItems = historyItemsProvider()
+            return
+        }
         Thread {
             val rows = YtdlDatabaseProvider.get(context.applicationContext)
                 .historyDao()
@@ -818,7 +804,7 @@ fun YtdlApp(
 
     fun selectRoute(route: String) {
         selectedRoute = route
-        if (route == "history") {
+        if (route == "tasks") {
             refreshHistory()
         } else if (route == "settings") {
             refreshDownloadCacheStats()
@@ -1006,9 +992,14 @@ fun YtdlApp(
                 if (state.stage in TerminalDownloadStages) {
                     refreshDownloadCacheStats()
                 }
-                if (state.stage in TerminalDownloadStages && currentSelectedRoute == "history") {
+                if (state.stage in TerminalDownloadStages && currentSelectedRoute == "tasks") {
                     refreshHistory()
                 }
+            }
+        }
+        val pendingSubscription = DownloadCoordinator.addPendingListener { requests ->
+            mainHandler.post {
+                pendingDownloadRequests = requests
             }
         }
         onDispose {
@@ -1016,6 +1007,7 @@ fun YtdlApp(
             versionOperationSubscription.close()
             parserSubscription.close()
             subscription.close()
+            pendingSubscription.close()
         }
     }
 
@@ -1109,7 +1101,7 @@ fun YtdlApp(
                     onFailure = { error ->
                         runtimeState.copy(
                             isAnalyzing = false,
-                            userMessage = "分析失败：${error.message.orEmpty().ifBlank { "请检查地址或网络。" }}",
+                            userMessage = analysisFailureMessage(error),
                         )
                     },
                 )
@@ -1168,13 +1160,20 @@ fun YtdlApp(
         val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
         val startResult = downloadStarter(context.applicationContext, request, outputDir)
         runtimeState = startResult.fold(
-            onSuccess = { waiting -> runtimeState.withForegroundStartState(waiting) },
-            onFailure = { error ->
+            onSuccess = { waiting ->
+                hasUserConfirmed = false
+                runtimeState.withAcceptedDownload(waiting)
+            },
+            onFailure = { _ ->
                 temporaryCookies?.delete()
-                runtimeState.withPipelineState(DownloadTaskState.idle()).copy(
-                    isDownloading = false,
-                    userMessage = "启动前台下载失败：${error.message.orEmpty().ifBlank { "请检查系统权限。" }}",
-                )
+                if (runtimeState.isDownloading) {
+                    runtimeState.copy(userMessage = "加入等待队列失败，请稍后重试。")
+                } else {
+                    runtimeState.withPipelineState(DownloadTaskState.idle()).copy(
+                        isDownloading = false,
+                        userMessage = "启动前台下载失败，请检查系统权限。",
+                    )
+                }
             },
         )
     }
@@ -1239,8 +1238,8 @@ fun YtdlApp(
     }
 
     fun openHistoryItem(item: HistoryUiItem) {
-        val output = outputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
+        val output = outputForHistoryItem(item).getOrElse { _ ->
+            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage())
             return
         }
         val intent = Intent(Intent.ACTION_VIEW)
@@ -1254,8 +1253,8 @@ fun YtdlApp(
     }
 
     fun shareHistoryItem(item: HistoryUiItem) {
-        val output = outputForHistoryItem(item).getOrElse { error ->
-            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage(error))
+        val output = outputForHistoryItem(item).getOrElse { _ ->
+            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage())
             return
         }
         val intent = Intent(Intent.ACTION_SEND)
@@ -1386,21 +1385,17 @@ fun YtdlApp(
                             },
                             onFinishSelection = { selectedRoute = "download" },
                         )
-                        "queue" -> queuePageItems(
+                        "tasks" -> tasksPageItems(
                             state = runtimeState,
-                            onCancelDownload = {
-                                DownloadCoordinator.cancelActive()
-                                runtimeState = runtimeState.copy(userMessage = "已请求取消当前下载。")
-                            },
-                            onRetryDownload = { request ->
-                                reanalyzeRetryDraft(RetryDownloadDraft.fromRequest(request))
-                            },
-                        )
-                        "history" -> historyPageItems(
+                            pendingRequests = pendingDownloadRequests,
                             historyItems = historyItems,
                             historyQuery = historyQuery,
                             selectedFilterIndex = historyFilterIndex,
                             userMessage = runtimeState.userMessage,
+                            onCancelDownload = {
+                                DownloadCoordinator.cancelActive()
+                                runtimeState = runtimeState.copy(userMessage = "已请求取消当前下载。")
+                            },
                             onHistoryQueryChange = { historyQuery = it },
                             onHistoryFilterChange = { historyFilterIndex = it },
                             onOpen = ::openHistoryItem,
@@ -1450,7 +1445,9 @@ fun YtdlApp(
                     }
                     }
                 }
-                if (selected.route == "queue" && shouldShowQueueScrollIndicator(runtimeState)) {
+                if (selected.route == "tasks" &&
+                    (shouldShowQueueScrollIndicator(runtimeState) || pendingDownloadRequests.isNotEmpty())
+                ) {
                     QueueScrollIndicator(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
@@ -1649,7 +1646,7 @@ fun YtdlApp(
                     .testTag("ytdl-history-delete-dialog"),
                 onDismissRequest = { pendingDeleteHistoryItem = null },
                 title = { Text("确认删除历史记录") },
-                text = { Text("将删除“${deleteTarget.title}”的历史记录，不会删除已保存的媒体文件。") },
+                text = { Text("将删除“${deleteTarget.title}”的历史记录，不会删除已保存的文件。") },
                 confirmButton = {
                     TextButton(
                         modifier = Modifier.testTag("ytdl-history-delete-confirm"),
@@ -1702,6 +1699,26 @@ private fun RuntimeDownloadState.withForegroundStartState(state: DownloadTaskSta
     )
 }
 
+internal fun RuntimeDownloadState.withAcceptedDownloadForUiTest(state: DownloadTaskState): RuntimeDownloadState =
+    withAcceptedDownload(state)
+
+private fun RuntimeDownloadState.withAcceptedDownload(state: DownloadTaskState): RuntimeDownloadState {
+    val accepted = if (isDownloading) {
+        copy(userMessage = "已加入等待队列，将按顺序自动开始。")
+    } else {
+        withForegroundStartState(state)
+    }
+    return accepted.copy(
+        url = "",
+        analysis = null,
+        formatSelection = FormatSelection(),
+        appliedFormatSelection = FormatSelection(),
+        thumbnailBitmap = if (isDownloading) null else accepted.thumbnailBitmap,
+        thumbnailStatus = "",
+        isAnalyzing = false,
+    )
+}
+
 internal fun RuntimeDownloadState.withPipelineStateForUiTest(state: DownloadTaskState): RuntimeDownloadState = withPipelineState(state)
 
 private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): RuntimeDownloadState {
@@ -1716,6 +1733,7 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             overallProgressPercent = null,
             downloadedBytes = null,
             totalBytes = null,
+            speedBytesPerSecond = null,
             downloadStatus = userVisibleDownloadStatus(DownloadStage.Failed),
             activeRequest = state.request,
             activeStage = DownloadStage.Failed,
@@ -1731,6 +1749,7 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             overallProgressPercent = null,
             downloadedBytes = null,
             totalBytes = null,
+            speedBytesPerSecond = null,
             downloadStatus = "",
             activeRequest = null,
             activeStage = DownloadStage.Idle,
@@ -1738,16 +1757,23 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             outputBytes = 0L,
         )
     }
+    val sameDownloadStage = activeRequest == state.request && activeStage == state.stage
+    val reportedTotalBytes = progress?.totalBytes?.takeIf { it > 0L }
+    val stableTotalBytes = when {
+        state.stage in TerminalDownloadStages -> mediaOutput?.bytesWritten
+        sameDownloadStage -> totalBytes?.takeIf { it > 0L } ?: reportedTotalBytes
+        else -> reportedTotalBytes
+    }
     return copy(
         isDownloading = state.stage !in TerminalDownloadStages,
         userMessage = when (state.stage) {
             DownloadStage.Failed -> if (mediaOutput != null) {
-                "媒体文件已保存，但${foregroundFailureReason(state.errorMessage, mediaSaved = true)}"
+                "文件已保存，但${foregroundFailureReason(state.errorMessage, mediaSaved = true)}"
             } else {
                 "下载失败：${foregroundFailureReason(state.errorMessage, mediaSaved = false)}"
             }
             DownloadStage.Canceled -> "下载已取消。"
-            DownloadStage.Completed -> "下载完成：媒体文件已保存，可在历史中打开或分享。"
+            DownloadStage.Completed -> "下载完成"
             else -> "正在$statusText..."
         },
         downloadStatus = statusText,
@@ -1759,7 +1785,8 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
         },
         overallProgressPercent = queueOverallProgressPercent(state, progress?.percent),
         downloadedBytes = progress?.downloadedBytes ?: mediaOutput?.bytesWritten,
-        totalBytes = progress?.totalBytes ?: mediaOutput?.bytesWritten,
+        totalBytes = stableTotalBytes,
+        speedBytesPerSecond = progress?.speedBytesPerSecond?.takeIf { it > 0.0 },
         outputPath = mediaOutput?.path.orEmpty(),
         outputBytes = mediaOutput?.bytesWritten ?: 0L,
     )
@@ -1774,9 +1801,7 @@ private fun foregroundFailureReason(errorMessage: String?, mediaSaved: Boolean):
             "文件处理失败，请重试或选择其他格式。"
         }
     }
-    return message.ifBlank {
-        if (mediaSaved) "附加文件处理失败。" else "请检查网络或授权状态。"
-    }
+    return DownloadFailureMessages.fromErrorText(message)
 }
 
 private val TerminalDownloadStages = setOf(
@@ -1785,6 +1810,21 @@ private val TerminalDownloadStages = setOf(
     DownloadStage.Canceled,
     DownloadStage.Idle,
 )
+
+private fun analysisFailureMessage(error: Throwable): String {
+    val category = (error as? YtdlpAnalysisException)?.category
+        ?: return "分析失败，请检查地址或网络。"
+    return when (category) {
+        AnalysisErrorCategory.Network -> "分析失败：网络连接失败，请检查网络后重试。"
+        AnalysisErrorCategory.Unsupported -> "分析失败：当前地址不受支持或格式不正确。"
+        AnalysisErrorCategory.Permission -> "分析失败：网站需要登录或 cookies 文件，请确认授权后重试。"
+        AnalysisErrorCategory.Parser -> "分析失败：解析器暂时无法处理该地址，请稍后重试。"
+        AnalysisErrorCategory.Canceled -> "分析已取消。"
+        AnalysisErrorCategory.Unknown -> "分析失败，请检查地址或网络。"
+    }
+}
+
+internal fun analysisFailureMessageForUiTest(error: Throwable): String = analysisFailureMessage(error)
 
 private fun loadThumbnailBitmap(thumbnailUrl: String, targetSizePx: Int? = null): Bitmap? {
     return runCatching {
@@ -1913,14 +1953,15 @@ private fun YtdlBottomBar(
                     end = 10.dp,
                     bottom = 7.dp + navigationBottomPadding + BottomBarGestureBuffer,
                 ),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             destinations.forEach { destination ->
                 val selected = destination.route == selectedRoute
                 Column(
                     modifier = Modifier
-                        .defaultMinSize(minWidth = 54.dp)
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
                         .clip(RoundedCornerShape(18.dp))
                         .background(if (selected) destination.accent.copy(alpha = 0.14f) else Color.Transparent)
                         .testTag("ytdl-tab-${destination.route}")
@@ -1938,14 +1979,14 @@ private fun YtdlBottomBar(
                             imageVector = destination.icon,
                             contentDescription = destination.label,
                             tint = if (selected) destination.accent else palette.neutralText,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                     Text(
                         text = destination.label,
                         color = if (selected) destination.accent else palette.neutralText,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -2138,7 +2179,10 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
             colors = ButtonDefaults.buttonColors(containerColor = palette.downloadAccent),
             contentPadding = PaddingValues(vertical = 13.dp),
         ) {
-            Text(if (state.isDownloading) "↓  下载中" else "↓  开始下载", fontWeight = FontWeight.Bold)
+            Text(
+                if (state.isDownloading) "↓  加入等待队列" else "↓  开始下载",
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }
@@ -2146,7 +2190,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
 internal fun canStartDownloadForUiTest(state: RuntimeDownloadState, hasUserConfirmed: Boolean): Boolean = canStartDownload(state, hasUserConfirmed)
 
 private fun canStartDownload(state: RuntimeDownloadState, hasUserConfirmed: Boolean): Boolean {
-    return !state.isAnalyzing && !state.isDownloading && state.analysis != null && hasUserConfirmed
+    return !state.isAnalyzing && state.analysis != null && hasUserConfirmed
 }
 
 internal fun shouldShowRuntimeMessageForUiTest(message: String): Boolean = shouldShowRuntimeMessage(message)
@@ -2158,26 +2202,10 @@ private fun shouldShowRuntimeMessage(message: String): Boolean {
         trimmed != AnalysisCompleteRuntimeMessage
 }
 
-internal fun historyMissingLocalOutputMessageForUiTest(error: Throwable?): String = historyMissingLocalOutputMessage(error)
+internal fun historyMissingLocalOutputMessageForUiTest(error: Throwable?): String = historyMissingLocalOutputMessage()
 
-private fun historyMissingLocalOutputMessage(error: Throwable?): String {
-    val fallback = "历史记录对应的本地文件不存在或为空，请重新下载或删除该记录。"
-    val message = error?.message.orEmpty()
-    return if (message.contains("不存在") || message.contains("为空") || message.contains("本地输出")) {
-        fallback
-    } else {
-        message.ifBlank { fallback }
-    }
-}
-
-internal fun shouldShowQueueRuntimeMessageForUiTest(message: String): Boolean = shouldShowQueueRuntimeMessage(message)
-
-private fun shouldShowQueueRuntimeMessage(message: String): Boolean {
-    val trimmed = message.trim()
-    return shouldShowRuntimeMessage(trimmed) &&
-        !trimmed.startsWith("正在") &&
-        !trimmed.startsWith("下载完成：")
-}
+private fun historyMissingLocalOutputMessage(): String =
+    "历史记录对应的本地文件不存在或为空，请重新下载或删除该记录。"
 
 private fun isRuntimeWarningMessage(message: String): Boolean {
     return listOf("失败", "无效", "未获得", "请先", "无法", "错误").any(message::contains)
@@ -2579,212 +2607,15 @@ private fun formatSettingSummaries(
     )
 }
 
-internal fun androidx.compose.foundation.lazy.LazyListScope.queuePageItems(
-    state: RuntimeDownloadState,
-    onCancelDownload: () -> Unit,
-    onRetryDownload: (DownloadRequest) -> Unit,
-) {
-    item {
-        val palette = LocalYtdlAppPalette.current
-        Surface(color = palette.queueAccent.copy(alpha = 0.12f), shape = RoundedCornerShape(16.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(queueHeaderTitle(state), color = palette.queueAccent, fontWeight = FontWeight.Bold)
-                Text(
-                    queueHeaderSummary(state),
-                    color = palette.softText,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-    }
-    if (shouldShowQueueRuntimeMessage(state.userMessage)) {
-        item {
-            RuntimeMessageCard(state.userMessage)
-        }
-    }
-    if (state.hasRealTask) {
-        item { SectionTitle("真实任务（1）") }
-        item {
-            val palette = LocalYtdlAppPalette.current
-            val progress = queueProgressPresentation(state)
-            val title = state.activeRequest?.title?.takeIf { it.isNotBlank() }
-                ?: state.analysis?.title?.takeIf { it.isNotBlank() }
-                ?: "真实下载任务"
-            Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
-                QueueCard(
-                    title = title,
-                    subtitle = queueCardSubtitle(state),
-                    progress = progress,
-                    status = queueCardStatus(state),
-                    meta = queueCardMeta(state),
-                    formatBadge = queueCardFormatBadge(state),
-                    codecBadge = queueCardCodecBadge(state),
-                    stageItems = queueStageItems(state),
-                    accent = queueCardAccent(state, palette),
-                    actions = queueCardActions(state),
-                    thumbnailBitmap = state.thumbnailBitmap,
-                    onCancel = onCancelDownload,
-                    onRetry = state.activeRequest?.let { request ->
-                        { onRetryDownload(request) }
-                    },
-                )
-            }
-        }
-    } else {
-        item { SectionTitle("等待真实任务") }
-        item {
-            val palette = LocalYtdlAppPalette.current
-            QueueCard(
-                title = "尚未开始真实下载",
-                subtitle = "请在下载页输入地址并点击开始下载",
-                progress = QueueProgressPresentation(fraction = null, isIndeterminate = false),
-                status = "待开始",
-                meta = "这里不会显示假进度",
-                formatBadge = "",
-                codecBadge = "",
-                stageItems = emptyList(),
-                accent = palette.queueAccent,
-                actions = emptyList(),
-                modifier = Modifier.testTag("ytdl-queue-active-card"),
-            )
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                QueueEmptyStepsCard()
-                QueueEmptyOutputCard()
-            }
-        }
-    }
-}
-
-@Composable
-private fun QueueEmptyStepsCard() {
-    val palette = LocalYtdlAppPalette.current
-    AppCard(modifier = Modifier.testTag("ytdl-queue-empty-steps-card")) {
-        Text("任务阶段", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("ytdl-queue-empty-stage-strip"),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            listOf("下载视频", "下载音频", "原生合并").forEach { label ->
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    color = palette.mutedCardBackground,
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Text(
-                        text = label,
-                        color = palette.softText,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                    )
-                }
-            }
-        }
-        QueueEmptyGroupRows()
-        Text(
-            "不会显示假进度或占位百分比",
-            color = palette.softText,
-            style = MaterialTheme.typography.labelSmall,
-        )
-    }
-}
-
-@Composable
-private fun QueueEmptyGroupRows() {
-    val groups = listOf(
-        "ytdl-queue-empty-running-group" to "正在下载（0）",
-        "ytdl-queue-empty-waiting-group" to "等待中（0）",
-        "ytdl-queue-empty-completed-group" to "已完成（0）",
-        "ytdl-queue-empty-failed-group" to "失败（0）",
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        groups.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { (tag, label) ->
-                    QueueEmptyGroupPill(
-                        label = label,
-                        tag = tag,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun QueueEmptyGroupPill(
-    label: String,
-    tag: String,
-    modifier: Modifier = Modifier,
-) {
-    val palette = LocalYtdlAppPalette.current
-    Surface(
-        modifier = modifier.testTag(tag),
-        color = palette.mutedCardBackground,
-        shape = RoundedCornerShape(10.dp),
-    ) {
-        Text(
-            label,
-            color = palette.softText,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-        )
-    }
-}
-
-@Composable
-private fun QueueEmptyOutputCard() {
-    val palette = LocalYtdlAppPalette.current
-    AppCard(modifier = Modifier.testTag("ytdl-queue-empty-output-card")) {
-        Text("输出信息", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Text(
-            "开始后显示文件大小、速度和剩余时间",
-            color = palette.softText,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            "完成或失败后，右侧会显示状态；有分辨率时显示在右下角。",
-            color = palette.softText,
-            style = MaterialTheme.typography.labelSmall,
-        )
-    }
-}
-
-private fun queueHeaderTitle(state: RuntimeDownloadState): String {
-    if (!state.hasRealTask) return "暂无真实下载任务"
-    return when (state.downloadStatus) {
-        "下载完成" -> "最近任务已完成"
-        "下载失败" -> "最近任务失败"
-        "已取消" -> "最近任务已取消"
-        else -> "下载进行中"
-    }
-}
-
-internal fun queueHeaderTitleForUiTest(state: RuntimeDownloadState): String = queueHeaderTitle(state)
-
-private fun queueHeaderSummary(state: RuntimeDownloadState): String {
-    if (!state.hasRealTask) return "暂无真实下载任务"
-    return when (state.downloadStatus) {
-        "下载完成" -> "最近任务已完成"
-        "下载失败" -> "最近任务失败"
-        "已取消" -> "最近任务已取消"
-        else -> "1 个真实任务正在处理"
-    }
-}
-
-internal fun queueHeaderSummaryForUiTest(state: RuntimeDownloadState): String = queueHeaderSummary(state)
-
 internal fun shouldShowQueueScrollIndicatorForUiTest(state: RuntimeDownloadState): Boolean = shouldShowQueueScrollIndicator(state)
 
-private fun shouldShowQueueScrollIndicator(state: RuntimeDownloadState): Boolean = state.hasRealTask
+private fun shouldShowQueueScrollIndicator(state: RuntimeDownloadState): Boolean = shouldShowCurrentTask(state)
+
+internal fun shouldShowCurrentTaskForUiTest(state: RuntimeDownloadState): Boolean = shouldShowCurrentTask(state)
+
+private fun shouldShowCurrentTask(state: RuntimeDownloadState): Boolean {
+    return state.isDownloading && state.activeStage !in TerminalDownloadStages
+}
 
 private fun queueCardSubtitle(state: RuntimeDownloadState): String {
     val status = state.downloadStatus.ifBlank { "等待进度" }
@@ -2873,15 +2704,13 @@ private fun queueCardStatus(state: RuntimeDownloadState): String {
 internal fun queueCardStatusForUiTest(state: RuntimeDownloadState): String = queueCardStatus(state)
 
 private fun queueCardMeta(state: RuntimeDownloadState): String {
+    val speed = state.speedBytesPerSecond
+        ?.takeIf { it.isFinite() && it > 0.0 }
+        ?.let { "${formatBytes(it.toLong())}/s" }
+        ?: "--"
     val downloaded = state.downloadedBytes?.let(::formatBytes) ?: "0 B"
-    val total = state.totalBytes?.let(::formatBytes) ?: "未知大小"
-    val outputSummary = if (state.outputPath.isNotBlank()) " · 媒体文件" else ""
-    val outputPolicy = if (state.outputPath.isNotBlank()) {
-        " · App 私有目录"
-    } else {
-        ""
-    }
-    return "$downloaded / $total$outputSummary$outputPolicy"
+    val total = state.totalBytes?.let(::formatBytes) ?: "未知"
+    return "速度 $speed · 已下载 $downloaded · 总计 $total"
 }
 
 internal fun queueCardMetaForUiTest(state: RuntimeDownloadState): String = queueCardMeta(state)
@@ -2911,27 +2740,6 @@ internal fun queueCardAccentForUiTest(
     state: RuntimeDownloadState,
     palette: YtdlAppPalette = DefaultPalette,
 ): Color = queueCardAccent(state, palette)
-
-private fun queueCardActions(state: RuntimeDownloadState): List<String> {
-    if (!state.hasRealTask) return emptyList()
-    return when (state.downloadStatus) {
-        "下载失败" -> if (state.activeRequest != null) listOf("重试") else emptyList()
-        "下载完成", "已取消" -> emptyList()
-        else -> listOf("取消")
-    }
-}
-
-internal fun queueCardActionsForUiTest(state: RuntimeDownloadState): List<String> = queueCardActions(state)
-
-private fun queueThumbnailTag(state: RuntimeDownloadState): String {
-    return if (state.hasRealTask && state.thumbnailBitmap != null) {
-        QueueThumbnailImageTag
-    } else {
-        QueueThumbnailPlaceholderTag
-    }
-}
-
-internal fun queueThumbnailTagForUiTest(state: RuntimeDownloadState): String = queueThumbnailTag(state)
 
 private fun formatBytes(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
@@ -3029,7 +2837,9 @@ private fun filterHistoryItems(
 
 private fun isAudioOnlyHistory(item: HistoryUiItem): Boolean {
     val searchable = "${item.title} ${item.meta}".lowercase(Locale.ROOT)
-    return searchable.contains("仅音频") || (searchable.contains("音频") && !searchable.contains("视频"))
+    return item.isAudioOnly ||
+        searchable.contains("仅音频") ||
+        (searchable.contains("音频") && !searchable.contains("视频"))
 }
 
 @Composable
@@ -3090,6 +2900,105 @@ private fun HistoryFilterButton(
             )
         }
     }
+}
+
+internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
+    state: RuntimeDownloadState,
+    pendingRequests: List<DownloadRequest>,
+    historyItems: List<HistoryUiItem>,
+    historyQuery: String,
+    selectedFilterIndex: Int,
+    userMessage: String,
+    onCancelDownload: () -> Unit,
+    onHistoryQueryChange: (String) -> Unit,
+    onHistoryFilterChange: (Int) -> Unit,
+    onOpen: (HistoryUiItem) -> Unit,
+    onShare: (HistoryUiItem) -> Unit,
+    onRetry: (HistoryUiItem) -> Unit,
+    onDelete: (HistoryUiItem) -> Unit,
+) {
+    val hasCurrentTask = shouldShowCurrentTask(state)
+    item {
+        val palette = LocalYtdlAppPalette.current
+        Surface(
+            modifier = Modifier.testTag("ytdl-tasks-summary-card"),
+            color = palette.queueAccent.copy(alpha = 0.12f),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("当前和等待", color = palette.queueAccent, fontWeight = FontWeight.Bold)
+                Text(
+                    if (hasCurrentTask || pendingRequests.isNotEmpty()) {
+                        "正在下载 ${if (hasCurrentTask) 1 else 0} · 等待 ${pendingRequests.size}"
+                    } else {
+                        "当前没有进行中或等待任务"
+                    },
+                    color = palette.softText,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+    if (hasCurrentTask) {
+        item { SectionTitle("当前任务") }
+        item {
+            val palette = LocalYtdlAppPalette.current
+            val title = state.activeRequest?.title?.takeIf { it.isNotBlank() } ?: "下载任务"
+            Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
+                QueueCard(
+                    title = title,
+                    subtitle = queueCardSubtitle(state),
+                    progress = queueProgressPresentation(state),
+                    status = queueCardStatus(state),
+                    meta = queueCardMeta(state),
+                    formatBadge = queueCardFormatBadge(state),
+                    codecBadge = queueCardCodecBadge(state),
+                    stageItems = queueStageItems(state),
+                    accent = queueCardAccent(state, palette),
+                    thumbnailBitmap = state.thumbnailBitmap,
+                    onCancel = onCancelDownload,
+                )
+            }
+        }
+    }
+    if (pendingRequests.isNotEmpty()) {
+        item { SectionTitle("等待中（${pendingRequests.size}）") }
+        pendingRequests.forEachIndexed { index, request ->
+            item(key = "pending-${request.title}-$index") {
+                val palette = LocalYtdlAppPalette.current
+                val waitingState = RuntimeDownloadState(
+                    activeRequest = request,
+                    activeStage = DownloadStage.Waiting,
+                    downloadStatus = "等待中",
+                )
+                QueueCard(
+                    title = request.title.ifBlank { "等待下载的任务" },
+                    subtitle = "已加入队列 · 按顺序等待",
+                    progress = QueueProgressPresentation(fraction = 0f, isIndeterminate = false),
+                    status = "等待中",
+                    meta = "前方 ${index + if (hasCurrentTask) 1 else 0} 个任务",
+                    formatBadge = formatResolutionBadgeForRequest(request),
+                    codecBadge = formatCodecBadgeForRequest(request),
+                    stageItems = queueStageItems(waitingState),
+                    accent = palette.queueAccent,
+                    modifier = Modifier.testTag("ytdl-pending-queue-card-$index"),
+                )
+            }
+        }
+    }
+    item { SectionTitle("历史记录") }
+    historyPageItems(
+        historyItems = historyItems,
+        historyQuery = historyQuery,
+        selectedFilterIndex = selectedFilterIndex,
+        userMessage = userMessage,
+        onHistoryQueryChange = onHistoryQueryChange,
+        onHistoryFilterChange = onHistoryFilterChange,
+        onOpen = onOpen,
+        onShare = onShare,
+        onRetry = onRetry,
+        onDelete = onDelete,
+    )
 }
 
 internal fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
@@ -3622,11 +3531,9 @@ private fun QueueCard(
     codecBadge: String,
     stageItems: List<QueueStageItem>,
     accent: Color,
-    actions: List<String>,
     modifier: Modifier = Modifier,
     thumbnailBitmap: Bitmap? = null,
     onCancel: (() -> Unit)? = null,
-    onRetry: (() -> Unit)? = null,
 ) {
     val palette = LocalYtdlAppPalette.current
     AppCard(modifier = modifier) {
@@ -3668,47 +3575,22 @@ private fun QueueCard(
                     )
                 }
                 Text(meta, color = palette.softText, style = MaterialTheme.typography.labelSmall)
-                if (actions.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        actions.forEach { action ->
-                            val actionCallback = when (action) {
-                                "取消" -> onCancel
-                                "重试" -> onRetry
-                                else -> null
-                            }
-                            if (actionCallback != null) {
-                                Box(
-                                    modifier = Modifier
-                                        .testTag(
-                                            if (action == "重试") {
-                                                "ytdl-queue-retry-action"
-                                            } else {
-                                                "ytdl-queue-cancel-action"
-                                            },
-                                        )
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable(onClick = actionCallback)
-                                        .defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        action,
-                                        color = palette.downloadAccent,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                            } else {
-                                Text(
-                                    action,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                    color = palette.neutralText,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
+                if (onCancel != null) {
+                    Box(
+                        modifier = Modifier
+                            .testTag("ytdl-queue-cancel-action")
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(onClick = onCancel)
+                            .defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "取消",
+                            color = palette.downloadAccent,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             }
@@ -3818,7 +3700,9 @@ private fun HistoryCard(
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
+                if (item.meta.isNotBlank()) {
+                    Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
+                }
                 val actions = historyActionLabels(item)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
