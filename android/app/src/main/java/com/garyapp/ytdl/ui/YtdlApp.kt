@@ -22,12 +22,14 @@ import android.webkit.MimeTypeMap
 import android.widget.EditText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -103,6 +105,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -275,6 +278,26 @@ private val DownloadTabIcon = tabIcon("DownloadTab") {
     close()
 }
 
+private val StorageCapacityIcon = tabIcon("StorageCapacity") {
+    moveTo(5f, 4f)
+    lineTo(19f, 4f)
+    lineTo(22f, 11f)
+    lineTo(22f, 20f)
+    lineTo(2f, 20f)
+    lineTo(2f, 11f)
+    close()
+    moveTo(5f, 14f)
+    lineTo(19f, 14f)
+    lineTo(19f, 18f)
+    lineTo(5f, 18f)
+    close()
+    moveTo(15f, 15f)
+    lineTo(18f, 15f)
+    lineTo(18f, 17f)
+    lineTo(15f, 17f)
+    close()
+}
+
 private val QueueTabIcon = tabIcon("QueueTab") {
     moveTo(5f, 6f)
     lineTo(19f, 6f)
@@ -435,6 +458,8 @@ internal val YtdlColorPresetIdKey = SemanticsPropertyKey<String>("YtdlColorPrese
 internal var SemanticsPropertyReceiver.ytdlColorPresetId by YtdlColorPresetIdKey
 internal val YtdlSettingsAccentArgbKey = SemanticsPropertyKey<String>("YtdlSettingsAccentArgb")
 internal var SemanticsPropertyReceiver.ytdlSettingsAccentArgb by YtdlSettingsAccentArgbKey
+internal val YtdlTaskTitleMarqueeKey = SemanticsPropertyKey<Boolean>("YtdlTaskTitleMarquee")
+private var SemanticsPropertyReceiver.ytdlTaskTitleMarquee by YtdlTaskTitleMarqueeKey
 
 internal fun colorArgbHexForUiTest(color: Color): String = String.format(Locale.US, "#%08X", color.toArgb())
 
@@ -3050,10 +3075,11 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
             Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
                 QueueCard(
                     title = title,
+                    titleTag = "ytdl-current-task-title",
                     subtitle = queueCardSubtitle(state),
                     progress = queueProgressPresentation(state),
                     status = queueCardStatus(state),
-                    meta = queueCardMeta(state).let { "${it.speed} · ${it.transferred}" },
+                    progressMeta = queueCardMeta(state),
                     formatBadge = queueCardFormatBadge(state),
                     codecBadge = queueCardCodecBadge(state),
                     stageItems = queueStageItems(state),
@@ -3076,10 +3102,11 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                 )
                 QueueCard(
                     title = request.title.ifBlank { "等待下载的任务" },
+                    titleTag = "ytdl-pending-task-title-$index",
                     subtitle = "已加入队列 · 按顺序等待",
                     progress = QueueProgressPresentation(fraction = 0f, isIndeterminate = false),
                     status = "等待中",
-                    meta = "前方 ${index + if (hasCurrentTask) 1 else 0} 个任务",
+                    supportingText = "前方 ${index + if (hasCurrentTask) 1 else 0} 个任务",
                     formatBadge = formatResolutionBadgeForRequest(request),
                     codecBadge = formatCodecBadgeForRequest(request),
                     stageItems = queueStageItems(waitingState),
@@ -3631,10 +3658,12 @@ private fun QueueStageStrip(stageItems: List<QueueStageItem>) {
 @Composable
 private fun QueueCard(
     title: String,
+    titleTag: String,
     subtitle: String,
     progress: QueueProgressPresentation,
     status: String,
-    meta: String,
+    progressMeta: QueueProgressMeta? = null,
+    supportingText: String = "",
     formatBadge: String,
     codecBadge: String,
     stageItems: List<QueueStageItem>,
@@ -3670,7 +3699,7 @@ private fun QueueCard(
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TaskCardTitle(title, titleTag)
                 Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (stageItems.isNotEmpty()) {
                     QueueStageStrip(stageItems)
@@ -3682,7 +3711,12 @@ private fun QueueCard(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Text(meta, color = palette.softText, style = MaterialTheme.typography.labelSmall)
+                if (progressMeta != null) {
+                    QueueProgressMetaRow(progressMeta)
+                }
+                if (supportingText.isNotBlank()) {
+                    Text(supportingText, color = palette.softText, style = MaterialTheme.typography.labelSmall)
+                }
                 if (onCancel != null) {
                     Box(
                         modifier = Modifier
@@ -3712,6 +3746,68 @@ private fun QueueCard(
                 formatTag = "ytdl-queue-format-badge",
                 codecTag = "ytdl-queue-codec-badge",
             )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun TaskCardTitle(
+    text: String,
+    tag: String,
+) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .basicMarquee(iterations = Int.MAX_VALUE)
+            .semantics { ytdlTaskTitleMarquee = true }
+            .testTag(tag),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip,
+    )
+}
+
+@Composable
+private fun QueueProgressMetaRow(meta: QueueProgressMeta) {
+    val color = LocalYtdlAppPalette.current.softText
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = meta.contentDescription },
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                DownloadTabIcon,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(14.dp)
+                    .testTag("ytdl-queue-download-speed-icon"),
+                tint = color,
+            )
+            Text(meta.speed, color = color, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                StorageCapacityIcon,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(14.dp)
+                    .testTag("ytdl-queue-storage-icon"),
+                tint = color,
+            )
+            Text(meta.transferred, color = color, style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
 }
@@ -3807,7 +3903,7 @@ private fun HistoryCard(
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TaskCardTitle(item.title, "ytdl-history-title-${item.id}")
                 if (item.meta.isNotBlank()) {
                     Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
                 }

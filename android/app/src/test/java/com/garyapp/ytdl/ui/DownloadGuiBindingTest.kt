@@ -315,6 +315,57 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun taskTitlesMarqueeAndProgressUsesMatchingIcons() {
+        val request = requestFor(progressiveFormat("18", 360)).copy(
+            title = "这是一个长到无法在任务卡片一行完整显示并需要持续循环滚动的当前下载标题",
+        )
+        val active = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState.waiting(request)
+                .atStage(DownloadStage.DownloadingVideo)
+                .withProgress(
+                    DownloadProgress(
+                        status = "downloading",
+                        percent = 30.0,
+                        downloadedBytes = 300L,
+                        totalBytes = 1_000L,
+                        speedBytesPerSecond = 400.0,
+                        etaSeconds = 2L,
+                        filename = "temporary-file.mp4",
+                    ),
+                ),
+        )
+        val pending = request.copy(
+            title = "这是另一个长到无法在等待任务卡片一行完整显示并需要循环滚动的标题",
+        )
+        val history = HistoryUiItem(
+            id = 301L,
+            title = "这是一个长到无法在历史任务卡片一行完整显示并需要循环滚动的标题",
+            meta = "视频 · 07/15 18:00",
+            badge = "完成",
+            outputUri = "app-private://outputs/history.mp4",
+            status = HistoryItemEntity.STATUS_COMPLETED,
+            completedAt = 301L,
+        )
+
+        renderTasksPage(active, listOf(pending), listOf(history))
+
+        composeRule.onNodeWithTag("ytdl-current-task-title")
+            .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
+        composeRule.onNodeWithTag("ytdl-pending-task-title-0")
+            .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
+        composeRule.onNodeWithTag("ytdl-queue-download-speed-icon").assertExists()
+        composeRule.onNodeWithTag("ytdl-queue-storage-icon").assertExists()
+        composeRule.onNodeWithText("400.0 B/s").assertExists()
+        composeRule.onNodeWithText("300.0 B/1000.0 B").assertExists()
+        composeRule.onNodeWithText("temporary-file.mp4", substring = true).assertDoesNotExist()
+
+        composeRule.onNodeWithTag("test-tasks-list")
+            .performScrollToNode(hasTestTag("ytdl-history-title-301"))
+        composeRule.onNodeWithTag("ytdl-history-title-301")
+            .assert(SemanticsMatcher.expectValue(YtdlTaskTitleMarqueeKey, true))
+    }
+
+    @Test
     fun bottomTabRouteChangesRecreateLazyListSlots() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
@@ -1164,7 +1215,7 @@ class DownloadGuiBindingTest {
     ) {
         composeRule.setContent {
             YtdlTheme {
-                LazyColumn {
+                LazyColumn(Modifier.testTag("test-tasks-list")) {
                     tasksPageItems(
                         state = state,
                         pendingRequests = pendingRequests,

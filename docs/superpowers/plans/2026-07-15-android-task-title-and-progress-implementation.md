@@ -192,7 +192,7 @@ git commit -m "feat(android): format compact download progress"
 - Modify: `android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt`
 - Test: `android/app/src/test/java/com/garyapp/ytdl/ui/DownloadGuiBindingTest.kt`
 
-- [ ] **Step 1: 写 Compose 失败测试**
+- [x] **Step 1: 写 Compose 失败测试**
 
 渲染一个正在下载的长标题任务、一个等待任务和一条长标题历史，断言三类标题都带跑马灯语义，当前任务显示两个图标：
 
@@ -209,7 +209,7 @@ composeRule.onNodeWithText("400.0 B/s").assertExists()
 composeRule.onNodeWithText("300.0 B/1000.0 B").assertExists()
 ```
 
-- [ ] **Step 2: 运行 Compose 测试并确认 RED**
+- [x] **Step 2: 运行 Compose 测试并确认 RED**
 
 Run:
 
@@ -219,7 +219,7 @@ D:\DevTools\gradle-9.4.1\bin\gradle.bat :app:testDebugUnitTest --tests "com.gary
 
 Expected: 标题标签、跑马灯语义和图标标签尚不存在，测试失败。
 
-- [ ] **Step 3: 添加跑马灯标题组件**
+- [x] **Step 3: 添加跑马灯标题组件**
 
 在 `YtdlApp.kt` 中引入 `androidx.compose.foundation.basicMarquee`，定义测试语义并复用一个标题组件：
 
@@ -250,7 +250,7 @@ private fun TaskCardTitle(
 
 当前任务使用 `ytdl-current-task-title`，等待任务使用带索引的 `ytdl-pending-task-title-$index`，历史使用 `ytdl-history-title-${item.id}`。
 
-- [ ] **Step 4: 添加同画风图标和进度行**
+- [x] **Step 4: 添加同画风图标和进度行**
 
 复用现有 `DownloadTabIcon` 作为下载速度图标，并用 `tabIcon` 绘制硬盘图标：
 
@@ -331,13 +331,13 @@ supportingText = "前方 ${index + if (hasCurrentTask) 1 else 0} 个任务",
 
 卡片只在 `progressMeta != null` 时渲染 `QueueProgressMetaRow`，只在 `supportingText.isNotBlank()` 时渲染普通提示，避免把等待提示伪装成下载容量。
 
-- [ ] **Step 5: 运行 Compose 测试并确认 GREEN**
+- [x] **Step 5: 运行 Compose 测试并确认 GREEN**
 
 Run: 与 Step 2 相同。
 
 Expected: 三类标题、两个图标和两组进度文本均可找到，状态徽标布局测试继续通过。
 
-- [ ] **Step 6: 提交界面实现**
+- [x] **Step 6: 提交界面实现**
 
 ```powershell
 git add -- android/app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt android/app/src/test/java/com/garyapp/ytdl/ui/DownloadGuiBindingTest.kt
