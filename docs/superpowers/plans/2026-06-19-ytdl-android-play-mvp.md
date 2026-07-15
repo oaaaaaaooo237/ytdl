@@ -788,6 +788,15 @@ Computer Use 在可见 API37 模拟器中完成下载、格式、队列、历史
 - 需求与质量审查的全部 P1/P2 已闭环，最终复审为 `CLEAN`；临时 IP/UA/原始异常探针和旧发布页动作均不存在。误建的 `.qa-data/gradle-home` 已在停止后台进程并确认无锁后精确删除，释放约 1.18 GB。
 - 本记录关闭问题 6 和 2026-07-14 parser/network fallback 计划的 API37 模拟器范围；D2/M10 仍需在小米 14 上复核本轮新增行为后才能完成。Play 发布准备继续暂停，不作为当前 D2 阻塞项。
 
+#### Android 1.0.1 最终连续解析与发布收口（2026-07-15）
+
+- 最终测试前代码审计完成，没有遗留调查探针、重复联网处理、无用声明或新增的敏感信息泄露；中断运行产生的 `.qa-data` 临时缓存已按精确名称清理，释放约 6.4 GB，历史 QA 证据和用户附件未删除。
+- 新鲜验证为 Python 全量 `273/273`、Android JVM `383/383`；`:app:assembleDebug --no-parallel`、`:app:assembleDebugAndroidTest --no-parallel`、三页导航仪器测试和 Pornhub 真实分析仪器测试均通过。测试 APK 只用于模拟器仪器测试，不作为发布物。
+- 可见 API37 模拟器重新修正 Gboard 偏好后，单击地址栏一次即可直接从底部弹出完整键盘；实体键盘工具条和额外菜单路径不计入验收。四个用户指定 Pornhub 地址均通过底部 Gboard 逐键输入、逐字核对后分析，分别得到四组不同标题和时长 `15:59 / 07:10 / 12:01 / 23:20`，没有显示上一次地址的结果，四次均未下载。
+- 任务页的同排操作按钮、三枚右侧标签和动态滚动条，以及下载页的上下拖动和不适用格式灰显均已前台复核。解析器列表、双向选择和重启提示再次确认；删除和重新下载沿用本日较早已获用户授权的前台验收，不重复执行删除。
+- 本地交付只保留一个 v2 调试签名 APK：`dist/android/1.0.1-latest/ytdl-android-1.0.1-debug.apk`，SHA-256 `CCE18619066DB30BB5F3B605A2087A2C2FE8906D6280304504E3BBEA27A0939D`。未生成或交付未签名 release APK。
+- API37 模拟器范围已经收口；小米 14 `arm64-v8a` M10/D2、Play 正式签名、隐私政策 URL、Data safety 和商店素材仍未完成，不能据此声称 Android MVP 全部完成。
+
 After each task commit:
 
 1. Open a fresh independent audit thread against the task commit and plan section.

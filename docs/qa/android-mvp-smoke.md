@@ -1726,3 +1726,15 @@ API37 可见模拟器已安装当时 APK。Computer Use 通过完整底部 Gboar
 - 问题 8 前台复核：在唯一可见 API37 模拟器中，历史“再次下载”真实重新分析 YouTube 地址并直接返回下载页；同一页依次切换“视频+音频 / 视频 / 音频”。音频模式下“视频分辨率 / 帧率 / 视频编码”均灰显不可用，同时显示真实“音频格式 M4A”和音频容器。本次只分析，没有再次下载媒体。
 - 自动验证：Python `267/267`、Android JVM `377/377` 通过；`:app:assembleDebug --no-parallel`、`:app:assembleRelease --no-parallel`、`:app:assembleDebugAndroidTest --no-parallel` 均顺序通过。三项底部导航仪器用例 `1/1` 通过，最终主 APK 和测试 APK 已覆盖安装到唯一可见的 `emulator-5554`。
 - 未完成：本轮结束前手机未出现在 `adb devices` 中，因此最新 1.0.1 APK 尚未重新安装到小米 14；这不影响 API37 模拟器和本地 APK 发布结论，但 M10/D2 真机最终验收仍未通过。Play 正式签名和商店材料也不属于本次本地/远程代码发布。
+
+### 2026-07-15 Android 1.0.1 最终连续解析与本地发布收口
+
+- 最终代码审计在测试前完成：检查了 1.0.1 用户界面、等待队列、文件命名、解析器管理和 Android 联网兼容改动；没有发现遗留临时探针、重复网络实现、无用声明或新增的原始异常/完整地址/IP/cookies 泄露。只清理 `.qa-data` 中明确属于中断测试的 46 项缓存和运行库，释放约 6.4 GB；历史报告、截图和用户附件均保留。
+- 新鲜自动验证：项目虚拟环境中的 Python 全量 `273/273` 通过；Android JVM `383/383` 通过，0 失败、0 错误、0 跳过；`:app:assembleDebug --no-parallel` 和仅用于仪器测试的 `:app:assembleDebugAndroidTest --no-parallel` 成功。三页导航仪器测试和 Pornhub 真实联网分析仪器测试分别为 `OK (1 test)`；真实联网测试只检查标题和格式，不下载。
+- 输入环境先纠正再验收：API37 的 Gboard 一度恢复为实体键盘工具条模式。可见设置中重新开启 `Physical keyboard -> Show on-screen keyboard`、关闭 `Show toolbar`，并关闭 `Write in text fields -> Use stylus to write in text fields`。返回 App、完整收起键盘后，只点击地址栏一次，完整 Gboard 直接从屏幕底部弹出；先出现工具条再点菜单的旧路径明确作废，没有用于后续地址输入。
+- 连续分析严格按用户给出的四个地址顺序执行。每个字符都通过底部完整 Gboard 可见按键输入，按键间隔 `0.21` 秒，页面切换等待 `0.65` 秒；每次只读逐字核对均为 `MATCH=True`、长度 `59` 后才点击“分析”。四次分别显示：`TS Dominatrix Mia Mafia Slave Bondage Fuck! Uses Toys, Fucks Subs Ass & he Sucks her Tran...` / `15:59`、`He delivers a pizza, she makes him her sub – Cirilla Freya` / `07:10`、`TRANSEROTICA Dom Transgender Cherry Mavrik Fucks Sarina Havok` / `12:01`、`POV: A goth girl invites you to her place on a first date` / `23:20`。四个标题和时长均不同，没有出现上一个地址的结果；第三个地址只有缩略图加载失败，标题、时长和格式分析正常。
+- 下载页前台复核：第四个结果只允许“视频”，不适用的“视频+音频”和“音频”均灰显；页面可上下拖动，分辨率、帧率、视频编码、容器格式、实际下载摘要、保存位置、授权框和开始下载按钮均能到达，没有被底栏截断。本轮四个地址均只分析，没有勾选授权或下载媒体。
+- 任务页前台复核：完成/取消、编码、分辨率三枚右侧标签从上到下均匀排列且不重叠；“打开 / 分享 / 再次下载 / 删除”位于同一操作行，删除按钮保持红色；任务超过一屏时右侧动态滚动条出现并随列表拖动移动。
+- 解析器管理前台复核：设置页版本列表显示内置 `2026.3.17`、当前选择、本进程实际版本和已下载 `2026.7.4`；切换到内置版、再恢复下载版时均显示“重启应用后生效”。删除和重新下载已在本日较早的前台授权验收中完成，本次不重复执行删除。
+- 本地发布目录只放一个可安装包：`dist/android/1.0.1-latest/ytdl-android-1.0.1-debug.apk`，`56,189,657` bytes，SHA-256 `CCE18619066DB30BB5F3B605A2087A2C2FE8906D6280304504E3BBEA27A0939D`；Android debug 证书 v2 签名校验通过。测试 APK 只临时安装到模拟器执行仪器测试，未复制到发布目录；未生成或交付未签名 release APK。
+- 边界：本节完成 1.0.1 的 API37 模拟器和本地 debug 包收口，不替代小米 14 `arm64-v8a` 的 M10/D2 最终真机验收。Play 正式签名、隐私政策 URL、Data safety 和商店素材仍未完成。

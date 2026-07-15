@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import urllib.parse
 
 import yt_dlp
 from yt_dlp.networking.common import Response
@@ -21,6 +22,7 @@ def _upgrade_eporner_metadata_url(url):
 class AndroidYoutubeDL(yt_dlp.YoutubeDL):
     def __init__(self, *args, android_http_fallback=None, **kwargs):
         self._android_http_fallback = android_http_fallback
+        self._android_metadata_origin = None
         super().__init__(*args, **kwargs)
 
     def urlopen(self, request):
@@ -36,27 +38,45 @@ class AndroidYoutubeDL(yt_dlp.YoutubeDL):
                 upgraded_eporner_request = True
                 request = request.copy()
                 request.url = upgraded_url
+        request_headers = (
+            {} if isinstance(request, str) else dict(getattr(request, "headers", {}) or {})
+        )
         try:
             return super().urlopen(request)
         except HTTPError as exc:
             if upgraded_eporner_request:
                 raise
-            response = self._try_android_metadata_fallback(request, exc)
+            response = self._try_android_metadata_fallback(request, exc, request_headers)
             if response is None:
                 raise
             exc.close()
             return response
 
-    def _try_android_metadata_fallback(self, request, error):
-        if error.status != 410 or not self._android_http_fallback:
+    def _try_android_metadata_fallback(self, request, error, request_headers):
+        url = request if isinstance(request, str) else getattr(request, "url", "")
+        try:
+            is_m3u8_request = (
+                isinstance(url, str)
+                and urllib.parse.urlsplit(url).path.lower().endswith(".m3u8")
+            )
+        except ValueError:
+            is_m3u8_request = False
+        if (
+            not self._android_http_fallback
+            or (error.status != 410 and not (error.status == 412 and is_m3u8_request))
+        ):
             return None
 
-        url = request if isinstance(request, str) else getattr(request, "url", "")
         method = "GET" if isinstance(request, str) else str(getattr(request, "method", "GET") or "GET")
         data = None if isinstance(request, str) else getattr(request, "data", None)
         headers = dict(self.params.get("http_headers") or {})
-        if not isinstance(request, str):
-            headers.update(dict(getattr(request, "headers", {}) or {}))
+        headers.update(request_headers)
+        if error.status == 412 and is_m3u8_request and self._android_metadata_origin:
+            normalized_header_names = {str(name).lower() for name in headers}
+            if "origin" not in normalized_header_names:
+                headers["Origin"] = self._android_metadata_origin
+            if "referer" not in normalized_header_names:
+                headers["Referer"] = self._android_metadata_origin + "/"
         if (
             not isinstance(url, str)
             or not url.lower().startswith("https://")
@@ -85,6 +105,25 @@ class AndroidYoutubeDL(yt_dlp.YoutubeDL):
             response_headers = {
                 str(name): str(value) for name, value in (result.get("headers") or {}).items()
             }
+            content_type = next(
+                (
+                    value
+                    for name, value in response_headers.items()
+                    if name.lower() == "content-type"
+                ),
+                "",
+            ).partition(";")[0].strip().lower()
+            if error.status == 410 and content_type == "text/html":
+                parsed_response_url = urllib.parse.urlsplit(response_url)
+                if (
+                    parsed_response_url.scheme.lower() == "https"
+                    and parsed_response_url.hostname
+                    and parsed_response_url.username is None
+                    and parsed_response_url.password is None
+                ):
+                    self._android_metadata_origin = (
+                        f"https://{parsed_response_url.netloc}"
+                    )
             return Response(io.BytesIO(body), response_url, response_headers, status=status)
         except Exception:
             return None
