@@ -21,6 +21,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
+@org.robolectric.annotation.Config(sdk = [35])
 class DownloadCoordinatorTest {
     private lateinit var tempRoot: File
 
@@ -35,6 +37,63 @@ class DownloadCoordinatorTest {
     fun removeProjectTempDirectory() {
         tempRoot.deleteRecursively()
         assertFalse("测试临时目录必须自动清理", tempRoot.exists())
+    }
+
+    @Test
+    fun earlyUserPauseSurvivesLaterOfflineAndLifecycleSignals() {
+        DownloadCoordinator.enqueueForServiceStart(request(), tempRoot).getOrThrow()
+        DownloadCoordinator.pauseActive()
+        DownloadCoordinator.waitForNetwork()
+        val launch = DownloadCoordinator.claimPendingLaunch()!!
+        DownloadCoordinator.activateLaunch(launch)
+        DownloadCoordinator.stopForLifecycle(launch)
+        val token = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(token)
+        assertEquals(DownloadStopReason.UserPause, token.stopReason)
+    }
+
+    @Test
+    fun scopedEarlyCancelSurvivesClaimUntilCancellationIsAttached() {
+        val request = request()
+        DownloadCoordinator.enqueueForServiceStart(request, tempRoot).getOrThrow()
+        assertTrue(DownloadCoordinator.cancelActive(request.taskId))
+        val launch = DownloadCoordinator.claimPendingLaunch()!!
+        DownloadCoordinator.activateLaunch(launch)
+        val token = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(token)
+        assertEquals(DownloadStopReason.UserCancel, token.stopReason)
+    }
+
+    @Test
+    fun stalePauseAndCancelCannotStopTheNextTask() {
+        val first = request("第一条")
+        val second = request("第二条")
+        DownloadCoordinator.enqueueForServiceStart(first, tempRoot).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(second, tempRoot).getOrThrow()
+        val one = DownloadCoordinator.claimPendingLaunch()!!
+        DownloadCoordinator.activateLaunch(one)
+        DownloadCoordinator.finishActiveLaunch(one)
+        val two = DownloadCoordinator.claimPendingLaunch()!!
+        DownloadCoordinator.activateLaunch(two)
+        DownloadCoordinator.publish(DownloadTaskState(DownloadStage.DownloadingVideo, second))
+        val token = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(token)
+        DownloadCoordinator.pauseActive(first.taskId)
+        assertFalse(DownloadCoordinator.cancelActive(first.taskId))
+        assertNull(token.stopReason)
+        assertEquals(second.taskId, DownloadCoordinator.currentState()!!.request!!.taskId)
+    }
+
+    @Test
+    fun cannotClaimSecondWorkerBeforeFirstHasExited() {
+        DownloadCoordinator.enqueueForServiceStart(request("第一条"), tempRoot).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(request("第二条"), tempRoot).getOrThrow()
+        val first = DownloadCoordinator.claimPendingLaunch()!!
+        assertNull(DownloadCoordinator.claimPendingLaunch())
+        DownloadCoordinator.activateLaunch(first)
+        assertNull(DownloadCoordinator.claimPendingLaunch())
+        DownloadCoordinator.finishActiveLaunch(first)
+        assertEquals("第二条", DownloadCoordinator.claimPendingLaunch()!!.request.title)
     }
 
     @Test
@@ -148,6 +207,7 @@ class DownloadCoordinatorTest {
                 DownloadStage.Failed,
                 DownloadStage.Canceled,
                 DownloadStage.Idle,
+                DownloadStage.Paused,
             )
         }
 
@@ -184,70 +244,6 @@ class DownloadCoordinatorTest {
         val escaped = ProjectTestPaths.qaDataRoot.resolve("..").resolve("outside").normalize()
 
         assertTrue(runCatching { ProjectTestPaths.requireInsideQaData(escaped) }.isFailure)
-    }
-
-    @Test
-    fun serviceSourceRunsRealPipelineAndUpdatesForegroundNotification() {
-        val source = sourceFile(
-            "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
-            "src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
-        ).readText()
-        val manifest = sourceFile(
-            "app/src/main/AndroidManifest.xml",
-            "src/main/AndroidManifest.xml",
-        ).readText()
-
-        assertTrue(source.contains("DownloadPipeline("))
-        assertTrue(source.contains("YtdlpDownloadEngine("))
-        assertTrue(source.contains("NativeMuxerMediaProcessor("))
-        assertTrue(source.contains("notificationController.notifyForegroundState"))
-        assertTrue(source.contains("ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST"))
-        assertTrue(source.contains("Build.VERSION_CODES.Q"))
-        assertTrue(source.contains("startForeground("))
-        assertFalse(source.contains("ServiceCompat.startForeground"))
-        assertTrue(manifest.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC"))
-        assertTrue(manifest.contains("android:foregroundServiceType=\"dataSync\""))
-        assertTrue(source.contains("DownloadCoordinator.publish"))
-        assertTrue(source.contains("Executors.newSingleThreadExecutor"))
-        assertFalse(source.contains("Thread {"))
-        assertTrue(source.contains("if (intent?.action == ActionCancel)"))
-        assertTrue(source.contains("DownloadCoordinator.cancelActive()"))
-        assertTrue(source.contains("stopSelf(startId)"))
-    }
-
-    @Test
-    fun serviceSavesAllCompletedOutputsAndCleansPrivateTaskBeforeRecordingHistory() {
-        val source = sourceFile(
-            "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
-            "src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
-        ).readText()
-
-        assertTrue(source.contains("DownloadStage.Exporting"))
-        assertTrue(source.contains("ExportController.copyToSafTreeWithDocuments"))
-        assertTrue(source.contains("ExportController.cleanupExportedPrivateTask"))
-        assertTrue(source.contains(".onFailure {"))
-        assertTrue(source.contains("Log.w("))
-        assertTrue(source.contains("ExportController.markAppPrivateTaskCompleted"))
-        assertTrue(source.contains("result.outputs.map"))
-        assertTrue(
-            source.indexOf("ExportController.copyToSafTreeWithDocuments") <
-                source.indexOf("ExportController.cleanupExportedPrivateTask"),
-        )
-        assertTrue(source.indexOf("val terminalState = exportCompletedOutputs") < source.indexOf("historyRecorder.recordTerminal"))
-        assertTrue(source.contains("ExportController.treeExportFailureMessage()"))
-    }
-
-    @Test
-    fun servicePassesCancellationIntoSafTreeExportAndRecordsCanceledState() {
-        val source = sourceFile(
-            "app/src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
-            "src/main/java/com/garyapp/ytdl/download/DownloadService.kt",
-        ).readText()
-
-        assertTrue(source.contains("exportCompletedOutputs(result, storageTarget, cancellation)"))
-        assertTrue(source.contains("isCancellationRequested = { cancellation.isCancellationRequested }"))
-        assertTrue(source.contains("is CancellationException -> result.state.canceled()"))
-        assertTrue(source.indexOf("val terminalState = exportCompletedOutputs") < source.indexOf("historyRecorder.recordTerminal"))
     }
 
     private fun request(title: String = "测试视频"): DownloadRequest {

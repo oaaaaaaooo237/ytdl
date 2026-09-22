@@ -19,6 +19,17 @@ public abstract class QueueDao {
     @Query("SELECT * FROM queue_items WHERE id = :id")
     public abstract QueueItemEntity getById(long id);
 
+    @Query("SELECT * FROM queue_items WHERE taskId = :taskId LIMIT 1")
+    public abstract QueueItemEntity getByTaskId(String taskId);
+
+    @Query("SELECT * FROM queue_items WHERE status IS NULL OR status NOT IN " +
+            "('completed', 'failed', 'canceled', 'network_failed', 'permission_failed') " +
+            "ORDER BY queueOrder ASC, id ASC")
+    public abstract List<QueueItemEntity> listNonTerminal();
+
+    @Query("DELETE FROM queue_items WHERE taskId = :taskId")
+    public abstract int deleteByTaskId(String taskId);
+
     @Query("SELECT * FROM queue_items ORDER BY updatedAt DESC, id DESC")
     public abstract List<QueueItemEntity> listAll();
 

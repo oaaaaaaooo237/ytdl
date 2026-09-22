@@ -15,6 +15,33 @@ import java.net.URL
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class AndroidMetadataHttpFallbackTest {
+    @Test fun stopsSlowDripMetadataAtTotalDeadlineAndClosesConnection() {
+        var elapsed = 0L
+        var closed = false
+        var disconnected = false
+        var reads = 0
+        val connection = object : HttpURLConnection(URL("https://example.com/page")) {
+            override fun disconnect() { disconnected = true }
+            override fun usingProxy() = false
+            override fun connect() = Unit
+            override fun getResponseCode() = 200
+            override fun getContentType() = "text/html"
+            override fun getContentLengthLong() = -1L
+            override fun getInputStream() = object : java.io.InputStream() {
+                override fun read(): Int { elapsed += 4_000; reads++; return 1 }
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    buffer[offset] = read().toByte(); return 1
+                }
+                override fun close() { closed = true }
+            }
+        }
+        val fallback = AndroidMetadataHttpFallback(connectionFactory = { connection }, monotonicMillis = { elapsed })
+        assertFalse(JSONObject(fallback.fetch(connection.url.toString(), "{}")).getBoolean("ok"))
+        assertEquals(3, reads)
+        assertTrue(closed)
+        assertTrue(disconnected)
+    }
+
     @Test
     fun fetchesBoundedHttpsTextAndFiltersUnsafeRequestHeaders() {
         val connection = FakeConnection(
@@ -34,6 +61,8 @@ class AndroidMetadataHttpFallbackTest {
             ),
         )
 
+        assertTrue(connection.connectTimeout in 1..10_000)
+        assertTrue(connection.readTimeout in 1..10_000)
         assertTrue(result.getBoolean("ok"))
         assertFalse(connection.requestProperties.containsKey("User-Agent"))
         assertEquals("age=1", connection.requestProperties["Cookie"])

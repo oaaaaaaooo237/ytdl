@@ -1084,6 +1084,19 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithText("下一条视频").assertExists()
     }
 
+    @Test fun pausedTaskRetainsProgressAndContinueActionDoesNotAutoStart() {
+        val request = requestFor(progressiveFormat(id = "18", height = 360))
+        var resumed: String? = null
+        val task = com.garyapp.ytdl.download.ResumeTaskItem(request.taskId, "已暂停的测试任务",
+            DownloadTaskState(DownloadStage.Paused, request, progress = DownloadProgress("paused", 50.0, 500, 1000, 0.0, null, null)))
+        renderTasksPage(RuntimeDownloadState(), emptyList(), emptyList(), savedTasks = listOf(task), onResumeTask = { resumed = it })
+        composeRule.onNodeWithTag("test-tasks-list").performScrollToNode(hasTestTag("ytdl-saved-task-${request.taskId}"))
+        composeRule.onNodeWithText("已下载 500 B / 1000 B").assertExists()
+        assertEquals(null, resumed)
+        composeRule.onNodeWithText("继续").performClick()
+        assertEquals(request.taskId, resumed)
+    }
+
     @Test
     fun tasksScrollbarAppearsForOverflowAndTracksScroll() {
         val historyItems = (1L..20L).map { id ->
@@ -1253,6 +1266,8 @@ class DownloadGuiBindingTest {
         pendingRequests: List<DownloadRequest>,
         historyItems: List<HistoryUiItem>,
         onCancelDownload: () -> Unit = {},
+        savedTasks: List<com.garyapp.ytdl.download.ResumeTaskItem> = emptyList(),
+        onResumeTask: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             YtdlTheme {
@@ -1264,13 +1279,15 @@ class DownloadGuiBindingTest {
                         historyQuery = "",
                         selectedFilterIndex = 0,
                         userMessage = "",
-                        onCancelDownload = onCancelDownload,
+                        onCancelDownload = { onCancelDownload() },
                         onHistoryQueryChange = {},
                         onHistoryFilterChange = {},
                         onOpen = {},
                         onShare = {},
                         onRetry = {},
                         onDelete = {},
+                        savedTasks = savedTasks,
+                        onResumeTask = onResumeTask,
                     )
                 }
             }

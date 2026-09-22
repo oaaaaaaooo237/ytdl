@@ -17,7 +17,14 @@ data class DownloadRequest(
     val selectedSubtitles: List<SubtitleInfo> = emptyList(),
     val cookiesPath: String? = null,
     val formatSummary: String = "",
+    val taskId: String = java.util.UUID.randomUUID().toString().replace("-", ""),
+    val usesCookies: Boolean = !cookiesPath.isNullOrBlank(),
+    val storageTarget: com.garyapp.ytdl.core.storage.StorageTarget? = null,
 ) {
+    init {
+        require(taskId.matches(Regex("^[0-9a-f]{32}$"))) { "任务标识不可用。" }
+    }
+
     companion object {
         fun fromAnalysis(
             url: String,

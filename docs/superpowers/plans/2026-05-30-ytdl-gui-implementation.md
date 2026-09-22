@@ -2565,3 +2565,17 @@ Expected: commit succeeds.
 - Before claiming completion of any task, run the task's verification commands and read the output.
 - Network actions such as dependency install and `yt-dlp.exe` download may require explicit approval in this Codex environment.
 - The first packaged build is accepted at baseline without ffmpeg and enhanced only after a valid `ffmpeg.exe` is detected or configured.
+
+
+## Windows v1.0.1 单文件兼容修复（2026-09-22）
+
+用户要求将安卓版已能处理的单文件格式兼容能力同步到 PC。沿用既有分析、格式选择和下载架构，修复“缺失编码被误当作无音视频”的条件；不扩展 Android 专属功能。
+
+- [x] 复现：真实地址元数据成功返回 8 个格式，PC 格式筛选全部拒绝；对照 Android mapFormat。
+- [x] 回归：先验证 6 项预期失败，再实现缺失编码单文件识别及中文未知编码摘要。
+- [x] 验证：相关 48 项、全量 289 项通过；真实 AnalysisWorker 和精确分辨率选择通过。
+- [x] 打包：生成本地 Windows v1.0.1，打包依赖及隔离 Qt 启动 smoke 通过。
+- [ ] 前台点击验收：Computer Use 因本机沙箱初始化失败而阻断。
+- [ ] 真实媒体完整下载：本轮未执行。
+
+详细记录：`docs/qa/windows-1.0.1-single-file/verification.md`。本地修复包未发布 GitHub。

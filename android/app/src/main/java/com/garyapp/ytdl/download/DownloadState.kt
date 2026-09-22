@@ -8,6 +8,10 @@ enum class DownloadStage {
     Idle,
     Analyzing,
     Waiting,
+    Pausing,
+    Paused,
+    WaitingForNetwork,
+    Resuming,
     DownloadingVideo,
     DownloadingAudio,
     DownloadingSubtitles,
@@ -37,6 +41,8 @@ data class DownloadTaskState(
     val outputs: List<DownloadOutputFile> = emptyList(),
     val progress: DownloadProgress? = null,
     val errorMessage: String? = null,
+    val stopReason: DownloadStopReason? = null,
+    val statusMessage: String? = null,
 ) {
     fun atStage(nextStage: DownloadStage): DownloadTaskState {
         return copy(stage = nextStage, progress = null, errorMessage = null)
@@ -54,7 +60,7 @@ data class DownloadTaskState(
     }
 
     fun canceled(): DownloadTaskState {
-        return copy(stage = DownloadStage.Canceled, progress = null, errorMessage = null)
+        return copy(stage = DownloadStage.Canceled, progress = null, errorMessage = null, stopReason = DownloadStopReason.UserCancel)
     }
 
     fun completeWith(outputs: List<DownloadOutputFile>): Result<DownloadTaskState> {

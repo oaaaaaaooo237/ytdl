@@ -234,6 +234,10 @@ fun userVisibleDownloadStatus(stage: DownloadStage): String {
     return when (stage) {
         DownloadStage.Idle -> "空闲"
         DownloadStage.Analyzing -> "分析中"
+        DownloadStage.Pausing -> "正在暂停"
+        DownloadStage.Paused -> "已暂停"
+        DownloadStage.WaitingForNetwork -> "等待网络"
+        DownloadStage.Resuming -> "正在继续"
         DownloadStage.Waiting -> "等待中"
         DownloadStage.DownloadingVideo -> "下载视频"
         DownloadStage.DownloadingAudio -> "下载音频"

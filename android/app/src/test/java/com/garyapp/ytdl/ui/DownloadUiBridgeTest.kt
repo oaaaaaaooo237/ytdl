@@ -349,7 +349,7 @@ class DownloadUiBridgeTest {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
 
         assertTrue(source.contains("userMessage = runtimeState.userMessage"))
         assertTrue(source.contains("userMessage: String,\n    onHistoryQueryChange"))
@@ -709,6 +709,67 @@ class DownloadUiBridgeTest {
             ),
             queueCardMetaForUiTest(updated),
         )
+    }
+
+    @Test
+    fun queueProgressReplacesStageTotalWhenDownloadedBytesExceedIt() {
+        val request = mergeRequest()
+        val first = RuntimeDownloadState(
+            activeRequest = request,
+            activeStage = DownloadStage.DownloadingAudio,
+            totalBytes = 1_000L,
+        )
+        val updated = first.withPipelineStateForUiTest(
+            DownloadTaskState.waiting(request)
+                .atStage(DownloadStage.DownloadingAudio)
+                .withProgress(
+                    DownloadProgress(
+                        status = "downloading",
+                        percent = 60.0,
+                        downloadedBytes = 1_200L,
+                        totalBytes = 2_000L,
+                        speedBytesPerSecond = null,
+                        etaSeconds = null,
+                        filename = "audio.m4a",
+                    ),
+                ),
+        )
+
+        assertEquals(1_200L, updated.downloadedBytes)
+        assertEquals(2_000L, updated.totalBytes)
+        assertEquals(60.0, updated.progressPercent)
+    }
+
+    @Test
+    fun queueProgressDropsExceededStageTotalWithoutValidReportedTotal() {
+        val request = mergeRequest()
+        val first = RuntimeDownloadState(
+            activeRequest = request,
+            activeStage = DownloadStage.DownloadingAudio,
+            totalBytes = 1_000L,
+        )
+        listOf(null, 0L, 1_100L).forEach { reportedTotal ->
+            val updated = first.withPipelineStateForUiTest(
+                DownloadTaskState.waiting(request)
+                    .atStage(DownloadStage.DownloadingAudio)
+                    .withProgress(
+                        DownloadProgress(
+                            status = "downloading",
+                            percent = null,
+                            downloadedBytes = 1_200L,
+                            totalBytes = reportedTotal,
+                            speedBytesPerSecond = null,
+                            etaSeconds = null,
+                            filename = "audio.m4a",
+                        ),
+                    ),
+            )
+
+            assertEquals(1_200L, updated.downloadedBytes)
+            assertNull(updated.totalBytes)
+            assertNull(updated.progressPercent)
+            assertTrue(queueCardMetaForUiTest(updated).transferred.endsWith("/--"))
+        }
     }
 
     @Test

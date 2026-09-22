@@ -526,3 +526,101 @@ def test_safe_format_preserves_unknown_codecs_without_inventing_none():
     assert blank["acodec"] is None
     assert explicit_none["vcodec"] == "avc1.640028"
     assert explicit_none["acodec"] == "none"
+
+def test_download_options_have_bounded_network_waits(tmp_path):
+    captured = []
+
+    class BoundedProbe(RecordingYoutubeDL):
+        def __init__(self, params=None, **kwargs):
+            super().__init__(params)
+            captured.append(params)
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def extract_info(self, *args, **kwargs):
+            raise TimeoutError("bounded probe")
+
+    bridge = load_android_ytdl_bridge(BoundedProbe)
+    bridge.download_format("https://example.test/watch", str(tmp_path), "18", "media")
+    bridge.download_subtitle("https://example.test/watch", str(tmp_path), "en", "vtt", "manual")
+    assert len(captured) == 2
+    for options in captured:
+        assert options["socket_timeout"] == 10
+        assert options["retries"] == 1
+        assert options["fragment_retries"] == 1
+        assert options["extractor_retries"] == 1
+        assert options["continuedl"] is True
+        assert options["nopart"] is False
+
+def test_stop_during_metadata_fallback_does_not_start_python_retry():
+    network_calls = []
+    stopped = False
+
+    class NetworkProbe(RecordingYoutubeDL):
+        def urlopen(self, request):
+            network_calls.append(request)
+            return request
+
+    class StopFallback:
+        def fetch(self, url, headers):
+            nonlocal stopped
+            stopped = True
+            return json.dumps({"ok": False})
+
+    def hook(event):
+        if stopped:
+            raise RuntimeError("stopped")
+
+    bridge = load_android_ytdl_bridge(NetworkProbe)
+    ydl = bridge.AndroidYoutubeDL({"progress_hooks": [hook]}, android_http_fallback=StopFallback())
+    import pytest
+    with pytest.raises(RuntimeError, match="stopped"):
+        ydl.urlopen("https://example.test/page")
+    assert network_calls == []
+
+
+def test_http_access_and_missing_resource_errors_never_wait_for_network():
+    bridge = load_android_ytdl_bridge()
+    for message, expected in [
+        ("HTTP Error 401: Unauthorized", "permission"),
+        ("HTTP Error 403: Forbidden", "permission"),
+        ("network request failed: HTTP Error 403: Forbidden", "permission"),
+        ("HTTP Error 404: Not Found", "unsupported"),
+        ("network request failed: HTTP Error 410: Gone", "unsupported"),
+        ("HTTPError: 403", "permission"),
+        ("network request failed: Forbidden", "permission"),
+    ]:
+        assert bridge._error_category(RuntimeError(message)) == expected, message
+
+
+def test_connection_reset_refused_and_dns_failures_are_network_errors():
+    import socket
+
+    bridge = load_android_ytdl_bridge()
+    for error in [
+        ConnectionResetError(104, "Connection reset by peer"),
+        ConnectionRefusedError(111, "Connection refused"),
+        socket.gaierror(-2, "Name or service not known"),
+        RuntimeError("Unable to download webpage: Connection reset by peer"),
+        RuntimeError("Unable to download webpage: Connection refused"),
+        RuntimeError("Name or service not known"),
+        RuntimeError("Temporary failure in name resolution"),
+        RuntimeError("getaddrinfo failed"),
+        RuntimeError("No route to host"),
+        RuntimeError("Unable to download https://example.test/role: Connection reset by peer"),
+        RuntimeError("Unable to download https://example.test/forbidden: Connection reset by peer"),
+    ]:
+        assert bridge._error_category(error) == "network", str(error)
+
+
+def test_format_selection_failure_is_not_a_network_outage():
+    bridge = load_android_ytdl_bridge()
+    assert bridge._error_category(RuntimeError("Requested format is not available")) == "unsupported"
+    assert bridge._error_category(RuntimeError("format id network is invalid")) == "unsupported"
+    assert bridge._error_category(FileNotFoundError("output file missing")) == "unknown"
+
+
+def test_http_server_response_is_not_reported_as_a_disconnected_network():
+    bridge = load_android_ytdl_bridge()
+    assert bridge._error_category(RuntimeError("network request failed: HTTP Error 503")) == "unknown"

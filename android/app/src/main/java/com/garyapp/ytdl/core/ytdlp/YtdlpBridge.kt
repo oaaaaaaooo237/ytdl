@@ -168,6 +168,7 @@ class YtdlpBridge(
 
     companion object {
         const val PINNED_YTDLP_VERSION = "2026.3.17"
+        private val UnknownMetadataVideoContainers = setOf("mp4", "m4v", "mov", "webm", "mkv", "3gp")
 
         fun mapFormat(
             raw: Map<String, Any?>,
@@ -180,9 +181,16 @@ class YtdlpBridge(
             val acodec = raw["acodec"].asCodecOrNull()
             val hasVideo = vcodec != "none"
             val hasAudio = acodec != "none"
-            val isSupported = height != null && hasVideo
+            val isUnknownMetadataSingleFile =
+                id.isNotBlank() &&
+                    height == null &&
+                    vcodec == null &&
+                    acodec == null &&
+                    ext.lowercase() in UnknownMetadataVideoContainers
+            val isSupported = hasVideo && (height != null || isUnknownMetadataSingleFile)
             val mergeRequired = isSupported && hasVideo && !hasAudio && hasStandaloneAudio
             val label = when {
+                isUnknownMetadataSingleFile -> "\u539f\u59cb\u683c\u5f0f"
                 !isSupported -> "不支持"
                 mergeRequired -> "${height}p 需合并音频"
                 else -> "${height}p"

@@ -119,6 +119,22 @@ class RetryHistoryPersistenceTest {
         assertEquals(1, historyDeleteCalls)
     }
 
+    @Test
+    fun historyDeletionKeepsDraftAndRowWhenFileStepFails() {
+        val store = RecordingRetryDraftStore()
+        var rowDeletes = 0
+        val result = deleteHistoryWithRetryPayload(93L, store, { rowDeletes++ },
+            beforeDeleteFiles = { Result.failure(HistoryFileDeleteFailure(1)) })
+        assertTrue(result.isFailure)
+        assertNull(store.deletedHistoryId)
+        assertEquals(0, rowDeletes)
+        val thrown = deleteHistoryWithRetryPayload(93L, store, { rowDeletes++ },
+            beforeDeleteFiles = { throw SecurityException("revoked") })
+        assertTrue(thrown.isFailure)
+        assertNull(store.deletedHistoryId)
+        assertEquals(0, rowDeletes)
+    }
+
     private class RecordingRetryDraftStore : RetryDraftStore {
         var savedHistoryId: Long? = null
         var savedDraft: RetryDownloadDraft? = null

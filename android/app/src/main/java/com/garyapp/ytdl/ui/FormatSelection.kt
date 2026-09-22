@@ -75,7 +75,23 @@ private fun videoDownloadRows(
         .filter { it.isSupported && it.hasVideo }
         .sortedByDescending { it.height ?: 0 }
         .map { FormatChoice(video = it, audio = null, mergeRequired = false) }
-    return rowsFromVideoChoices(choices, selection)
+    val knownChoices = choices.filter { it.video.height != null }
+    val unknownChoices = choices.filter { it.video.height == null }
+    val knownRows = rowsFromVideoChoices(knownChoices, selection)
+    val explicitUnknown = selection.selectedVideoFormatId?.let { formatId ->
+        unknownChoices.firstOrNull { it.video.id == formatId }
+    }
+    val unknownChoice = explicitUnknown ?: unknownChoices.maxByOrNull { it.video.filesizeBytes ?: 0L }
+    val unknownRow = unknownChoice?.let { choice ->
+        rowFromChoice(
+            height = null,
+            label = "\u539f\u59cb\u683c\u5f0f",
+            choice = choice,
+            selected = explicitUnknown != null ||
+                (knownRows.isEmpty() && selection.selectedVideoFormatId == null && selection.selectedHeight == null),
+        )
+    }
+    return knownRows + listOfNotNull(unknownRow)
 }
 
 private fun rowsFromVideoChoices(

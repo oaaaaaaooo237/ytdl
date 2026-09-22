@@ -2,6 +2,7 @@ package com.garyapp.ytdl.storage
 
 import com.garyapp.ytdl.data.HistoryDao
 import com.garyapp.ytdl.data.QueueDao
+import com.garyapp.ytdl.download.ControlledDirectory
 import java.io.File
 
 data class CacheStats(
@@ -36,9 +37,11 @@ class PrivateDownloadCache(
     private val historyDao: HistoryDao,
     private val deleteFile: (File) -> Boolean = { it.delete() },
 ) : DownloadCacheControl {
-    private val canonicalRoot = rootDirectory.canonicalFile
+    private val rootGuard = ControlledDirectory(rootDirectory)
+    private val canonicalRoot = rootGuard.root
 
     override fun inspect(): CacheStats {
+        rootGuard.checkSafe(canonicalRoot)
         if (!canonicalRoot.exists()) return CacheStats(0, 0)
         val protectedUris = protectedOutputUris()
         var bytes = 0L
@@ -53,6 +56,7 @@ class PrivateDownloadCache(
     }
 
     override fun clear(): CacheClearResult {
+        rootGuard.checkSafe(canonicalRoot)
         check(canonicalRoot.mkdirs() || canonicalRoot.isDirectory) {
             "无法创建 App 私有下载目录。"
         }
@@ -60,6 +64,7 @@ class PrivateDownloadCache(
         val protectedUris = protectedOutputUris()
         val deletedFiles = mutableListOf<Pair<File, Long>>()
         canonicalRoot.listFiles().orEmpty().forEach { child ->
+            if (isProtectedTask(child) || isUnsafePath(child)) return@forEach
             when {
                 child.isDirectory && ExportController.isCompletedTaskDirectory(child) -> Unit
                 child.isDirectory && ExportController.isIncompleteTaskDirectory(child) -> {
@@ -89,6 +94,7 @@ class PrivateDownloadCache(
     private fun visitTemporaryFiles(onFile: (File) -> Unit) {
         val visitedDirectories = mutableSetOf<String>()
         fun visit(candidate: File, includeAllFiles: Boolean) {
+            if (isProtectedTask(candidate) || isUnsafePath(candidate)) return
             val canonical = candidate.canonicalFile
             if (!isStrictChild(canonical)) return
             if (canonical.isDirectory) {
@@ -114,6 +120,7 @@ class PrivateDownloadCache(
     ) {
         val visitedDirectories = mutableSetOf<String>()
         fun deleteCandidate(candidate: File) {
+            if (isProtectedTask(candidate) || isUnsafePath(candidate)) return
             val canonical = candidate.canonicalFile
             if (!isStrictChild(canonical)) return
             if (canonical.isDirectory) {
@@ -148,7 +155,8 @@ class PrivateDownloadCache(
         protectedUris: Set<String>,
         deletedFiles: MutableList<Pair<File, Long>>,
     ) {
-        val canonical = candidate.canonicalFile
+        if (isProtectedTask(candidate) || isUnsafePath(candidate)) return
+            val canonical = candidate.canonicalFile
         if (!isStrictChild(canonical)) return
         if (canonical.isDirectory) {
             if (ExportController.isCompletedTaskDirectory(canonical)) return
@@ -171,6 +179,7 @@ class PrivateDownloadCache(
     ): Boolean {
         val visitedDirectories = mutableSetOf<String>()
         fun visit(candidate: File): Boolean {
+            if (isUnsafePath(candidate)) return true
             val canonical = runCatching { candidate.canonicalFile }.getOrNull() ?: return true
             if (!isStrictChild(canonical)) return false
             if (canonical.isDirectory) {
@@ -185,6 +194,13 @@ class PrivateDownloadCache(
             .filterNot(ExportController::isTaskLifecycleMarker)
             .any(::visit)
     }
+
+    private fun isProtectedTask(candidate: File): Boolean {
+        val names = queueDao.listNonTerminal().map { "task-${it.taskId}" }.toSet()
+        return candidate.absolutePath.startsWith(canonicalRoot.path + File.separator) &&
+            candidate.absoluteFile.relativeTo(canonicalRoot).invariantSeparatorsPath.substringBefore('/') in names
+    }
+    private fun isUnsafePath(candidate: File): Boolean = runCatching { rootGuard.checkSafe(candidate) }.isFailure
 
     private fun isStrictChild(candidate: File): Boolean {
         return candidate.path.startsWith(canonicalRoot.path + File.separator)

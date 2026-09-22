@@ -46,11 +46,14 @@ internal fun deleteHistoryWithRetryPayload(
     historyId: Long,
     retryStore: RetryDraftStore,
     deleteHistory: () -> Int,
+    beforeDeleteFiles: () -> Result<Unit> = { Result.success(Unit) },
 ): Result<Int> {
-    return retryStore.delete(historyId).mapCatching { retryPayloadDeleted ->
-        check(retryPayloadDeleted) { "重试信息不可删除。" }
-        deleteHistory()
-    }
+    return runCatching { beforeDeleteFiles().getOrThrow() }
+        .fold(onSuccess = { retryStore.delete(historyId) }, onFailure = { Result.failure(it) })
+        .mapCatching { retryPayloadDeleted ->
+            check(retryPayloadDeleted) { "重试信息不可删除。" }
+            deleteHistory()
+        }
 }
 
 internal class AesGcmRetryPayloadCipher(

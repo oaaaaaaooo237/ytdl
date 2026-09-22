@@ -53,7 +53,17 @@ class NotificationControllerTest {
             DownloadTaskState(stage = DownloadStage.DownloadingVideo),
         )
         assertFalse(running.flags and Notification.FLAG_AUTO_CANCEL != 0)
-        assertEquals("取消", running.actions.single().title.toString())
-        assertTrue(running.actions.single().actionIntent.isImmutable)
+        assertEquals(listOf("取消", "暂停"), running.actions.map { it.title.toString() })
+        assertTrue(running.actions.all { it.actionIntent.isImmutable })
+    }
+
+    @Test fun taskNotificationActionsKeepOriginalIdentityAfterNextTaskNotification() {
+        val firstRequest = DownloadRequest("https://example.test/first", "一", DownloadRoute.DirectSingleFile("18"))
+        val secondRequest = firstRequest.copy(taskId = "b".repeat(32))
+        val first = controller.buildForegroundNotification(DownloadTaskState.waiting(firstRequest)).actions.first().actionIntent
+        val second = controller.buildForegroundNotification(DownloadTaskState.waiting(secondRequest)).actions.first().actionIntent
+        assertFalse(first == second)
+        assertEquals(firstRequest.taskId, shadowOf(first).savedIntent.getStringExtra(DownloadService.ExtraTaskId))
+        assertEquals(secondRequest.taskId, shadowOf(second).savedIntent.getStringExtra(DownloadService.ExtraTaskId))
     }
 }

@@ -13,11 +13,14 @@ import com.garyapp.ytdl.media.MediaMergeRequest
 import com.garyapp.ytdl.media.MediaOutputContainer
 import com.garyapp.ytdl.media.MediaProcessor
 import com.garyapp.ytdl.storage.ExportController
+import android.os.Build
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 
 interface DownloadEngine {
     fun downloadFormat(
@@ -67,23 +70,26 @@ class YtdlpDownloadEngine(
     }
 }
 
+enum class DownloadStopReason { UserPause, NetworkUnavailable, UserCancel, LifecycleEnd }
+
 interface DownloadCancellation {
     val isCancellationRequested: Boolean
+    val stopReason: DownloadStopReason?
+        get() = if (isCancellationRequested) DownloadStopReason.UserCancel else null
 }
 
 object NeverDownloadCancellation : DownloadCancellation {
-    override val isCancellationRequested: Boolean = false
+    override val isCancellationRequested = false
 }
 
 class MutableDownloadCancellation : DownloadCancellation {
-    private val canceled = AtomicBoolean(false)
-
-    override val isCancellationRequested: Boolean
-        get() = canceled.get()
-
-    fun cancel() {
-        canceled.set(true)
-    }
+    private val reason = AtomicReference<DownloadStopReason?>(null)
+    override val stopReason: DownloadStopReason? get() = reason.get()
+    override val isCancellationRequested: Boolean get() = stopReason != null
+    fun cancel() { reason.set(DownloadStopReason.UserCancel) }
+    fun pause() { reason.updateAndGet { if (it == DownloadStopReason.UserCancel) it else DownloadStopReason.UserPause } }
+    fun waitForNetwork() { reason.compareAndSet(null, DownloadStopReason.NetworkUnavailable) }
+    fun stopForLifecycle() { reason.compareAndSet(null, DownloadStopReason.LifecycleEnd) }
 }
 
 data class DownloadPipelineResult(
@@ -95,6 +101,7 @@ class DownloadPipeline(
     private val engine: DownloadEngine,
     private val mediaProcessor: MediaProcessor,
     private val deleteIntermediateFile: (File) -> Boolean = { it.delete() },
+    private val isNetworkAvailable: () -> Boolean = { true },
 ) {
     fun run(
         request: DownloadRequest,
@@ -102,211 +109,194 @@ class DownloadPipeline(
         cancellation: DownloadCancellation = NeverDownloadCancellation,
         onStateChanged: (DownloadTaskState) -> Unit = {},
     ): DownloadPipelineResult {
-        outputDirectory.mkdirs()
-        val appPrivateRoot = outputDirectory.canonicalFile
-        val taskOutputDirectory = createTaskOutputDirectory(appPrivateRoot)
-        ExportController.markPrivateTaskStarted(taskOutputDirectory).getOrThrow()
         var state = DownloadTaskState.waiting(request)
-        var currentStage = state.stage
-        var currentSubtitleLanguage: String? = null
         val finalOutputs = mutableListOf<DownloadOutputFile>()
-
-        fun emit(nextState: DownloadTaskState) {
-            state = nextState
-            currentStage = nextState.stage
-            onStateChanged(nextState)
+        var taskDirectory: File? = null
+        var session: PipelineCheckpoint? = null
+        var subtitleLanguage: String? = null
+        var currentStage = DownloadStage.Waiting
+        var lastProgressSave = 0L
+        var checkpointFailed = false
+        fun emit(next: DownloadTaskState) { state = next; onStateChanged(next) }
+        fun save(reason: DownloadStopReason? = cancellation.stopReason) {
+            try { session?.save(currentStage, state.progress, reason) }
+            catch (error: PipelineCheckpointException) { checkpointFailed = true; throw error }
         }
-
-        fun transition(stage: DownloadStage) {
-            emit(state.atStage(stage))
-        }
-
         fun ensureActive() {
-            if (cancellation.isCancellationRequested) {
-                throw DownloadPipelineCanceledException()
-            }
+            if (cancellation.stopReason != null) throw DownloadPipelineStoppedException()
         }
-
-        fun progressListener(): DownloadProgressListener {
-            return DownloadProgressListener { progress ->
-                ensureActive()
-                emit(state.copy(stage = currentStage).withProgress(progress))
-                ensureActive()
-            }
-        }
-
-        emit(state)
-
-        val cookiesValidationError = validateCookiesPath(request.cookiesPath)
-        if (cookiesValidationError != null) {
-            emit(state.failed(cookiesValidationError))
-            return DownloadPipelineResult(state = state, outputs = finalOutputs)
-        }
-
-        val result = try {
+        fun transition(stage: DownloadStage) {
+            currentStage = stage
+            state = state.atStage(stage)
+            save()
+            emit(state)
             ensureActive()
-            when (val route = request.route) {
-                is DownloadRoute.DirectSingleFile -> {
-                    transition(DownloadStage.DownloadingVideo)
-                    val download = downloadFormatChecked(
-                        request = request,
-                        outputDirectory = taskOutputDirectory,
-                        formatId = route.formatId,
-                        role = DownloadFormatRole.Media,
-                        listener = progressListener(),
-                    )
-                    finalOutputs += download.toTitledOutputFile(
-                        kind = DownloadOutputKind.Media,
-                        label = "媒体",
-                        title = request.title,
-                        appPrivateRoot = appPrivateRoot,
-                    )
-                    ensureActive()
-                }
-                is DownloadRoute.VideoOnly -> {
-                    transition(DownloadStage.DownloadingVideo)
-                    val download = downloadFormatChecked(
-                        request = request,
-                        outputDirectory = taskOutputDirectory,
-                        formatId = route.videoFormatId,
-                        role = DownloadFormatRole.Video,
-                        listener = progressListener(),
-                    )
-                    finalOutputs += download.toTitledOutputFile(
-                        kind = DownloadOutputKind.Media,
-                        label = "视频",
-                        title = request.title,
-                        appPrivateRoot = appPrivateRoot,
-                    )
-                    ensureActive()
-                }
-                is DownloadRoute.AudioOnly -> {
-                    transition(DownloadStage.DownloadingAudio)
-                    val download = downloadFormatChecked(
-                        request = request,
-                        outputDirectory = taskOutputDirectory,
-                        formatId = route.audioFormatId,
-                        role = DownloadFormatRole.Audio,
-                        listener = progressListener(),
-                    )
-                    finalOutputs += download.toTitledOutputFile(
-                        kind = DownloadOutputKind.Media,
-                        label = "音频",
-                        title = request.title,
-                        appPrivateRoot = appPrivateRoot,
-                    )
-                    ensureActive()
-                }
-                is DownloadRoute.MergeRequired -> {
-                    val intermediateDirectory = File(taskOutputDirectory, ".parts").apply { mkdirs() }
-                    val video = downloadFormatPart(request, intermediateDirectory, route.videoFormatId, DownloadFormatRole.Video, ::transition, ::progressListener)
-                    ensureActive()
-                    val audio = downloadFormatPart(request, intermediateDirectory, route.audioFormatId, DownloadFormatRole.Audio, ::transition, ::progressListener)
-                    ensureActive()
-                    transition(DownloadStage.Merging)
-                    val mergedOutput = File(
-                        taskOutputDirectory,
-                        "${mediaFileBaseName(request.title)}.${MediaOutputContainer.Mp4.extension}",
-                    )
-                    val merged = mediaProcessor.mergeVideoAndAudio(
-                        MediaMergeRequest(
-                            videoInput = video,
-                            audioInput = audio,
-                            outputFile = mergedOutput,
-                            outputContainer = MediaOutputContainer.Mp4,
-                            expectedVideoFormatId = route.videoFormatId,
-                            expectedAudioFormatId = route.audioFormatId,
-                        ),
-                    ).getOrThrow()
-                    finalOutputs += DownloadOutputFile(
-                        kind = DownloadOutputKind.Media,
-                        path = merged.outputFile.absolutePath,
-                        bytesWritten = merged.bytesWritten,
-                        appPrivateRootPath = appPrivateRoot.absolutePath,
-                    )
-                    deleteIntermediateStream(video)
-                    deleteIntermediateStream(audio)
-                    ensureActive()
-                }
-            }
-
-            request.selectedSubtitles.forEach { subtitle ->
-                ensureActive()
-                currentSubtitleLanguage = subtitle.language
-                transition(DownloadStage.DownloadingSubtitles)
-                val download = engine.downloadSubtitle(
-                    url = request.url,
-                    outputDirectory = taskOutputDirectory,
-                    language = subtitle.language,
-                    ext = subtitle.ext,
-                    source = subtitle.source,
-                    cookiesPath = request.cookiesPath,
-                    listener = progressListener(),
-                ).getOrThrow()
-                finalOutputs += download.toOutputFile(appPrivateRoot)
-            }
-            currentSubtitleLanguage = null
-
+        }
+        fun listener() = DownloadProgressListener { progress ->
             ensureActive()
-            cleanupUntrackedTaskFiles(
-                taskOutputDirectory = taskOutputDirectory,
-                finalOutputs = finalOutputs,
-                preserveLifecycleMarker = true,
+            if (progress.status == "checking") return@DownloadProgressListener
+            val previousBytes = state.progress?.downloadedBytes ?: 0
+            val restarted = session?.resumingPhase == currentStage.name &&
+                (progress.downloadedBytes ?: 0) < previousBytes
+            state = state.withProgress(progress.copy(filename = null)).copy(
+                statusMessage = if (restarted) "该网站无法接着下载，已重新下载当前文件。" else state.statusMessage,
             )
-            val completed = state.completeWith(finalOutputs).getOrThrow()
-            emit(completed)
-            DownloadPipelineResult(state = state, outputs = finalOutputs)
-        } catch (_: DownloadPipelineCanceledException) {
-            cleanupUntrackedTaskFiles(taskOutputDirectory, finalOutputs)
-            emit(state.canceled())
-            DownloadPipelineResult(state = state, outputs = finalOutputs)
-        } catch (exc: Exception) {
-            cleanupUntrackedTaskFiles(taskOutputDirectory, finalOutputs)
-            if (exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Canceled) {
-                emit(state.canceled())
-            } else {
-                val message = if (currentSubtitleLanguage != null) {
-                    DownloadFailureMessages.missingSubtitle(currentSubtitleLanguage)
-                } else {
-                    DownloadFailureMessages.fromException(exc)
-                }
-                emit(state.failed(message, finalOutputs.toList()))
+            session?.resumingPhase = null
+            val now = System.nanoTime()
+            if (now - lastProgressSave >= 1_000_000_000L) { save(); lastProgressSave = now }
+            emit(state)
+            ensureActive()
+        }
+        emit(state)
+        try {
+            validateCookiesPath(request.cookiesPath)?.let {
+                emit(state.failed(it))
+                return DownloadPipelineResult(state, emptyList())
             }
-            DownloadPipelineResult(state = state, outputs = finalOutputs)
+            val workspace = TaskWorkspace(outputDirectory)
+            val checkpoint = PipelineCheckpoint.open(workspace, request)
+            session = checkpoint
+            currentStage = checkpoint.phase
+            taskDirectory = checkpoint.directory
+            val appPrivateRoot = requireNotNull(taskDirectory.parentFile).canonicalFile
+            ExportController.markPrivateTaskStarted(taskDirectory).getOrThrow()
+            state = state.copy(progress = checkpoint.progress())
+            if (checkpoint.isResuming) emit(state.copy(stage = DownloadStage.Resuming))
+            ensureActive()
+
+            fun output(file: File, kind: DownloadOutputKind = DownloadOutputKind.Media) = DownloadOutputFile(
+                kind, file.absolutePath, file.length(), appPrivateRoot.absolutePath,
+            )
+            fun stream(formatId: String, role: DownloadFormatRole, merge: Boolean): File {
+                checkpoint.file(role.pythonValue)?.let { existing ->
+                    if (merge) return existing
+                    val titled = DownloadResult(existing.path, existing.length(), request.title, formatId, role)
+                        .toTitledOutputFile(DownloadOutputKind.Media, "下载输出", request.title, appPrivateRoot, ::ensureActive)
+                    val file = File(titled.path)
+                    checkpoint.record(role.pythonValue, file)
+                    save()
+                    return file
+                }
+                val stage = if (role == DownloadFormatRole.Audio) DownloadStage.DownloadingAudio else DownloadStage.DownloadingVideo
+                // The saved byte count belongs only to the interrupted stream.
+                val restoredProgress = if (checkpoint.resumingPhase == stage.name) state.progress else null
+                currentStage = stage
+                state = state.atStage(stage).copy(progress = restoredProgress)
+                save(); emit(state); ensureActive()
+                val directory = checkpoint.streamDirectory(merge)
+                val downloaded = downloadFormatChecked(request, directory, formatId, role, listener(), cancellation)
+                val raw = downloaded.requireExistingFile("下载输出")
+                if (raw.absoluteFile.parentFile != directory.absoluteFile) throw PipelineCheckpointException(IllegalStateException("任务输出路径不可用。"))
+                checkpoint.record(role.pythonValue, raw)
+                save()
+                if (merge) return raw
+                // Keep the recorded raw path until the titled copy is checkpointed.
+                val titled = downloaded.toTitledOutputFile(DownloadOutputKind.Media, "下载输出", request.title, appPrivateRoot, ::ensureActive)
+                val file = File(titled.path)
+                checkpoint.record(role.pythonValue, file)
+                save()
+                return file
+            }
+
+            when (val route = request.route) {
+                is DownloadRoute.DirectSingleFile -> finalOutputs += output(stream(route.formatId, DownloadFormatRole.Media, false))
+                is DownloadRoute.VideoOnly -> finalOutputs += output(stream(route.videoFormatId, DownloadFormatRole.Video, false))
+                is DownloadRoute.AudioOnly -> finalOutputs += output(stream(route.audioFormatId, DownloadFormatRole.Audio, false))
+                is DownloadRoute.MergeRequired -> {
+                    var merged = checkpoint.file("merged")
+                    if (merged == null) {
+                        val video = stream(route.videoFormatId, DownloadFormatRole.Video, true)
+                        ensureActive()
+                        val audio = stream(route.audioFormatId, DownloadFormatRole.Audio, true)
+                        ensureActive()
+                        transition(DownloadStage.Merging)
+                        val target = File(taskDirectory, "${mediaFileBaseName(request.title)}.${MediaOutputContainer.Mp4.extension}")
+                        // Only this deterministic incomplete merge output may be replaced.
+                        if (target.exists()) {
+                            ControlledDirectory(taskDirectory).checkSafe(target)
+                            check(target.isFile && target.delete())
+                        }
+                        val result = mediaProcessor.mergeVideoAndAudio(MediaMergeRequest(
+                            videoInput = video, audioInput = audio, outputFile = target,
+                            outputContainer = MediaOutputContainer.Mp4,
+                            expectedVideoFormatId = route.videoFormatId, expectedAudioFormatId = route.audioFormatId,
+                        )).getOrThrow()
+                        check(result.outputFile.canonicalFile == target.canonicalFile && target.length() > 0)
+                        checkpoint.record("merged", target)
+                        save()
+                        merged = target
+                        finalOutputs += output(target)
+                        ensureActive()
+                        checkpoint.forget("video", "audio")
+                        save()
+                        deleteIntermediateStream(video)
+                        deleteIntermediateStream(audio)
+                    } else finalOutputs += output(merged)
+                }
+            }
+            ensureActive()
+            request.selectedSubtitles.forEachIndexed { index, subtitle ->
+                val role = "subtitle_$index"
+                val existing = checkpoint.file(role)
+                if (existing != null) finalOutputs += output(existing, DownloadOutputKind.Subtitle)
+                else {
+                    subtitleLanguage = subtitle.language
+                    transition(DownloadStage.DownloadingSubtitles)
+                    val download = engine.downloadSubtitle(request.url, taskDirectory, subtitle.language,
+                        subtitle.ext, subtitle.source, request.cookiesPath, listener()).getOrThrow()
+                    check(download.language == subtitle.language && download.ext == subtitle.ext && download.source == subtitle.source)
+                    val file = download.toOutputFile(appPrivateRoot)
+                    checkpoint.record(role, File(file.path))
+                    save()
+                    finalOutputs += file
+                }
+                ensureActive()
+            }
+            subtitleLanguage = null
+            checkpoint.forget("video", "audio", onlyForMerged = true)
+            save()
+            cleanupUntrackedTaskFiles(taskDirectory, finalOutputs, preserveLifecycleMarker = true, preserveCheckpoint = true)
+            currentStage = DownloadStage.Completed
+            save()
+            emit(state.completeWith(finalOutputs).getOrThrow())
+        } catch (exc: Exception) {
+            val permanentSiteError = exc is YtdlpDownloadException &&
+                exc.category in setOf(AnalysisErrorCategory.Permission, AnalysisErrorCategory.Unsupported)
+            val requestedReason = cancellation.stopReason.takeUnless { it == DownloadStopReason.NetworkUnavailable && permanentSiteError }
+            val reason = requestedReason ?: if (
+                exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Network && !isNetworkAvailable()
+            ) DownloadStopReason.NetworkUnavailable else null
+            when {
+                reason == DownloadStopReason.UserCancel -> {
+                    val deletion = runCatching { TaskWorkspace(outputDirectory).deleteTask(request.taskId).getOrThrow() }
+                    finalOutputs.clear()
+                    emit(if (deletion.isSuccess) state.canceled().copy(outputs = emptyList())
+                        else state.failed("任务文件待清理，已保留文件。"))
+                }
+                exc is PipelineCheckpointException || checkpointFailed -> emit(state.failed("任务恢复信息校验失败，已保留文件。"))
+                reason != null && session != null -> {
+                    try {
+                        save(reason)
+                        if (reason == DownloadStopReason.UserPause) emit(state.copy(stage = DownloadStage.Pausing))
+                        emit(state.copy(
+                            stage = if (reason == DownloadStopReason.NetworkUnavailable) DownloadStage.WaitingForNetwork else DownloadStage.Paused,
+                            stopReason = reason, outputs = finalOutputs.toList(), errorMessage = null,
+                            progress = state.progress?.copy(speedBytesPerSecond = 0.0, etaSeconds = null, filename = null),
+                        ))
+                    } catch (_: Exception) { emit(state.failed("暂停信息无法保存，已保留文件。")) }
+                }
+                else -> {
+                    taskDirectory?.let { cleanupUntrackedTaskFiles(it, finalOutputs) }
+                    val message = subtitleLanguage?.let(DownloadFailureMessages::missingSubtitle)
+                        ?: if (exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Canceled)
+                            DownloadFailureMessages.processing() else DownloadFailureMessages.fromException(exc)
+                    emit(state.failed(message, finalOutputs.toList()))
+                }
+            }
+        } finally {
+            cleanupTemporaryCookies(request.cookiesPath)?.let { emit(state.failed(it)) }
         }
-
-        val cleanupError = cleanupTemporaryCookies(request.cookiesPath)
-        if (cleanupError != null) {
-            emit(state.failed(cleanupError))
-            return DownloadPipelineResult(state = state, outputs = finalOutputs)
-        }
-
-        return result
-    }
-
-    private fun downloadFormatPart(
-        request: DownloadRequest,
-        outputDirectory: File,
-        formatId: String,
-        role: DownloadFormatRole,
-        transition: (DownloadStage) -> Unit,
-        progressListener: () -> DownloadProgressListener,
-    ): File {
-        transition(
-            when (role) {
-                DownloadFormatRole.Media -> DownloadStage.DownloadingVideo
-                DownloadFormatRole.Video -> DownloadStage.DownloadingVideo
-                DownloadFormatRole.Audio -> DownloadStage.DownloadingAudio
-            },
-        )
-        val download = downloadFormatChecked(
-            request = request,
-            outputDirectory = outputDirectory,
-            formatId = formatId,
-            role = role,
-            listener = progressListener(),
-        )
-        return download.requireExistingFile("${role.pythonValue} 输出")
+        return DownloadPipelineResult(state, finalOutputs.toList())
     }
 
     private fun downloadFormatChecked(
@@ -315,9 +305,11 @@ class DownloadPipeline(
         formatId: String,
         role: DownloadFormatRole,
         listener: DownloadProgressListener,
+        cancellation: DownloadCancellation,
     ): DownloadResult {
         var lastFailure: Exception? = null
         for (attempt in 1..MaxFormatDownloadAttempts) {
+            if (cancellation.stopReason != null) throw DownloadPipelineStoppedException()
             try {
                 val download = engine.downloadFormat(
                     url = request.url,
@@ -336,8 +328,12 @@ class DownloadPipeline(
                 return download
             } catch (exc: Exception) {
                 lastFailure = exc
-                if (attempt >= MaxFormatDownloadAttempts || !exc.isRetryableFormatDownloadFailure()) {
+                if (cancellation.stopReason != null || attempt >= MaxFormatDownloadAttempts || !exc.isRetryableFormatDownloadFailure() || !isNetworkAvailable()) {
                     throw exc
+                }
+                repeat(attempt * 5) {
+                    if (cancellation.stopReason != null || !isNetworkAvailable()) throw exc
+                    Thread.sleep(50)
                 }
             }
         }
@@ -373,6 +369,7 @@ class DownloadPipeline(
         label: String,
         title: String,
         appPrivateRoot: File,
+        ensureActive: () -> Unit,
     ): DownloadOutputFile {
         val downloadedFile = requireExistingFile(label)
         val extension = downloadedFile.extension.takeIf { it.matches(Regex("""[A-Za-z0-9]{1,10}""")) }
@@ -385,8 +382,42 @@ class DownloadPipeline(
         }
         val file = File(downloadedFile.parentFile, targetName)
         if (file != downloadedFile) {
-            check(!file.exists()) { "主文件命名冲突。" }
-            check(downloadedFile.renameTo(file) && file.isFile) { "无法按媒体标题命名主文件。" }
+            try {
+                val guard = ControlledDirectory(requireNotNull(downloadedFile.parentFile))
+                guard.checkSafe(downloadedFile)
+                guard.checkSafe(file)
+                if (!file.exists()) {
+                    // Android SELinux disallows hard links for app data. Publish a fully
+                    // synced copy while the prior checkpoint continues to reference raw.
+                    val temporary = guard.child(requireNotNull(file.parentFile), ".title-${UUID.randomUUID()}.tmp")
+                    check(temporary.createNewFile())
+                    try {
+                        downloadedFile.inputStream().use { input ->
+                            FileOutputStream(temporary).use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    ensureActive()
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    output.write(buffer, 0, count)
+                                }
+                                output.flush()
+                                output.fd.sync()
+                            }
+                        }
+                        listOf(guard.root, downloadedFile, temporary, file).forEach(guard::checkSafe)
+                        check(temporary.length() == downloadedFile.length())
+                        ensureActive()
+                        check(!file.exists() && temporary.renameTo(file)) { "主文件命名冲突。" }
+                    } finally {
+                        if (temporary.exists()) runCatching { guard.checkSafe(temporary); temporary.delete() }
+                    }
+                } else {
+                    check(file.isFile && file.length() == downloadedFile.length() &&
+                        file.sha256(ensureActive).contentEquals(downloadedFile.sha256(ensureActive))) { "主文件命名冲突。" }
+                }
+            } catch (stopped: DownloadPipelineStoppedException) { throw stopped
+            } catch (error: Exception) { throw PipelineCheckpointException(error) }
         }
         return DownloadOutputFile(
             kind = kind,
@@ -394,6 +425,20 @@ class DownloadPipeline(
             bytesWritten = bytesWritten,
             appPrivateRootPath = appPrivateRoot.absolutePath,
         )
+    }
+
+    private fun File.sha256(ensureActive: () -> Unit): ByteArray {
+        val digest = MessageDigest.getInstance("SHA-256")
+        inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                ensureActive()
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest()
     }
 
     private fun SubtitleDownloadResult.toOutputFile(appPrivateRoot: File): DownloadOutputFile {
@@ -427,13 +472,14 @@ class DownloadPipeline(
         taskOutputDirectory: File,
         finalOutputs: List<DownloadOutputFile>,
         preserveLifecycleMarker: Boolean = false,
+        preserveCheckpoint: Boolean = false,
     ) {
         val retainedOutputs = finalOutputs.mapNotNull { output ->
             runCatching { File(output.path).canonicalFile }.getOrNull()
         }
         val canonicalTaskDirectory = taskOutputDirectory.canonicalFile
         taskOutputDirectory.listFiles()
-            ?.filterNot(ExportController::isTaskLifecycleMarker)
+            ?.filterNot { ExportController.isTaskLifecycleMarker(it) || (preserveCheckpoint && it.name in setOf("checkpoint.bin", "exported.bin")) }
             ?.forEach { candidate ->
             val canonicalCandidate = runCatching { candidate.canonicalFile }.getOrNull() ?: return@forEach
             val containsRetainedOutput = retainedOutputs.any { output ->
@@ -444,7 +490,7 @@ class DownloadPipeline(
             }
         }
         val remainingPayloads = taskOutputDirectory.listFiles().orEmpty()
-            .filterNot(ExportController::isTaskLifecycleMarker)
+            .filterNot { ExportController.isTaskLifecycleMarker(it) || (preserveCheckpoint && it.name in setOf("checkpoint.bin", "exported.bin")) }
         val hasUntrackedPayload = remainingPayloads.any { candidate ->
             val canonicalCandidate = runCatching { candidate.canonicalFile }.getOrNull() ?: return@any true
             retainedOutputs.none { output ->
@@ -465,10 +511,11 @@ class DownloadPipeline(
     }
 
     private fun deleteTaskEntry(candidate: File, canonicalTaskDirectory: File): Boolean {
-        val path = candidate.toPath()
-        if (Files.isSymbolicLink(path)) {
-            return runCatching { Files.deleteIfExists(path) }.getOrDefault(false)
+        if (Build.VERSION.SDK_INT >= 26) {
+            val path = candidate.toPath()
+            if (Files.isSymbolicLink(path)) return runCatching { Files.deleteIfExists(path) }.getOrDefault(false)
         }
+        if (runCatching { ControlledDirectory(canonicalTaskDirectory).checkSafe(candidate) }.isFailure) return false
         val canonicalCandidate = runCatching { candidate.canonicalFile }.getOrNull() ?: return false
         if (!canonicalCandidate.path.startsWith(canonicalTaskDirectory.path + File.separator)) return false
         if (candidate.isDirectory) {
@@ -478,15 +525,8 @@ class DownloadPipeline(
         return candidate.delete() || !candidate.exists()
     }
 
-    private fun createTaskOutputDirectory(appPrivateRoot: File): File {
-        val dir = File(appPrivateRoot, "task-${System.currentTimeMillis()}-${TaskSequence.incrementAndGet().toString(36)}")
-        dir.mkdirs()
-        return dir
-    }
-
     private companion object {
         const val MaxFormatDownloadAttempts = 2
-        private val TaskSequence = AtomicLong()
     }
 }
 
@@ -528,4 +568,4 @@ private val WindowsReservedFileNames = buildSet {
     }
 }
 
-private class DownloadPipelineCanceledException : RuntimeException()
+private class DownloadPipelineStoppedException : RuntimeException()

@@ -20,6 +20,9 @@ public abstract class HistoryDao {
     @Query("SELECT * FROM history_items ORDER BY completedAt DESC, id DESC")
     public abstract List<HistoryItemEntity> listAll();
 
+    @Query("SELECT * FROM history_items WHERE id = :id LIMIT 1")
+    public abstract HistoryItemEntity getById(long id);
+
     @Query("DELETE FROM history_items WHERE id = :id")
     public abstract int deleteById(long id);
 

@@ -221,6 +221,35 @@ class FormatSelectionModelTest {
     }
 
     @Test
+    fun unknownMetadataSingleFileShowsOneSelectedOriginalFormatRow() {
+        val analysis = analysisWith(unknownMetadataSingleFileFormat("video_url"))
+        val selection = defaultFormatSelection(analysis)
+        val rows = buildFormatResolutionRows(analysis, selection)
+
+        assertEquals(FormatMode.VideoOnly, selection.mode)
+        assertEquals(listOf("\u539f\u59cb\u683c\u5f0f"), rows.map { it.label })
+        assertEquals("video_url", rows.single().videoFormatId)
+        assertTrue(rows.single().selected)
+        assertEquals("\u539f\u59cb\u683c\u5f0f MP4 \u5355\u6587\u4ef6", rows.single().summary)
+    }
+
+    @Test
+    fun knownResolutionsRemainRecommendedWhenOriginalFormatAlsoExists() {
+        val analysis = analysisWith(
+            progressiveFormat(id = "18", height = 360),
+            unknownMetadataSingleFileFormat("video_url"),
+        )
+        val rows = buildFormatResolutionRows(analysis, defaultFormatSelection(analysis))
+
+        assertEquals(
+            listOf("\u81ea\u52a8\uff08\u63a8\u8350\uff09", "360p", "\u539f\u59cb\u683c\u5f0f"),
+            rows.map { it.label },
+        )
+        assertEquals("18", rows.single { it.selected }.videoFormatId)
+        assertTrue(rows.none { it.label.contains("null") })
+    }
+
+    @Test
     fun unknownCodecSingleFileDefaultsToVideoDownloadMode() {
         val analysis = analysisWith(unknownSingleFileFormat(id = "single-file", height = 1080))
 
@@ -365,6 +394,19 @@ class FormatSelectionModelTest {
         ext = "mp4",
         height = height,
         label = "${height}p",
+        hasVideo = true,
+        hasAudio = true,
+        mergeRequired = false,
+        isSupported = true,
+        videoCodec = null,
+        audioCodec = null,
+    )
+
+    private fun unknownMetadataSingleFileFormat(id: String) = VideoFormat(
+        id = id,
+        ext = "mp4",
+        height = null,
+        label = "\u539f\u59cb\u683c\u5f0f",
         hasVideo = true,
         hasAudio = true,
         mergeRequired = false,

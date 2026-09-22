@@ -30,6 +30,8 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.nio.file.Files
 
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
+@org.robolectric.annotation.Config(sdk = [35])
 class DownloadRequestRoutingTest {
     @get:Rule
     val temp = TemporaryFolder()
@@ -146,6 +148,34 @@ class DownloadRequestRoutingTest {
         assertEquals(DownloadRoute.DirectSingleFile(formatId = "single-file"), unknown.route)
         assertFalse(progressive.formatSummary.contains("18"))
         assertFalse(unknown.formatSummary.contains("single-file"))
+    }
+
+    @Test
+    fun unknownMetadataVideoUsesDirectSingleFileRoute() {
+        val format = VideoFormat(
+            id = "video_url",
+            ext = "mp4",
+            height = null,
+            label = "\u539f\u59cb\u683c\u5f0f",
+            hasVideo = true,
+            hasAudio = true,
+            mergeRequired = false,
+            isSupported = true,
+            videoCodec = null,
+            audioCodec = null,
+        )
+        val request = DownloadRequest.fromAnalysis(
+            url = TestUrl,
+            analysis = analysisWith(format),
+            selection = FormatSelection(
+                mode = FormatMode.VideoOnly,
+                selectedHeight = null,
+                selectedVideoFormatId = "video_url",
+            ),
+        ).getOrThrow()
+
+        assertEquals(DownloadRoute.DirectSingleFile("video_url"), request.route)
+        assertFalse(request.route is DownloadRoute.MergeRequired)
     }
 
     @Test
@@ -397,7 +427,7 @@ class DownloadRequestRoutingTest {
         val first = DownloadPipeline(RecordingDownloadEngine(temp.root), RecordingMediaProcessor())
             .run(request, outputRoot)
         val second = DownloadPipeline(RecordingDownloadEngine(temp.root), RecordingMediaProcessor())
-            .run(request, outputRoot)
+            .run(request.copy(taskId = "b".repeat(32)), outputRoot)
         val firstHistory = HistoryItemEntity.fromTaskState(first.state, "1080p", 1_000L)
         val secondHistory = HistoryItemEntity.fromTaskState(second.state, "1080p", 2_000L)
         val firstOutput = ExportController.discoverAppPrivateOutputUri(firstHistory.outputUri, outputRoot).getOrThrow()
@@ -538,7 +568,7 @@ class DownloadRequestRoutingTest {
         val engine = RecordingDownloadEngine(temp.root).apply {
             afterSubtitleDownload = {
                 temp.root.walkTopDown()
-                    .firstOrNull { it.isFile && it.extension.equals("mp4", ignoreCase = true) }
+                    .firstOrNull { it.isFile && it.name == "测试视频.mp4" }
                     ?.delete()
             }
         }
@@ -640,7 +670,7 @@ class DownloadRequestRoutingTest {
     }
 
     @Test
-    fun canceledYtdlpDownloadFailureMapsToCanceledState() {
+    fun canceledCallbackWithoutTypedStopIsAnOrdinaryFailure() {
         val request = DownloadRequest.fromAnalysis(
             url = TestUrl,
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
@@ -659,7 +689,7 @@ class DownloadRequestRoutingTest {
 
         val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root) { stages += it.stage }
 
-        assertEquals(DownloadStage.Canceled, result.state.stage)
+        assertEquals(DownloadStage.Failed, result.state.stage)
         assertFalse(stages.contains(DownloadStage.Completed))
     }
 

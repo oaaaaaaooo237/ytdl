@@ -134,6 +134,10 @@ def test_main_window_cancel_and_retry_queue_actions_restart_worker(qtbot, app_da
     assert window.download_page.status_label.text() == "只能重试已暂停、已取消或失败的任务。"
 
     window.queue_page.task_action_requested.emit(task_id, "cancel")
+    assert window.queue_page.table.item(0, 1).text() == "正在取消"
+    window.queue_page.task_action_requested.emit(task_id, "retry")
+    assert len(started_workers) == 1
+    started_workers[0].stopped.emit('cancel')
     assert window.queue_page.table.item(0, 1).text() == "已取消"
     assert window.download_page.status_label.text() == "下载已取消。"
 

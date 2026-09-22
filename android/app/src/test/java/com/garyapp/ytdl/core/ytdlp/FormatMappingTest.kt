@@ -74,6 +74,38 @@ class FormatMappingTest {
     }
 
     @Test
+    fun mapsUnknownMetadataVideoContainerAsOriginalSingleFile() {
+        val format = YtdlpBridge.mapFormat(
+            mapOf(
+                "format_id" to "video_url",
+                "ext" to "mp4",
+            ),
+        )
+
+        assertEquals(null, format.height)
+        assertEquals("\u539f\u59cb\u683c\u5f0f", format.label)
+        assertTrue(format.hasVideo)
+        assertTrue(format.hasAudio)
+        assertTrue(format.isSupported)
+        assertFalse(format.mergeRequired)
+    }
+
+    @Test
+    fun unknownMetadataAudioContainerRemainsUnsupported() {
+        val format = YtdlpBridge.mapFormat(
+            mapOf(
+                "format_id" to "audio_url",
+                "ext" to "mp3",
+            ),
+        )
+
+        assertEquals(null, format.height)
+        assertEquals("\u4e0d\u652f\u6301", format.label)
+        assertFalse(format.isSupported)
+        assertFalse(format.mergeRequired)
+    }
+
+    @Test
     fun blankCodecsRemainUnknownWhileExplicitNoneMeansAbsent() {
         val unknown = YtdlpBridge.mapFormat(
             mapOf(

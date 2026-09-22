@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,8 @@ def _choose_audio_video_format(formats: list[dict], preference: FormatPreference
         )
 
     if single_file_candidates:
-        return _single_file_choice(min(single_file_candidates, key=lambda item: _preference_penalty(item, preference)), preference)
+        known_resolution_candidates = [item for item in single_file_candidates if _number(item.get("height")) > 0]
+        return _single_file_choice(min(known_resolution_candidates or single_file_candidates, key=lambda item: _preference_penalty(item, preference)), preference)
 
     raise ValueError("没有可用的视频+音频格式")
 
@@ -191,7 +193,21 @@ def _codec_matches(item: dict, codec: str | None) -> bool:
 def _has_audio_video_codecs(item: dict) -> bool:
     vcodec = _normalized(item.get("vcodec"))
     acodec = _normalized(item.get("acodec"))
-    return bool(vcodec and acodec and vcodec != "none" and acodec != "none")
+    if vcodec == "none" or acodec == "none":
+        return False
+    if vcodec and acodec and _number(item.get("height")) > 0:
+        return True
+    # Some extractors return playable single files without codec metadata.
+    # Missing codecs mean unknown; only an explicit "none" means absent.
+    if not str(item.get("format_id") or "").strip():
+        return False
+    if _normalized(item.get("ext")) not in {"mp4", "webm", "mkv", "mov", "flv", "avi"}:
+        return False
+    try:
+        url = urlsplit(str(item.get("url") or ""))
+        return url.scheme in {"https", "http"} and bool(url.hostname)
+    except ValueError:
+        return False
 
 
 def _has_audio_only_codecs(item: dict) -> bool:
@@ -241,6 +257,11 @@ def _audio_container_matches(item: dict, container: str) -> bool:
 
 
 def _summary(item: dict) -> str:
+    if _has_audio_video_codecs(item) and (_number(item.get("height")) <= 0 or not item.get("vcodec") or not item.get("acodec")):
+        video_codec = item.get("vcodec") or "未知"
+        audio_codec = item.get("acodec") or "未知"
+        quality = f"{_number(item.get('height'))}p" if _number(item.get("height")) > 0 else "原始格式 / 分辨率：未知"
+        return f"{quality} {item.get('ext')} 单文件 视频编码：{video_codec} / 音频编码：{audio_codec}"
     vcodec = item.get("vcodec") or "unknown"
     acodec = item.get("acodec") or "unknown"
     ext = item.get("ext") or "unknown"

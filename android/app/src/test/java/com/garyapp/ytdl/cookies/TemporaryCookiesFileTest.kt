@@ -30,6 +30,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
+@org.robolectric.annotation.Config(sdk = [35])
 class TemporaryCookiesFileTest {
     @get:Rule
     val temp = TemporaryFolder()
@@ -298,7 +300,7 @@ class TemporaryCookiesFileTest {
             if (mode == EngineMode.Failure) {
                 return Result.failure(IllegalStateException("network failed Cookie: SID=secret"))
             }
-            val output = File(root, "download-$formatId.mp4").apply {
+            val output = File(outputDirectory, "download-$formatId.mp4").apply {
                 writeText("media")
             }
             if (mode == EngineMode.CleanupFailure) {

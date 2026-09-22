@@ -44,6 +44,7 @@ class NotificationController(
         }
 
         return builder
+            .addExtras(android.os.Bundle().apply { putString(DownloadService.ExtraTaskId, state.request?.taskId) })
             .setSmallIcon(R.drawable.ic_stat_ytdl_download)
             .setContentTitle("YTDL 下载任务")
             .setContentText(state.stage.notificationText())
@@ -57,9 +58,17 @@ class NotificationController(
                         Notification.Action.Builder(
                             Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
                             "取消",
-                            cancelPendingIntent(),
+                            actionPendingIntent(DownloadService.ActionCancel, state.request?.taskId, 2),
                         ).build(),
                     )
+                    if (state.stopReason != DownloadStopReason.UserCancel && (state.stage == DownloadStage.Paused || state.stage !in setOf(DownloadStage.Pausing, DownloadStage.WaitingForNetwork))) {
+                        val resume = state.stage == DownloadStage.Paused
+                        addAction(Notification.Action.Builder(
+                            Icon.createWithResource(context, android.R.drawable.ic_media_play),
+                            if (resume) "继续" else "暂停",
+                            actionPendingIntent(if (resume) DownloadService.ActionResume else DownloadService.ActionPause, state.request?.taskId, 3),
+                        ).build())
+                    }
                 }
             }
             .build()
@@ -70,10 +79,19 @@ class NotificationController(
         manager.notify(NotificationId, buildForegroundNotification(state))
     }
 
+    internal fun showsTask(taskId: String): Boolean =
+        context.getSystemService(NotificationManager::class.java).activeNotifications.any {
+            it.id == NotificationId && it.notification.extras.getString(DownloadService.ExtraTaskId) == taskId
+        }
+
     private fun DownloadStage.notificationText(): String {
         return when (this) {
             DownloadStage.Idle -> "空闲"
             DownloadStage.Analyzing -> "正在分析"
+            DownloadStage.Pausing -> "正在暂停"
+            DownloadStage.Paused -> "已暂停"
+            DownloadStage.WaitingForNetwork -> "等待网络"
+            DownloadStage.Resuming -> "正在继续"
             DownloadStage.Waiting -> "等待下载"
             DownloadStage.DownloadingVideo -> "正在下载视频"
             DownloadStage.DownloadingAudio -> "正在下载音频"
@@ -86,12 +104,14 @@ class NotificationController(
         }
     }
 
-    private fun cancelPendingIntent(): PendingIntent {
+    private fun actionPendingIntent(action: String, taskId: String?, requestCode: Int): PendingIntent {
         val intent = Intent(context, DownloadService::class.java)
-            .setAction(DownloadService.ActionCancel)
+            .setAction(action).putExtra(DownloadService.ExtraTaskId, taskId)
+            .setData(android.net.Uri.parse("ytdl://task/${taskId ?: "active"}/$action"))
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-        return PendingIntent.getService(context, 2, intent, flags)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) PendingIntent.getForegroundService(context, requestCode, intent, flags)
+        else PendingIntent.getService(context, requestCode, intent, flags)
     }
 
     private fun contentPendingIntent(): PendingIntent {

@@ -1,10 +1,12 @@
 package com.garyapp.ytdl.data;
 
 import androidx.room.Entity;
+import androidx.room.ColumnInfo;
 import androidx.room.Ignore;
+import androidx.room.Index;
 import androidx.room.PrimaryKey;
 
-@Entity(tableName = "queue_items")
+@Entity(tableName = "queue_items", indices = {@Index(value = {"taskId"}, unique = true)})
 public class QueueItemEntity {
     public static final String STATUS_QUEUED = "queued";
     public static final String STATUS_RUNNING = "running";
@@ -30,6 +32,16 @@ public class QueueItemEntity {
     public String errorSummary;
     public long createdAt;
     public long updatedAt;
+    public String taskId = java.util.UUID.randomUUID().toString().replace("-", "");
+    @ColumnInfo(defaultValue = "0")
+    public long queueOrder;
+    public String phase;
+    public String stopReason;
+    @ColumnInfo(defaultValue = "0")
+    public long downloadedBytes;
+    public Long totalBytes;
+    @ColumnInfo(defaultValue = "0")
+    public long checkpointAt;
 
     public QueueItemEntity() {
     }
@@ -105,7 +117,13 @@ public class QueueItemEntity {
     }
 
     QueueItemEntity sanitizedCopy() {
-        return new QueueItemEntity(
+        if (taskId == null || !taskId.matches("^[0-9a-f]{32}$")) {
+            throw new IllegalArgumentException("任务标识不可用。");
+        }
+        if (downloadedBytes < 0 || (totalBytes != null && totalBytes < 0) || checkpointAt < 0) {
+            throw new IllegalArgumentException("任务进度不可用。");
+        }
+        QueueItemEntity copy = new QueueItemEntity(
                 id,
                 PersistenceSanitizer.clean(title),
                 durationSeconds,
@@ -122,6 +140,21 @@ public class QueueItemEntity {
                 createdAt,
                 updatedAt
         );
+        copy.taskId = taskId;
+        copy.queueOrder = queueOrder;
+        copy.phase = safeState(phase);
+        copy.stopReason = safeState(stopReason);
+        copy.downloadedBytes = downloadedBytes;
+        copy.totalBytes = totalBytes;
+        copy.checkpointAt = checkpointAt;
+        return copy;
+    }
+
+    private static String safeState(String value) {
+        if (value != null && !value.matches("[A-Za-z][A-Za-z0-9_]{0,63}")) {
+            throw new IllegalArgumentException("任务状态不可用。");
+        }
+        return value;
     }
 
     @Override

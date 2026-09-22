@@ -1,13 +1,15 @@
 import ctypes
 import sys
+from PySide6.QtCore import QLockFile
 
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QMessageBox
 
 from ytdl_gui import __version__
 from ytdl_gui.config_store import ConfigStore
 from ytdl_gui.history_store import HistoryStore
 from ytdl_gui.paths import app_data_dir, app_icon_path
+from ytdl_gui.queue_store import QueueStore
 from ytdl_gui.ui.main_window import MainWindow
 from ytdl_gui.ui.theme import apply_light_theme
 
@@ -36,7 +38,7 @@ def configure_application_icon(app, window) -> QSystemTrayIcon | None:
     show_action = menu.addAction("显示主窗口")
     quit_action = menu.addAction("退出")
     show_action.triggered.connect(lambda: _restore_window(window))
-    quit_action.triggered.connect(app.quit)
+    quit_action.triggered.connect(window.close)
     tray.setContextMenu(menu)
     tray.activated.connect(lambda reason: _handle_tray_activation(reason, window))
     tray.show()
@@ -76,7 +78,16 @@ def run() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     apply_light_theme(app)
     data_dir = app_data_dir()
-    window = MainWindow(config_store=ConfigStore(data_dir), history_store=HistoryStore(data_dir))
+    data_dir.mkdir(parents=True, exist_ok=True)
+    profile_lock = QLockFile(str(data_dir / 'profile.lock'))
+    profile_lock.setStaleLockTime(0)
+    if not profile_lock.tryLock(0):
+        QMessageBox.information(None, '程序已运行', '同一用户数据目录已有运行中的实例，请使用原窗口。')
+        return 1
+    window = MainWindow(config_store=ConfigStore(data_dir), history_store=HistoryStore(data_dir),
+                        queue_store=QueueStore(data_dir))
+    window.watch_network()
+    app.aboutToQuit.connect(window.shutdown_for_quit)
     configure_application_icon(app, window)
     window.show()
     window.maybe_startup_update_check()

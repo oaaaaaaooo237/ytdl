@@ -148,10 +148,15 @@ import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.DownloadStage
 import com.garyapp.ytdl.download.DownloadTaskState
+import com.garyapp.ytdl.download.ResumeTaskItem
+import com.garyapp.ytdl.download.DownloadService
 import com.garyapp.ytdl.download.FileRetryDraftStore
 import com.garyapp.ytdl.download.NotificationController
 import com.garyapp.ytdl.download.RetryDownloadDraft
 import com.garyapp.ytdl.download.RetryDraftStore
+import com.garyapp.ytdl.download.AndroidHistorySafDocuments
+import com.garyapp.ytdl.download.HistoryFileDeleteFailure
+import com.garyapp.ytdl.download.HistoryFileDeletion
 import com.garyapp.ytdl.download.deleteHistoryWithRetryPayload
 import com.garyapp.ytdl.storage.ExportController
 import com.garyapp.ytdl.storage.CacheClearResult
@@ -770,6 +775,7 @@ internal fun YtdlApp(
     var appSettings by remember { mutableStateOf(settingsRepository.getSettings()) }
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
     var pendingDownloadRequests by remember { mutableStateOf(emptyList<DownloadRequest>()) }
+    var savedDownloadTasks by remember { mutableStateOf(emptyList<ResumeTaskItem>()) }
     var pendingDeleteHistoryItem by remember { mutableStateOf<HistoryUiItem?>(null) }
     var parserUpdateRevision by remember { mutableStateOf(-1L) }
     var parserUpdateState by remember { mutableStateOf(ParserUpdateState()) }
@@ -1024,12 +1030,17 @@ internal fun YtdlApp(
                 pendingDownloadRequests = requests
             }
         }
+        val savedSubscription = DownloadCoordinator.addSavedListener { tasks ->
+            mainHandler.post { if (!disposed) savedDownloadTasks = tasks }
+        }
+        Thread { runCatching { DownloadCoordinator.restore(context.applicationContext) } }.start()
         onDispose {
             disposed = true
             versionOperationSubscription.close()
             parserSubscription.close()
             subscription.close()
             pendingSubscription.close()
+            savedSubscription.close()
         }
     }
 
@@ -1182,9 +1193,11 @@ internal fun YtdlApp(
             )
             return
         }
-        val request = requestResult.getOrThrow()
+        val request = requestResult.getOrThrow().copy(storageTarget = settingsRepository.getSettings().defaultStorageTarget)
         val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
+        Thread {
         val startResult = downloadStarter(context.applicationContext, request, outputDir)
+        mainHandler.post {
         runtimeState = startResult.fold(
             onSuccess = { waiting ->
                 hasUserConfirmed = false
@@ -1202,6 +1215,8 @@ internal fun YtdlApp(
                 }
             },
         )
+        }
+        }.start()
     }
 
     fun reanalyzeRetryDraft(draft: RetryDownloadDraft) {
@@ -1294,26 +1309,45 @@ internal fun YtdlApp(
         }
     }
 
-    fun deleteHistoryItem(item: HistoryUiItem) {
+    fun deleteHistoryItem(item: HistoryUiItem, deleteFiles: Boolean) {
         Thread {
-            val deleteResult = deleteHistoryWithRetryPayload(
-                historyId = item.id,
-                retryStore = retryDraftStore,
-            ) {
-                YtdlDatabaseProvider.get(context.applicationContext)
-                    .historyDao()
-                    .deleteById(item.id)
+            val database = YtdlDatabaseProvider.get(context.applicationContext)
+            val historyDao = database.historyDao()
+            val removeRecord = {
+                deleteHistoryWithRetryPayload(item.id, retryDraftStore, { historyDao.deleteById(item.id) },
+                    beforeDeleteFiles = {
+                        val selected = historyDao.getById(item.id)
+                        if (selected == null) Result.failure(IllegalStateException("历史记录已不存在。"))
+                        else HistoryFileDeletion(
+                            java.io.File(context.filesDir, "gui-downloads"),
+                            java.io.File(context.cacheDir, "gui-downloads"),
+                            AndroidHistorySafDocuments(context.applicationContext),
+                        ).delete(selected, historyDao.listAll(),
+                            database.queueDao().listNonTerminal().map { it.taskId }.toSet()).map { Unit }
+                    })
+            }
+            val idleResult = if (deleteFiles) DownloadCoordinator.runWhenIdle(removeRecord)
+                else IdleDownloadActionResult.Executed(deleteHistoryWithRetryPayload(item.id, retryDraftStore,
+                    deleteHistory = { historyDao.deleteById(item.id) }))
+            val deleteResult = when (idleResult) {
+                is IdleDownloadActionResult.Executed -> idleResult.value
+                IdleDownloadActionResult.ActiveDownload -> Result.failure(IllegalStateException("下载任务正在执行。"))
             }
             val deleted = deleteResult.getOrDefault(0)
-            val rows = YtdlDatabaseProvider.get(context.applicationContext)
-                .historyDao()
-                .listRecent(50)
+            val rows = historyDao.listRecent(50)
             val items = historyUiItemsFromRows(rows, retryDraftStore::isAvailable)
             mainHandler.post {
                 historyItems = items
                 runtimeState = runtimeState.copy(
                     userMessage = when {
+                        idleResult == IdleDownloadActionResult.ActiveDownload -> "正在下载或导出，请稍后再删除文件。"
+                        deleteResult.exceptionOrNull() is HistoryFileDeleteFailure &&
+                            (deleteResult.exceptionOrNull() as HistoryFileDeleteFailure).deletedCount > 0 ->
+                            "部分文件已删除，历史记录已保留，请检查后重试。"
+                        deleteResult.exceptionOrNull() is HistoryFileDeleteFailure ->
+                            "文件未删除，历史记录已保留，请检查权限、共享引用或任务状态。"
                         deleteResult.isFailure -> "删除失败，请重试。"
+                        deleted > 0 && deleteFiles -> "已删除历史记录，关联文件已处理。"
                         deleted > 0 -> "已删除历史记录。"
                         else -> "历史记录已不存在。"
                     },
@@ -1420,8 +1454,9 @@ internal fun YtdlApp(
                             historyQuery = historyQuery,
                             selectedFilterIndex = historyFilterIndex,
                             userMessage = runtimeState.userMessage,
-                            onCancelDownload = {
-                                DownloadCoordinator.cancelActive()
+                            onCancelDownload = { taskId ->
+                                context.startService(Intent(context, DownloadService::class.java).setAction(DownloadService.ActionCancel)
+                                    .putExtra(DownloadService.ExtraTaskId, taskId))
                                 runtimeState = runtimeState.copy(userMessage = "已请求取消当前下载。")
                             },
                             onHistoryQueryChange = { historyQuery = it },
@@ -1430,6 +1465,22 @@ internal fun YtdlApp(
                             onShare = ::shareHistoryItem,
                             onRetry = ::retryHistoryItem,
                             onDelete = ::requestDeleteHistoryItem,
+                            savedTasks = savedDownloadTasks,
+                            onPauseDownload = { taskId ->
+                                context.startService(Intent(context, DownloadService::class.java).setAction(DownloadService.ActionPause)
+                                    .putExtra(DownloadService.ExtraTaskId, taskId))
+                            },
+                            onResumeTask = { id -> Thread {
+                                val result = DownloadCoordinator.resume(context.applicationContext, id)
+                                mainHandler.post { if (result.isFailure) runtimeState = runtimeState.copy(userMessage = "继续下载失败，任务已保留，请重试。") }
+                            }.start() },
+                            onCancelSavedTask = { id -> Thread {
+                                val result = DownloadCoordinator.cancelSaved(context.applicationContext, id)
+                                mainHandler.post {
+                                    if (result.isSuccess) refreshHistory()
+                                    else runtimeState = runtimeState.copy(userMessage = "取消尚未完成，任务已保留，请重试。")
+                                }
+                            }.start() },
                         )
                         "settings" -> settingsPageItems(
                             settings = appSettings,
@@ -1666,35 +1717,57 @@ internal fun YtdlApp(
         }
         val deleteTarget = pendingDeleteHistoryItem
         if (deleteTarget != null) {
-            AlertDialog(
-                modifier = Modifier
-                    .semantics { testTagsAsResourceId = true }
-                    .testTag("ytdl-history-delete-dialog"),
-                onDismissRequest = { pendingDeleteHistoryItem = null },
-                title = { Text("确认删除历史记录") },
-                text = { Text("将删除“${deleteTarget.title}”的历史记录，不会删除已保存的文件。") },
-                confirmButton = {
-                    TextButton(
-                        modifier = Modifier.testTag("ytdl-history-delete-confirm"),
-                        onClick = {
-                            pendingDeleteHistoryItem = null
-                            deleteHistoryItem(deleteTarget)
-                        },
-                    ) {
-                        Text("删除")
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        modifier = Modifier.testTag("ytdl-history-delete-cancel"),
-                        onClick = { pendingDeleteHistoryItem = null },
-                    ) {
-                        Text("取消")
-                    }
-                },
-            )
+            HistoryDeleteDialog(deleteTarget, onDismiss = { pendingDeleteHistoryItem = null },
+                onConfirm = { includeFiles ->
+                    pendingDeleteHistoryItem = null
+                    deleteHistoryItem(deleteTarget, includeFiles)
+                })
         }
     }
+}
+
+@Composable
+internal fun HistoryDeleteDialog(
+    item: HistoryUiItem,
+    onDismiss: () -> Unit,
+    onConfirm: (Boolean) -> Unit,
+) {
+    var includeFiles by remember(item.id) { mutableStateOf(false) }
+    var submitted by remember(item.id) { mutableStateOf(false) }
+    AlertDialog(
+        modifier = Modifier.semantics { testTagsAsResourceId = true }.testTag("ytdl-history-delete-dialog"),
+        onDismissRequest = { if (!submitted) onDismiss() },
+        title = { Text("确认删除历史记录") },
+        text = {
+            Column {
+                Text("将删除“${item.title}”的历史记录。")
+                Row {
+                    Checkbox(
+                        checked = includeFiles,
+                        onCheckedChange = { includeFiles = it },
+                        modifier = Modifier.testTag("ytdl-history-delete-files"),
+                    )
+                    Text("同时删除下载文件")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                modifier = Modifier.testTag("ytdl-history-delete-confirm"),
+                enabled = !submitted,
+                onClick = {
+                    if (!submitted) {
+                        submitted = true
+                        onConfirm(includeFiles)
+                    }
+                },
+            ) { Text("删除") }
+        },
+        dismissButton = {
+            TextButton(modifier = Modifier.testTag("ytdl-history-delete-cancel"),
+                enabled = !submitted, onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 internal fun RuntimeDownloadState.withAnalysisForUiTest(analysis: VideoAnalysis): RuntimeDownloadState = withAnalysisResult(analysis)
@@ -1784,14 +1857,15 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
         )
     }
     val sameDownloadStage = activeRequest == state.request && activeStage == state.stage
-    val reportedTotalBytes = progress?.totalBytes?.takeIf { it > 0L }
+    val downloadedBytes = progress?.downloadedBytes ?: 0L
+    val reportedTotalBytes = progress?.totalBytes?.takeIf { it > 0L && it >= downloadedBytes }
     val stableTotalBytes = when {
         state.stage in TerminalDownloadStages -> mediaOutput?.bytesWritten
-        sameDownloadStage -> totalBytes?.takeIf { it > 0L } ?: reportedTotalBytes
+        sameDownloadStage -> totalBytes?.takeIf { it > 0L && it >= downloadedBytes } ?: reportedTotalBytes
         else -> reportedTotalBytes
     }
     return copy(
-        isDownloading = state.stage !in TerminalDownloadStages,
+        isDownloading = state.stage !in TerminalDownloadStages && state.stage != DownloadStage.Paused,
         userMessage = when (state.stage) {
             DownloadStage.Failed -> if (mediaOutput != null) {
                 "文件已保存，但${foregroundFailureReason(state.errorMessage, mediaSaved = true)}"
@@ -1800,7 +1874,7 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
             }
             DownloadStage.Canceled -> "下载已取消。"
             DownloadStage.Completed -> "下载完成"
-            else -> "正在$statusText..."
+            else -> state.statusMessage ?: "正在$statusText..."
         },
         downloadStatus = statusText,
         activeRequest = state.request,
@@ -3053,13 +3127,17 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     historyQuery: String,
     selectedFilterIndex: Int,
     userMessage: String,
-    onCancelDownload: () -> Unit,
+    onCancelDownload: (String?) -> Unit,
     onHistoryQueryChange: (String) -> Unit,
     onHistoryFilterChange: (Int) -> Unit,
     onOpen: (HistoryUiItem) -> Unit,
     onShare: (HistoryUiItem) -> Unit,
     onRetry: (HistoryUiItem) -> Unit,
     onDelete: (HistoryUiItem) -> Unit,
+    savedTasks: List<ResumeTaskItem> = emptyList(),
+    onPauseDownload: (String?) -> Unit = {},
+    onResumeTask: (String) -> Unit = {},
+    onCancelSavedTask: (String) -> Unit = {},
 ) {
     val hasCurrentTask = shouldShowCurrentTask(state)
     item {
@@ -3101,7 +3179,8 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                     stageItems = queueStageItems(state),
                     accent = queueCardAccent(state, palette),
                     thumbnailBitmap = state.thumbnailBitmap,
-                    onCancel = onCancelDownload,
+                    onCancel = { onCancelDownload(state.activeRequest?.taskId) },
+                    onPause = if (state.activeStage in setOf(DownloadStage.Pausing, DownloadStage.WaitingForNetwork)) null else { { onPauseDownload(state.activeRequest?.taskId) } },
                 )
             }
         }
@@ -3129,6 +3208,25 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                     accent = palette.queueAccent,
                     modifier = Modifier.testTag("ytdl-pending-queue-card-$index"),
                 )
+            }
+        }
+    }
+    if (savedTasks.isNotEmpty()) {
+        item { SectionTitle("已暂停（${savedTasks.size}）") }
+        savedTasks.forEach { task ->
+            item(key = "saved-${task.taskId}") {
+                AppCard(modifier = Modifier.testTag("ytdl-saved-task-${task.taskId}")) {
+                    TaskCardTitle(task.title, "ytdl-saved-task-title-${task.taskId}")
+                    Text(task.recoveryError ?: task.state.statusMessage ?: "已暂停，点击继续。")
+                    Text("已下载 ${formatBytes(task.state.progress?.downloadedBytes ?: 0L)}" +
+                        (task.state.progress?.totalBytes?.let { " / ${formatBytes(it)}" } ?: ""))
+                    YtdlQueueProgressBar(QueueProgressPresentation(task.state.progress?.percent?.let { (it / 100).toFloat().coerceIn(0f, 1f) }, false),
+                        LocalYtdlAppPalette.current.queueAccent, Modifier.fillMaxWidth())
+                    Row {
+                        if (task.recoveryError == null) TextButton(onClick = { onResumeTask(task.taskId) }) { Text("继续") }
+                        TextButton(onClick = { onCancelSavedTask(task.taskId) }) { Text("取消") }
+                    }
+                }
             }
         }
     }
@@ -3687,6 +3785,7 @@ private fun QueueCard(
     modifier: Modifier = Modifier,
     thumbnailBitmap: Bitmap? = null,
     onCancel: (() -> Unit)? = null,
+    onPause: (() -> Unit)? = null,
 ) {
     val palette = LocalYtdlAppPalette.current
     AppCard(modifier = modifier) {
@@ -3733,6 +3832,10 @@ private fun QueueCard(
                 if (supportingText.isNotBlank()) {
                     Text(supportingText, color = palette.softText, style = MaterialTheme.typography.labelSmall)
                 }
+                Row {
+                if (onPause != null) {
+                    TextButton(onClick = onPause, modifier = Modifier.height(36.dp).testTag("ytdl-queue-pause-action")) { Text("暂停") }
+                }
                 if (onCancel != null) {
                     Box(
                         modifier = Modifier
@@ -3750,6 +3853,7 @@ private fun QueueCard(
                             fontWeight = FontWeight.Bold,
                         )
                     }
+                }
                 }
             }
             CardTrailingBadges(

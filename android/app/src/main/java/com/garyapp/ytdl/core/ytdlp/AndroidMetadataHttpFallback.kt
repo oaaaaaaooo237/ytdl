@@ -15,15 +15,19 @@ class AndroidMetadataHttpFallback(
     private val bodyEncoder: (ByteArray) -> String = { body ->
         Base64.encodeToString(body, Base64.NO_WRAP)
     },
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     @Suppress("unused")
     fun fetch(url: String, headersJson: String): String {
         var currentUrl = validatedInitialHttpsUrl(url)
             ?: return failureJson()
+        val startedAt = monotonicMillis()
+        fun remainingMillis(): Int = (REQUEST_TIMEOUT_MS - (monotonicMillis() - startedAt)).coerceAtLeast(0).toInt()
         var redirectCount = 0
         var includeSensitiveHeaders = true
 
         while (true) {
+            if (remainingMillis() == 0) return failureJson()
             val connection = try {
                 connectionFactory(currentUrl)
             } catch (_: Exception) {
@@ -32,10 +36,13 @@ class AndroidMetadataHttpFallback(
             try {
                 val status = try {
                     configure(connection, headersJson, includeSensitiveHeaders)
+                    connection.connectTimeout = remainingMillis().coerceAtLeast(1)
+                    connection.readTimeout = remainingMillis().coerceAtLeast(1)
                     connection.responseCode
                 } catch (_: Exception) {
                     return failureJson()
                 }
+                if (remainingMillis() == 0) return failureJson()
                 if (status in REDIRECT_STATUS_CODES) {
                     if (redirectCount >= MAX_REDIRECTS) {
                         return failureJson()
@@ -77,7 +84,11 @@ class AndroidMetadataHttpFallback(
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         var total = 0
                         while (true) {
+                            val remaining = remainingMillis()
+                            if (remaining == 0) return failureJson()
+                            connection.readTimeout = remaining
                             val count = input.read(buffer)
+                            if (remainingMillis() == 0) return failureJson()
                             if (count < 0) break
                             total += count
                             if (total > maxResponseBytes) {
@@ -204,8 +215,9 @@ class AndroidMetadataHttpFallback(
 
     companion object {
         private const val DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
-        private const val CONNECT_TIMEOUT_MS = 15_000
-        private const val READ_TIMEOUT_MS = 20_000
+        private const val REQUEST_TIMEOUT_MS = 10_000L
+        private const val CONNECT_TIMEOUT_MS = 10_000
+        private const val READ_TIMEOUT_MS = 10_000
         private const val MAX_REDIRECTS = 3
 
         private val REDIRECT_STATUS_CODES = setOf(301, 302, 303, 307, 308)

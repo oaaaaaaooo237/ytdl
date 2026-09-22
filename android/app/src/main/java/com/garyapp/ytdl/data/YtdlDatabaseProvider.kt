@@ -14,7 +14,7 @@ object YtdlDatabaseProvider {
                 YtdlDatabase::class.java,
                 "ytdl.db",
             )
-                .addMigrations(HistoryItemEntity.MIGRATION_1_2, HistoryItemEntity.MIGRATION_2_3)
+                .addMigrations(HistoryItemEntity.MIGRATION_1_2, HistoryItemEntity.MIGRATION_2_3, YtdlDatabase.MIGRATION_3_4)
                 .build()
                 .also { instance = it }
         }

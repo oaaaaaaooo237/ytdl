@@ -128,3 +128,12 @@
 - Python bridge `20/20`、Python 全量 `275/275`、Android JVM `386/386` 通过；`:app:assembleDebug --no-parallel` 和 `:app:assembleDebugAndroidTest --no-parallel` 成功。NoodleMagazine、Pornhub、Eporner 和 YouTube 四项真实地址仪器测试均为 `OK (1 test)`，只分析标题与格式，没有下载。
 - 唯一可见 API37 模拟器中，NoodleMagazine 地址通过底部完整 Gboard 逐键输入，每键间隔至少 `0.22` 秒、键盘页切换等待 `0.7` 秒；核对完整地址后点击分析，前台显示标题 `Group of girls at pool party 4`、时长 `53:01` 和 `360p/240p` 格式。设置页前台显示解析器 `2026.7.4` 和应用版本 `1.0.2`。
 - 本地发布目录只放一个可安装包：`dist/android/1.0.2-latest/ytdl-android-1.0.2-debug.apk`，大小 `55,916,157` bytes，SHA-256 `A818574D3DB9E5DE66B0639389589D8141A4B4DC1118F04BE06EAA7B16ABC6E8`；`aapt2` 确认版本 `1.0.2 (3)`，Android debug 证书 v2 签名校验通过。
+
+### 2026-07-17 Android 1.0.3 未知元数据单文件续作
+
+- 该续作与 1.0.2 隔离在 `codex/android-unknown-single-file-1.0.3`。Python 返回的空分辨率和空编解码字段保持原样；Kotlin 仅对有格式 ID 的常见视频容器显示“原始格式”。
+- “原始格式”只进入视频单文件路线，不参加视频+音频合并，不猜测分辨率或编码；与已知清晰度同时存在时，已知格式继续保持自动推荐。
+- 本轮没有改动 Android 原生元数据网络、Python 回退、Eporner 协议修正规则、解析器版本管理或媒体下载网络。
+- Python bridge `20/20`、Android JVM `391/391` 和 debug APK 构建通过；真实页面后台分析得到 1 个元数据不完整的 `video_url` MP4，未下载媒体。
+- 代码审计未发现站点专用分支、重复网络逻辑、临时探针、无用导入或新增敏感信息输出。
+- 当前没有在线设备或模拟器，因此本节只记录后台验证；解锁后仍需在唯一可见模拟器中前台确认“原始格式”的显示、选择和下载启动。

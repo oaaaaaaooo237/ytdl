@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import socket
 import urllib.parse
 
 import yt_dlp
@@ -25,7 +26,13 @@ class AndroidYoutubeDL(yt_dlp.YoutubeDL):
         self._android_metadata_origin = None
         super().__init__(*args, **kwargs)
 
+    def _check_download_stop(self):
+        # Reuse the progress callback solely as a stop probe before metadata I/O.
+        for hook in self.params.get("progress_hooks") or ():
+            hook({"status": "checking"})
+
     def urlopen(self, request):
+        self._check_download_stop()
         if isinstance(request, str):
             request = _upgrade_eporner_metadata_url(request)
         else:
@@ -38,16 +45,27 @@ class AndroidYoutubeDL(yt_dlp.YoutubeDL):
             {} if isinstance(request, str) else dict(getattr(request, "headers", {}) or {})
         )
         native_response = self._try_android_metadata_request(request, request_headers)
+        self._check_download_stop()
         if native_response is not None:
             return native_response
         try:
-            return super().urlopen(request)
+            response = super().urlopen(request)
+            try:
+                self._check_download_stop()
+            except Exception:
+                close = getattr(response, "close", None)
+                if close:
+                    close()
+                raise
+            return response
         except HTTPError as exc:
+            self._check_download_stop()
             response = self._try_android_m3u8_precondition_retry(
                 request,
                 exc,
                 request_headers,
             )
+            self._check_download_stop()
             if response is None:
                 raise
             exc.close()
@@ -201,6 +219,10 @@ def download_single_file(
         "format": "18/worst[ext=mp4]/worst",
         "outtmpl": os.path.join(output_dir, "download-%(id)s.%(ext)s"),
         "progress_hooks": [progress_hook],
+        "socket_timeout": 10,
+        "retries": 1,
+        "fragment_retries": 1,
+        "extractor_retries": 1,
         "continuedl": True,
         "nopart": False,
     }
@@ -267,6 +289,10 @@ def download_format(
                 f"download-%(id)s-%(format_id)s-{normalized_role}.%(ext)s",
             ),
             "progress_hooks": [progress_hook],
+            "socket_timeout": 10,
+            "retries": 1,
+            "fragment_retries": 1,
+            "extractor_retries": 1,
             "continuedl": True,
             "nopart": False,
         }
@@ -338,6 +364,10 @@ def download_subtitle(
             "subtitlesformat": normalized_ext,
             "outtmpl": os.path.join(output_dir, f"download-%(id)s-subtitle-{normalized_source}.%(ext)s"),
             "progress_hooks": [progress_hook],
+            "socket_timeout": 10,
+            "retries": 1,
+            "fragment_retries": 1,
+            "extractor_retries": 1,
             "continuedl": True,
             "nopart": False,
         }
@@ -603,25 +633,41 @@ def _error_category(exc):
     text = str(exc).lower()
     if "canceled" in text or "cancelled" in text or "取消" in text:
         return "canceled"
+    # An HTTP response is a site response, not proof of lost connectivity.
+    http_status = re.search(r"\bhttp\s*(?:(?:error|status)(?:\s+code)?)?\s*[:=]?\s*(\d{3})\b", text)
+    if http_status:
+        status = int(http_status.group(1))
+        if status in (401, 403):
+            return "permission"
+        if status in (404, 410):
+            return "unsupported"
+        return "unknown"
+    if "format id" in text or "requested format is not available" in text or "role must be" in text:
+        return "unsupported"
     if (
-        "network" in text
+        isinstance(exc, (ConnectionError, TimeoutError, socket.gaierror))
         or "timed out" in text
         or "timeout" in text
         or "remote end closed connection" in text
-        or "http error 403" in text
-        or "forbidden" in text
+        or "connection reset" in text
+        or "connection refused" in text
+        or "connection aborted" in text
+        or "name or service not known" in text
+        or "name resolution" in text
+        or "getaddrinfo failed" in text
+        or "no route to host" in text
     ):
         return "network"
     if "unsupported" in text or "no suitable extractor" in text:
         return "unsupported"
     if "subtitle" in text or "subtitles" in text or "language" in text or "extension" in text:
         return "unsupported"
-    if "private" in text or "sign in" in text or "login" in text or "permission" in text:
+    if any(word in text for word in ("private", "sign in", "login", "permission", "forbidden", "unauthorized")):
         return "permission"
-    if "format id" in text or "role" in text:
-        return "unsupported"
     if "extractor" in text or "parser" in text or "unable to extract" in text:
         return "parser"
+    if "network" in text:
+        return "network"
     return "unknown"
 
 

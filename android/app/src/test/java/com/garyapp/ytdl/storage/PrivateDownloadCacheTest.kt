@@ -44,6 +44,21 @@ class PrivateDownloadCacheTest {
     }
 
     @Test
+    fun pausedTaskWithoutOutputUriProtectsWholeDirectory() {
+        val row = queueItem("暂停任务", "").apply { status = "paused" }
+        database.queueDao().insert(row)
+        val task = File(privateRoot, "task-${row.taskId}").apply { mkdirs() }
+        ExportController.markPrivateTaskStarted(task).getOrThrow()
+        val part = File(task, "video.part").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val checkpoint = File(task, "checkpoint.bin").apply { writeBytes(byteArrayOf(4)) }
+        val cache = PrivateDownloadCache(privateRoot, database.queueDao(), database.historyDao())
+        assertEquals(CacheStats(0, 0), cache.inspect())
+        assertEquals(CacheClearResult.Success(0, 0), cache.clear())
+        assertTrue(part.isFile)
+        assertTrue(checkpoint.isFile)
+    }
+
+    @Test
     fun inspectAndClearDeleteOnlyUnreferencedTemporaryFiles() {
         val media = File(privateRoot, "task-1/video.mp4").writeBytesAfterCreating(byteArrayOf(1, 2, 3))
         val subtitle = File(privateRoot, "task-1/video.zh.srt").writeBytesAfterCreating(byteArrayOf(4, 5, 6, 7))

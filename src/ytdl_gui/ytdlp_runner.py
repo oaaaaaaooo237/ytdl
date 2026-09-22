@@ -92,6 +92,7 @@ class YtdlpCommandBuilder:
         cookies_path: Path | None = None,
         subtitle_action: str = "none",
         ffmpeg_path: Path | None = None,
+        temp_dir: Path | None = None,
     ) -> list[str]:
         command = [
             str(self.executable),
@@ -100,10 +101,13 @@ class YtdlpCommandBuilder:
             "-f",
             format_id,
             "-o",
-            str(output_template),
+            output_template.name if temp_dir is not None else str(output_template),
             "--print",
             "after_move:filepath",
         ]
+        command.extend(['--continue', '--part', '--socket-timeout', '15', '--retries', '2', '--fragment-retries', '2', '--no-playlist'])
+        if temp_dir is not None:
+            command.extend(['-P', 'home:' + str(output_template.parent), '-P', 'temp:' + str(temp_dir)])
         if subtitle_action in {"file", "embed", "burn"}:
             command.extend(["--write-subs", "--write-auto-subs", "--sub-langs", DEFAULT_SUBTITLE_LANGS])
         if subtitle_action == "embed":
