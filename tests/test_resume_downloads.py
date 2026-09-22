@@ -180,6 +180,52 @@ def test_failed_save_prevents_download(qtbot, tmp_path, monkeypatch):
     assert '保存失败' in window.download_page.status_label.text()
 
 
+@pytest.mark.parametrize('initial_state', ['running', 'paused', 'pause_requested', 'waiting_network'])
+def test_cancel_button_stops_task_and_removes_it_from_recovery(qtbot, tmp_path, initial_state):
+    window, started = window_fixture(qtbot, tmp_path)
+    window.start_download()
+    task = next(iter(window._download_task_states))
+    worker = started[0]
+    part = tmp_path / 'retained.mp4.part'
+    part.write_bytes(b'keep partial data')
+    if initial_state in {'paused', 'pause_requested'}:
+        window.pause_queue_task(task)
+        if initial_state == 'paused':
+            worker.stopped.emit('pause')
+    elif initial_state == 'waiting_network':
+        worker.network_failed.emit()
+    window.queue_page._task_cards[task]['cancel'].click()
+    if initial_state in {'running', 'pause_requested'}:
+        assert window._download_task_states[task] == 'cancel_requested'
+        assert task in window.queue_page._task_cards
+        # An already queued pause completion must not override a later cancel.
+        worker.stopped.emit('pause' if initial_state == 'pause_requested' else 'cancel')
+    assert window._download_task_states[task] == 'canceled'
+    assert window.queue_page.table.rowCount() == 0
+    assert task not in window.queue_page._task_cards
+    assert task not in window._download_workers_by_task
+    assert store_module().QueueStore(tmp_path).load() == {}
+    assert part.read_bytes() == b'keep partial data'
+    worker.stopped.emit('pause')
+    worker.failed.emit('late failure')
+    assert window._download_task_states[task] == 'canceled'
+    assert task not in window.queue_page._task_cards
+
+
+def test_cancel_racing_with_download_completion_removes_card_and_keeps_file(qtbot, tmp_path):
+    window, started = window_fixture(qtbot, tmp_path)
+    window.start_download()
+    task = next(iter(window._download_task_states))
+    output = tmp_path / 'finished.mp4'
+    output.write_bytes(b'keep downloaded file')
+    window.cancel_queue_task(task)
+    started[0].finished.emit(str(output))
+    assert window._download_task_states[task] == 'canceled'
+    assert task not in window.queue_page._task_cards
+    assert output.read_bytes() == b'keep downloaded file'
+    assert store_module().QueueStore(tmp_path).load() == {}
+
+
 def test_network_return_only_restarts_waiting_tasks(qtbot, tmp_path):
     window, started = window_fixture(qtbot, tmp_path)
     window.start_download()

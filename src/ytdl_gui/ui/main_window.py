@@ -1197,9 +1197,9 @@ class MainWindow(QWidget):
             if 'Unable to resume' in event.raw:
                 self.queue_page.show_notice('此来源不支持续传，正在重新下载当前文件；其他已完成文件保留。')
             return
-        self._download_context_by_task.setdefault(task_id, {})['progress'] = event.percent
         if self._download_task_states.get(task_id) != 'running':
             return
+        self._download_context_by_task.setdefault(task_id, {})['progress'] = event.percent
         self.queue_page.update_task(task_id, status="下载中", progress=event.percent, speed=event.speed, eta=event.eta)
         now = time.monotonic()
         if self.queue_store is not None and now - self._progress_saved_at >= 1:
@@ -1212,6 +1212,9 @@ class MainWindow(QWidget):
     def finish_download(self, task_id: str, output_path: str = "") -> None:
         if not self._is_ui_thread():
             self._run_on_ui_thread(lambda task_id=task_id, output_path=output_path: self.finish_download(task_id, output_path))
+            return
+        if self._download_task_states.get(task_id) in {'cancel_requested', 'canceled'}:
+            self.download_stopped(task_id, 'cancel')
             return
         self._download_workers_by_task.pop(task_id, None)
         self._download_task_states[task_id] = "finished"
@@ -1234,11 +1237,8 @@ class MainWindow(QWidget):
             return
         self._download_workers_by_task.pop(task_id, None)
         state = self._download_task_states.get(task_id, "")
-        if state == "cancel_requested":
-            self._download_task_states[task_id] = "canceled"
-            self.queue_page.update_task(task_id, status="已取消")
-            self.download_page.set_status("下载已取消。")
-            self._start_ready_download_workers()
+        if state in {"cancel_requested", "canceled"}:
+            self.download_stopped(task_id, 'cancel')
             return
         if state == "pause_requested":
             self._download_task_states[task_id] = "paused"
@@ -1261,7 +1261,7 @@ class MainWindow(QWidget):
             self._run_on_ui_thread(lambda: self.download_stopped(task_id, reason))
             return
         previous = self._download_task_states.get(task_id)
-        if previous == 'cancel_requested':
+        if previous in {'cancel_requested', 'canceled'}:
             reason = 'cancel'
         elif previous in {'pause_requested', 'exit_requested'}:
             reason = 'pause'
@@ -1269,7 +1269,10 @@ class MainWindow(QWidget):
         state, label = {'cancel': ('canceled', '已取消'), 'offline': ('waiting_network', '等待网络')}.get(reason, ('paused', '已暂停'))
         self._download_task_states[task_id] = state
         saved = self._save_queue()
-        self.queue_page.update_task(task_id, status=label)
+        if state == 'canceled':
+            self._remove_canceled_task_card(task_id)
+        else:
+            self.queue_page.update_task(task_id, status=label)
         if saved:
             self.download_page.set_status({'paused': '下载已暂停，可继续。', 'canceled': '下载已取消。',
                                            'waiting_network': '连接已中断，等待网络恢复；也可点击继续重试。'}[state])
@@ -1325,8 +1328,20 @@ class MainWindow(QWidget):
             worker.stop(reason)
             QTimer.singleShot(5000, lambda task=task_id: self._show_stop_delay(task))
         else:
-            self.queue_page.update_task(task_id, status='已取消' if reason == 'cancel' else '已暂停')
+            if reason == 'cancel':
+                self._remove_canceled_task_card(task_id)
+            else:
+                self.queue_page.update_task(task_id, status='已暂停')
             self.download_page.set_status('下载已取消。' if reason == 'cancel' else '下载已暂停，可继续。')
+
+    def _remove_canceled_task_card(self, task_id):
+        # Retain the canceled state as a tombstone for late worker signals.
+        self.queue_page.remove_tasks([task_id])
+        self._download_requests_by_task.pop(task_id, None)
+        self._download_context_by_task.pop(task_id, None)
+        self._pending_download_status_by_task.pop(task_id, None)
+        self._remove_pending_download_task(task_id)
+        self.queue_page.show_notice('任务已取消并移出队列，已下载文件保留。')
 
     def _show_stop_delay(self, task_id):
         if task_id in self._download_workers_by_task and self._download_task_states.get(task_id, '').endswith('_requested'):

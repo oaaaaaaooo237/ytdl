@@ -98,7 +98,7 @@ def test_main_window_adds_analysis_thumbnail_to_queue_card(qtbot, app_data_dir: 
     assert thumb.pixmap() is not None and not thumb.pixmap().isNull()
 
 
-def test_main_window_cancel_and_retry_queue_actions_restart_worker(qtbot, app_data_dir: Path):
+def test_main_window_cancel_removes_task_and_does_not_restart_old_worker(qtbot, app_data_dir: Path):
     started_workers: list[object] = []
     download_dir = app_data_dir / "downloads"
     download_dir.mkdir()
@@ -138,10 +138,9 @@ def test_main_window_cancel_and_retry_queue_actions_restart_worker(qtbot, app_da
     window.queue_page.task_action_requested.emit(task_id, "retry")
     assert len(started_workers) == 1
     started_workers[0].stopped.emit('cancel')
-    assert window.queue_page.table.item(0, 1).text() == "已取消"
+    assert window.queue_page.table.rowCount() == 0
     assert window.download_page.status_label.text() == "下载已取消。"
 
     window.queue_page.task_action_requested.emit(task_id, "retry")
-    assert len(started_workers) == 2
-    assert window.queue_page.table.item(0, 1).text() == "下载中"
-    assert window.download_page.status_label.text() == "已重新开始下载。"
+    assert len(started_workers) == 1
+    assert task_id not in window.queue_page._task_cards
