@@ -23,6 +23,13 @@ import org.junit.Test
 import java.io.File
 
 class DownloadUiBridgeTest {
+    @Test fun emptySiteFormatsShowTheSameSpecificReasonOnTheAnalysisPage() {
+        val message = "网站本次未返回可下载的视频格式，请稍后重新分析。"
+        assertEquals("分析失败：$message", analysisFailureMessageForUiTest(
+            com.garyapp.ytdl.core.ytdlp.YtdlpAnalysisException(
+                com.garyapp.ytdl.core.ytdlp.AnalysisErrorCategory.Unsupported, message)))
+    }
+
     @Test
     fun downloadRequestFailureMessageDoesNotExposeRawExceptionText() {
         val raw = "https://example.com/private?token=secret Cookie: SID=secret"

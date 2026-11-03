@@ -84,6 +84,18 @@ object DownloadCoordinator {
         }
     }
 
+    internal fun cancelPending(context: Context, taskId: String): Result<Boolean> {
+        val result = synchronized(lock) {
+            val launch = queuedLaunches.firstOrNull { it.request.taskId == taskId }
+                ?: return Result.success(false)
+            queuedLaunches.remove(launch)
+            saved[taskId] = ResumeTaskItem(taskId, launch.request.title, DownloadTaskState.waiting(launch.request))
+            cancelSaved(context, taskId).map { true }
+        }
+        notifySavedListeners(); notifyPendingListeners()
+        return result
+    }
+
     fun cancelSaved(context: Context, taskId: String): Result<Unit> = runCatching {
         synchronized(lock) {
             val item = checkNotNull(saved[taskId])
@@ -158,6 +170,8 @@ object DownloadCoordinator {
         if (shouldPublish) publish(waiting)
         waiting
     }
+    internal fun <T> withTaskFilesLocked(action: () -> T): T = synchronized(lock) { action() }
+
     fun <T> runWhenIdle(action: () -> T): IdleDownloadActionResult<T> = synchronized(lock) {
         if (queuedLaunches.isNotEmpty() || claimedLaunch != null || activeLaunch != null ||
             currentState?.stage?.let { it !in TerminalStages && it != DownloadStage.Paused } == true) {

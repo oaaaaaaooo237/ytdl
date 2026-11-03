@@ -3,6 +3,7 @@ package com.garyapp.ytdl.download
 import com.garyapp.ytdl.core.privacy.SensitiveText
 import com.garyapp.ytdl.core.ytdlp.AnalysisErrorCategory
 import com.garyapp.ytdl.core.ytdlp.YtdlpDownloadException
+import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 
 object DownloadFailureMessages {
     fun network(detail: String? = null): String {
@@ -48,6 +49,7 @@ object DownloadFailureMessages {
 
     fun fromException(exc: Exception): String {
         if (exc is YtdlpDownloadException) {
+            if (exc.safeMessage == YtdlpBridge.NO_FORMATS_MESSAGE) return YtdlpBridge.NO_FORMATS_MESSAGE
             return when (exc.category) {
                 AnalysisErrorCategory.Network -> network(exc.safeMessage)
                 AnalysisErrorCategory.Unsupported -> "当前地址或格式暂不支持，请检查地址格式或重新选择格式。"
@@ -62,6 +64,7 @@ object DownloadFailureMessages {
 
     fun fromErrorText(message: String?): String {
         val safe = SensitiveText.redact(message.orEmpty())
+        if (safe == YtdlpBridge.NO_FORMATS_MESSAGE) return YtdlpBridge.NO_FORMATS_MESSAGE
         return when {
             safe.contains("存储空间不足") ||
                 safe.contains("no space", ignoreCase = true) ||

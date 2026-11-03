@@ -76,6 +76,7 @@ class YtdlpBridge(
         role: DownloadFormatRole,
         cookiesPath: String? = null,
         listener: DownloadProgressListener? = null,
+        analysisKey: String? = null,
     ): Result<DownloadResult> {
         val normalizedFormatId = formatId.trim()
         if (normalizedFormatId.isBlank() || !isExplicitFormatId(normalizedFormatId)) {
@@ -109,6 +110,7 @@ class YtdlpBridge(
                 cookiesPath,
                 PythonProgressProxy(listener),
                 androidHttpFallback,
+                analysisKey,
             ).toString()
             parseDownloadJson(json)
         } catch (exc: Exception) {
@@ -168,6 +170,7 @@ class YtdlpBridge(
 
     companion object {
         const val PINNED_YTDLP_VERSION = "2026.3.17"
+        const val NO_FORMATS_MESSAGE = "网站本次未返回可下载的视频格式，请稍后重新分析。"
         private val UnknownMetadataVideoContainers = setOf("mp4", "m4v", "mov", "webm", "mkv", "3gp")
 
         fun mapFormat(
@@ -268,6 +271,7 @@ class YtdlpBridge(
                     formats = rawFormats.map { mapFormat(it, hasStandaloneAudio) },
                     subtitles = mapSubtitles(subtitlesRaw, SubtitleSource.Manual) +
                         mapSubtitles(automaticCaptionsRaw, SubtitleSource.Automatic),
+                    analysisKey = root.optString("analysisKey").takeIf { it.isNotBlank() },
                 ),
             )
         }

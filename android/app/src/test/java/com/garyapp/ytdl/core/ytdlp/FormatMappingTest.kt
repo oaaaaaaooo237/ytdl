@@ -11,6 +11,13 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class FormatMappingTest {
+    @Test fun keepsTheOpaqueAnalysisKeyWithoutExposingMediaUrls() {
+        val analysis = YtdlpBridge.parseAnalysisJson(
+            """{"ok":true,"title":"test","formats":[],"analysisKey":"snapshot-key"}"""
+        ).getOrThrow()
+        assertEquals("snapshot-key", analysis.analysisKey)
+    }
+
     @Test
     fun mapsProgressive360pAsDirectAudioVideoFormat() {
         val format = YtdlpBridge.mapFormat(

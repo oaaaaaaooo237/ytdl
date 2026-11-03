@@ -30,6 +30,7 @@ interface DownloadEngine {
         role: DownloadFormatRole,
         cookiesPath: String? = null,
         listener: DownloadProgressListener? = null,
+        analysisKey: String? = null,
     ): Result<DownloadResult>
 
     fun downloadSubtitle(
@@ -53,8 +54,9 @@ class YtdlpDownloadEngine(
         role: DownloadFormatRole,
         cookiesPath: String?,
         listener: DownloadProgressListener?,
+        analysisKey: String?,
     ): Result<DownloadResult> {
-        return bridge.downloadFormat(url, outputDirectory, formatId, role, cookiesPath, listener)
+        return bridge.downloadFormat(url, outputDirectory, formatId, role, cookiesPath, listener, analysisKey)
     }
 
     override fun downloadSubtitle(
@@ -318,6 +320,7 @@ class DownloadPipeline(
                     role = role,
                     cookiesPath = request.cookiesPath,
                     listener = listener,
+                    analysisKey = request.analysisKey,
                 ).getOrThrow()
                 if (download.formatId != formatId) {
                     throw DownloadStateException("下载结果 formatId 与请求不一致。")

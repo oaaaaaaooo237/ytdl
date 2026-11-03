@@ -55,7 +55,9 @@ class DownloadService : Service() {
             val taskId = intent.getStringExtra(ExtraTaskId)
             controlExecutor.execute {
                 DownloadCoordinator.restore(repository)
-                if (!DownloadCoordinator.cancelActive(taskId) && taskId != null) DownloadCoordinator.cancelSaved(this, taskId)
+                if (taskId == null) DownloadCoordinator.cancelActive()
+                else if (DownloadCoordinator.cancelPending(this, taskId).getOrNull() == false &&
+                    !DownloadCoordinator.cancelActive(taskId)) DownloadCoordinator.cancelSaved(this, taskId)
             }
             watchStop()
         } else if (intent?.action == ActionPause) {

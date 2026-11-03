@@ -61,6 +61,13 @@ internal class HistoryFileDeletion(
     private val legacyCacheRoot: File,
     private val saf: HistorySafDocuments,
 ) {
+    fun <T> runWhenSafe(selected: HistoryItemEntity?, action: () -> T): IdleDownloadActionResult<T> =
+        DownloadCoordinator.withTaskFilesLocked {
+            if (selected == null || outputUris(selected).any { !it.startsWith("app-private://outputs/") }) {
+                DownloadCoordinator.runWhenIdle(action)
+            } else IdleDownloadActionResult.Executed(action())
+        }
+
     private sealed interface Target {
         val identity: String
         data class Private(val uri: String, val file: File?, override val identity: String,

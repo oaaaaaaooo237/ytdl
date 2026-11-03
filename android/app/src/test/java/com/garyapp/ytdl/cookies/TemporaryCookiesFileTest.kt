@@ -294,6 +294,7 @@ class TemporaryCookiesFileTest {
             role: DownloadFormatRole,
             cookiesPath: String?,
             listener: DownloadProgressListener?,
+            analysisKey: String?,
         ): Result<DownloadResult> {
             val safeCookiesPath = requireNotNull(cookiesPath)
             require(File(safeCookiesPath).isFile)
@@ -343,6 +344,7 @@ class TemporaryCookiesFileTest {
             role: DownloadFormatRole,
             cookiesPath: String?,
             listener: DownloadProgressListener?,
+            analysisKey: String?,
         ): Result<DownloadResult> {
             called = true
             throw AssertionError("engine must not be called with unmanaged cookies path")

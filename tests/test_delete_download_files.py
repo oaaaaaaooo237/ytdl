@@ -98,6 +98,44 @@ def test_running_download_protects_file(qtbot, tmp_path):
     assert store.list() and path.exists() and messages
 
 
+def test_unrelated_history_deletion_during_download(qtbot, tmp_path):
+    window, store, path, messages = window_with_record(qtbot, tmp_path)
+    window._download_task_states['active'] = 'running'
+    active = tmp_path / 'active.mp4'
+    active.write_bytes(b'keep')
+    window.reserve_download_output('active', str(active))
+    window.delete_history_record(0)
+    assert not store.list() and not path.exists() and not messages
+    assert active.read_bytes() == b'keep'
+    assert window._download_task_states['active'] == 'running'
+
+
+def test_unresolved_active_destination_only_blocks_same_folder(qtbot, tmp_path):
+    from ytdl_gui.workers import DownloadRequest
+    window, store, path, messages = window_with_record(qtbot, tmp_path)
+    window._download_task_states['active'] = 'running'
+    window._download_requests_by_task['active'] = DownloadRequest('url', Path('yt-dlp.exe'),
+                                                               tmp_path / 'elsewhere' / '%(title)s.mp4', '480')
+    window.delete_history_record(0)
+    assert not path.exists() and not store.list() and not messages
+
+
+def test_active_reserved_path_still_cannot_be_deleted(qtbot, tmp_path):
+    window, store, path, messages = window_with_record(qtbot, tmp_path)
+    window._download_task_states['active'] = 'running'
+    window.reserve_download_output('active', str(path))
+    window.delete_history_record(0)
+    assert store.list() and path.exists() and messages
+
+
+def test_invalid_history_path_is_safe_during_unknown_active_output(qtbot, tmp_path):
+    from ytdl_gui.workers import DownloadRequest
+    window, store, path, messages = window_with_record(qtbot, tmp_path)
+    window._download_task_states['active'] = 'running'
+    window._download_requests_by_task['active'] = DownloadRequest('url', Path('yt-dlp.exe'), tmp_path / '%(title)s.mp4', '480')
+    assert 0 in window._delete_files([('invalid\0.mp4', 0)], [])
+
+
 def test_unlink_failure_retains_record(qtbot, tmp_path, monkeypatch):
     window, store, path, messages = window_with_record(qtbot, tmp_path)
     def denied(_path, *args, **kwargs):

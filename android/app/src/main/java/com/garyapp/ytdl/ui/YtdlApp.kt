@@ -1313,20 +1313,21 @@ internal fun YtdlApp(
         Thread {
             val database = YtdlDatabaseProvider.get(context.applicationContext)
             val historyDao = database.historyDao()
+            val fileDeletion = HistoryFileDeletion(
+                File(context.filesDir, "gui-downloads"),
+                File(context.cacheDir, "gui-downloads"),
+                AndroidHistorySafDocuments(context.applicationContext),
+            )
             val removeRecord = {
                 deleteHistoryWithRetryPayload(item.id, retryDraftStore, { historyDao.deleteById(item.id) },
                     beforeDeleteFiles = {
                         val selected = historyDao.getById(item.id)
                         if (selected == null) Result.failure(IllegalStateException("历史记录已不存在。"))
-                        else HistoryFileDeletion(
-                            java.io.File(context.filesDir, "gui-downloads"),
-                            java.io.File(context.cacheDir, "gui-downloads"),
-                            AndroidHistorySafDocuments(context.applicationContext),
-                        ).delete(selected, historyDao.listAll(),
+                        else fileDeletion.delete(selected, historyDao.listAll(),
                             database.queueDao().listNonTerminal().map { it.taskId }.toSet()).map { Unit }
                     })
             }
-            val idleResult = if (deleteFiles) DownloadCoordinator.runWhenIdle(removeRecord)
+            val idleResult = if (deleteFiles) fileDeletion.runWhenSafe(historyDao.getById(item.id), removeRecord)
                 else IdleDownloadActionResult.Executed(deleteHistoryWithRetryPayload(item.id, retryDraftStore,
                     deleteHistory = { historyDao.deleteById(item.id) }))
             val deleteResult = when (idleResult) {
@@ -1457,7 +1458,7 @@ internal fun YtdlApp(
                             onCancelDownload = { taskId ->
                                 context.startService(Intent(context, DownloadService::class.java).setAction(DownloadService.ActionCancel)
                                     .putExtra(DownloadService.ExtraTaskId, taskId))
-                                runtimeState = runtimeState.copy(userMessage = "已请求取消当前下载。")
+                                runtimeState = runtimeState.copy(userMessage = "已请求取消所选任务。")
                             },
                             onHistoryQueryChange = { historyQuery = it },
                             onHistoryFilterChange = { historyFilterIndex = it },
@@ -1912,6 +1913,9 @@ private val TerminalDownloadStages = setOf(
 )
 
 private fun analysisFailureMessage(error: Throwable): String {
+    if ((error as? YtdlpAnalysisException)?.safeMessage == YtdlpBridge.NO_FORMATS_MESSAGE) {
+        return "分析失败：${YtdlpBridge.NO_FORMATS_MESSAGE}"
+    }
     val category = (error as? YtdlpAnalysisException)?.category
         ?: return "分析失败，请检查地址或网络。"
     return when (category) {
@@ -3207,6 +3211,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                     stageItems = queueStageItems(waitingState),
                     accent = palette.queueAccent,
                     modifier = Modifier.testTag("ytdl-pending-queue-card-$index"),
+                    onCancel = { onCancelDownload(request.taskId) },
                 )
             }
         }

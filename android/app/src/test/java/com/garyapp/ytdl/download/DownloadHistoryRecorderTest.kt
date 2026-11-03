@@ -46,6 +46,14 @@ class DownloadHistoryRecorderTest {
     }
 
     @Test
+    fun preservesKnownEmptyFormatReasonWhenPersistingHistory() {
+        val message = "网站本次未返回可下载的视频格式，请稍后重新分析。"
+        val failed = DownloadTaskState.waiting(request(title = "空格式结果")).failed(message)
+        DownloadHistoryRecorder(database.historyDao()).recordTerminal(failed).getOrThrow()
+        assertEquals(message, database.historyDao().listRecent(1).single().errorSummary)
+    }
+
+    @Test
     fun recordsTerminalCompletedFailedAndCanceledStatesToHistory() {
         val output = temp.newFile("completed.mp4").apply { writeText("media") }
         val recorder = DownloadHistoryRecorder(

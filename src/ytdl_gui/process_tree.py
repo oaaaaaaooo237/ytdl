@@ -26,7 +26,7 @@ class _Accounting(ctypes.Structure):
 
 
 class ManagedProcess:
-    def __init__(self, command, cwd=None, **_kwargs):
+    def __init__(self, command, cwd=None, stdin=None, **_kwargs):
         import _winapi
         import msvcrt
         self._api = _winapi
@@ -48,15 +48,16 @@ class ManagedProcess:
             raise ctypes.WinError(ctypes.get_last_error())
         self._handle = None
         self.stdout = None
+        self.stdin = None
         self.returncode = None
         read_fd, write_fd = os.pipe()
-        null_fd = os.open(os.devnull, os.O_RDONLY)
+        input_fd, input_write_fd = os.pipe() if stdin == subprocess.PIPE else (os.open(os.devnull, os.O_RDONLY), None)
         thread_handle = None
         try:
             limits = _ExtendedLimits()
             limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
             self._check(self._kernel.SetInformationJobObject(self._job, 9, ctypes.byref(limits), ctypes.sizeof(limits)))
-            write_handle, null_handle = msvcrt.get_osfhandle(write_fd), msvcrt.get_osfhandle(null_fd)
+            write_handle, null_handle = msvcrt.get_osfhandle(write_fd), msvcrt.get_osfhandle(input_fd)
             os.set_handle_inheritable(write_handle, True)
             os.set_handle_inheritable(null_handle, True)
             startup = subprocess.STARTUPINFO()
@@ -71,6 +72,9 @@ class ManagedProcess:
                 raise ctypes.WinError(ctypes.get_last_error())
             self.stdout = os.fdopen(read_fd, 'r', encoding='utf-8', errors='replace')
             read_fd = None
+            if input_write_fd is not None:
+                self.stdin = os.fdopen(input_write_fd, 'w', encoding='utf-8')
+                input_write_fd = None
         except BaseException:
             if self._handle:
                 _winapi.TerminateProcess(self._handle, 1)
@@ -82,7 +86,9 @@ class ManagedProcess:
             if read_fd is not None:
                 os.close(read_fd)
             os.close(write_fd)
-            os.close(null_fd)
+            os.close(input_fd)
+            if input_write_fd is not None:
+                os.close(input_write_fd)
 
     @staticmethod
     def _check(ok):
@@ -122,3 +128,5 @@ class ManagedProcess:
                 self._handle = None
         if self.stdout:
             self.stdout.close()
+        if self.stdin:
+            self.stdin.close()

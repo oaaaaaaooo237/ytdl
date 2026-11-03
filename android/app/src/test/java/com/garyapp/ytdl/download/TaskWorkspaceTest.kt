@@ -147,6 +147,15 @@ class ResumeRequestStoreTest {
         }
     }
 
+    @Test fun analysisSnapshotKeyIsNeverPersistedWithTheResumeRequest() {
+        val root = root()
+        val store = FileResumeRequestStore(root, cipher)
+        store.save(request().copy(analysisKey = "memory-only-snapshot")).getOrThrow()
+        assertEquals(null, store.load(id).getOrThrow().analysisKey)
+        assertFalse(cipher.decrypt(root.resolve("$id.bin").readBytes()).toString(Charsets.UTF_8)
+            .contains("memory-only-snapshot"))
+    }
+
     @Test fun encryptedRoundTripRetainsIdentityAndChoicesButNoCookiePathOrThumbnail() {
         val root = root()
         val store = FileResumeRequestStore(root, cipher)

@@ -1,10 +1,16 @@
 import base64
+import copy
+import hashlib
 import io
 import json
 import os
 import re
 import socket
+import threading
+import time
 import urllib.parse
+import uuid
+from collections import OrderedDict
 
 import yt_dlp
 from yt_dlp.networking.common import Response
@@ -12,6 +18,8 @@ from yt_dlp.networking.exceptions import HTTPError
 
 
 _EPORNER_METADATA_HTTP_PREFIX = "http://www.eporner.com/xhr/video/"
+_ANALYSIS_SNAPSHOTS = OrderedDict()
+_ANALYSIS_SNAPSHOT_LOCK = threading.Lock()
 
 
 def _upgrade_eporner_metadata_url(url):
@@ -44,7 +52,10 @@ class AndroidYoutubeDL(yt_dlp.YoutubeDL):
         request_headers = (
             {} if isinstance(request, str) else dict(getattr(request, "headers", {}) or {})
         )
-        native_response = self._try_android_metadata_request(request, request_headers)
+        native_response = (
+            None if self.params.get("legacyserverconnect")
+            else self._try_android_metadata_request(request, request_headers)
+        )
         self._check_download_stop()
         if native_response is not None:
             return native_response
@@ -174,6 +185,71 @@ class ProgressListenerException(Exception):
     pass
 
 
+def _uses_compatible_tls(url):
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        host = parsed.hostname or ""
+        return parsed.scheme.lower() in ("http", "https") and (
+            host == "pornhub.com" or host.endswith(".pornhub.com")
+        )
+    except ValueError:
+        return False
+
+
+def _downloader_for_url(url, options, android_http_fallback):
+    compatible = _uses_compatible_tls(url)
+    # This extractor needs the same TLS profile for the page, formats and media.
+    if compatible:
+        options = dict(options, legacyserverconnect=True)
+    downloader = AndroidYoutubeDL(options, android_http_fallback=android_http_fallback)
+    if compatible:
+        downloader._android_metadata_origin = "https://www.pornhub.com"
+    return downloader
+
+
+def _cookies_digest(path):
+    if not path:
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for block in iter(lambda: source.read(65536), b""):
+            digest.update(block)
+    return digest.digest()
+
+
+def _remember_analysis(url, info, downloader, cookies_digest):
+    key = uuid.uuid4().hex
+    entry = {
+        "url": url,
+        "created": time.monotonic(),
+        "cookies_digest": cookies_digest,
+        "info": downloader.sanitize_info(info, remove_private_keys=True),
+        "cookies": [copy.copy(cookie) for cookie in downloader.cookiejar],
+    }
+    with _ANALYSIS_SNAPSHOT_LOCK:
+        _ANALYSIS_SNAPSHOTS[key] = entry
+        while len(_ANALYSIS_SNAPSHOTS) > 16:
+            _ANALYSIS_SNAPSHOTS.popitem(last=False)
+    return key
+
+
+def _cached_analysis(key, url, cookies_path):
+    with _ANALYSIS_SNAPSHOT_LOCK:
+        entry = _ANALYSIS_SNAPSHOTS.get(key)
+        if entry is None or entry["url"] != url:
+            return None
+        if time.monotonic() - entry["created"] > 900:
+            _ANALYSIS_SNAPSHOTS.pop(key, None)
+            return None
+        _ANALYSIS_SNAPSHOTS.move_to_end(key)
+    try:
+        if entry["cookies_digest"] != _cookies_digest(cookies_path):
+            return None
+    except OSError:
+        return None
+    return copy.deepcopy(entry)
+
+
 def analyze(url, cookies_path=None, android_http_fallback=None):
     options = {
         "quiet": True,
@@ -186,9 +262,17 @@ def analyze(url, cookies_path=None, android_http_fallback=None):
         options["cookiefile"] = cookies_path
 
     try:
-        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
+        cookies_digest = _cookies_digest(cookies_path) if _uses_compatible_tls(url) else None
+        with _downloader_for_url(url, options, android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=False)
-        return json.dumps(_to_result(info), ensure_ascii=False)
+            analysis_key = (
+                _remember_analysis(url, info, ydl, cookies_digest)
+                if _uses_compatible_tls(url) and info.get("formats") else None
+            )
+        result = _to_result(info)
+        if analysis_key:
+            result["analysisKey"] = analysis_key
+        return json.dumps(result, ensure_ascii=False)
     except Exception as exc:  # yt-dlp has multiple extractor/downloader exception types.
         return json.dumps(
             {
@@ -230,7 +314,7 @@ def download_single_file(
         options["cookiefile"] = cookies_path
 
     try:
-        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
+        with _downloader_for_url(url, options, android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_downloaded_file(info, output_dir)
         bytes_written = _downloaded_file_size(output_path)
@@ -265,6 +349,7 @@ def download_format(
     cookies_path=None,
     progress_listener=None,
     android_http_fallback=None,
+    analysis_key=None,
 ):
     try:
         normalized_format_id = str(format_id or "").strip()
@@ -299,8 +384,14 @@ def download_format(
         if cookies_path:
             options["cookiefile"] = cookies_path
 
-        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
-            info = ydl.extract_info(url, download=True)
+        with _downloader_for_url(url, options, android_http_fallback) as ydl:
+            snapshot = _cached_analysis(analysis_key, url, cookies_path) if analysis_key else None
+            if snapshot is None:
+                info = ydl.extract_info(url, download=True)
+            else:
+                for cookie in snapshot["cookies"]:
+                    ydl.cookiejar.set_cookie(cookie)
+                info = ydl.process_ie_result(snapshot["info"], download=True)
         output_path = _find_downloaded_file(info, output_dir, normalized_format_id, normalized_role)
         bytes_written = _downloaded_file_size(output_path)
         if bytes_written <= 0:
@@ -382,7 +473,7 @@ def download_subtitle(
         if not _subtitle_available(analysis_info, normalized_language, normalized_ext, normalized_source):
             raise ValueError("requested subtitle is not available")
 
-        with AndroidYoutubeDL(options, android_http_fallback=android_http_fallback) as ydl:
+        with _downloader_for_url(url, options, android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=True)
         output_path = _find_subtitle_file(info, output_dir, normalized_language, normalized_ext, normalized_source)
         bytes_written = _downloaded_file_size(output_path)
@@ -642,13 +733,20 @@ def _error_category(exc):
         if status in (404, 410):
             return "unsupported"
         return "unknown"
-    if "format id" in text or "requested format is not available" in text or "role must be" in text:
+    if (
+        "no video formats found" in text
+        or "format id" in text
+        or "requested format is not available" in text
+        or "role must be" in text
+    ):
         return "unsupported"
     if (
         isinstance(exc, (ConnectionError, TimeoutError, socket.gaierror))
         or "timed out" in text
         or "timeout" in text
         or "remote end closed connection" in text
+        or "unexpected_eof_while_reading" in text
+        or "eof occurred in violation of protocol" in text
         or "connection reset" in text
         or "connection refused" in text
         or "connection aborted" in text
@@ -673,6 +771,8 @@ def _error_category(exc):
 
 def _safe_error_message(exc):
     category = _error_category(exc)
+    if "no video formats found" in str(exc).lower():
+        return "网站本次未返回可下载的视频格式，请稍后重新分析。"
     if category == "canceled":
         return "下载已取消。"
     if "subtitle" in str(exc).lower() or "subtitles" in str(exc).lower():

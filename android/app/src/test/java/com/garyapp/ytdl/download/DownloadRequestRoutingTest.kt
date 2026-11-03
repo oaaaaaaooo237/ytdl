@@ -33,6 +33,17 @@ import java.nio.file.Files
 @org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
 @org.robolectric.annotation.Config(sdk = [35])
 class DownloadRequestRoutingTest {
+    @Test fun analysisSnapshotKeyFollowsTheSelectedTaskIntoTheDownloadEngine() {
+        val analysis = analysisWith(progressiveFormat("18", 360)).copy(analysisKey = "snapshot-key")
+        val request = DownloadRequest.fromAnalysis(TestUrl, analysis,
+            FormatSelection(mode = FormatMode.VideoOnly, selectedVideoFormatId = "18")).getOrThrow()
+        assertEquals("snapshot-key", request.analysisKey)
+        val engine = RecordingDownloadEngine(temp.root)
+        val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        assertEquals(listOf("snapshot-key"), engine.analysisKeys)
+    }
+
     @get:Rule
     val temp = TemporaryFolder()
 
@@ -836,6 +847,7 @@ class DownloadRequestRoutingTest {
         private val fallbackRoot: File,
     ) : DownloadEngine {
         val calls = mutableListOf<String>()
+        val analysisKeys = mutableListOf<String?>()
         var failingRole: DownloadFormatRole? = null
         var onVideoDownload: () -> Unit = {}
         var beforeProgress: () -> Unit = {}
@@ -858,7 +870,9 @@ class DownloadRequestRoutingTest {
             role: DownloadFormatRole,
             cookiesPath: String?,
             listener: DownloadProgressListener?,
+            analysisKey: String?,
         ): Result<DownloadResult> {
+            analysisKeys += analysisKey
             throwableToThrow?.let { throw it }
             calls += "format:${role.pythonValue}:$formatId"
             failOnceByRole.remove(role)?.let { return Result.failure(it) }

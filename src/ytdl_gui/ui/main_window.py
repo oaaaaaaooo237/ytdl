@@ -2,6 +2,7 @@ from collections.abc import Callable
 from datetime import datetime
 from dataclasses import replace
 import os
+import copy
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -816,9 +817,11 @@ class MainWindow(QWidget):
             worker = AnalysisWorker(request)
         else:
             worker = AnalysisWorker(request, runner=self._analysis_runner)
-        worker.finished.connect(lambda payload, analyzed_url=url: self.apply_analysis_result(analyzed_url, payload))
-        worker.failed.connect(lambda message, failed_url=url: self.show_analysis_error(message, failed_url))
-        worker.canceled.connect(lambda: self.download_page.set_status("分析已取消。"))
+        worker.finished.connect(lambda payload, analyzed_url=url: self._run_on_ui_thread(
+            lambda: self.apply_analysis_result(analyzed_url, payload)))
+        worker.failed.connect(lambda message, failed_url=url: self._run_on_ui_thread(
+            lambda: self.show_analysis_error(message, failed_url)))
+        worker.canceled.connect(lambda: self._run_on_ui_thread(lambda: self.download_page.set_status("分析已取消。")))
         self._worker_runner(worker)
 
     def apply_analysis_result(self, url: str, metadata: dict) -> None:
@@ -853,6 +856,7 @@ class MainWindow(QWidget):
             self.start_playlist_probe(url)
             return
         messages = {
+            "no_formats": "网站本次未返回可下载的视频格式，请稍后重新分析。",
             "login_required": "视频可能需要登录或年龄验证。请在设置中选择 cookies.txt 后重试。",
             "unavailable": "视频不可用、私有或已删除。",
             "network_timeout": "分析超时，请检查网络后重试。",
@@ -945,9 +949,38 @@ class MainWindow(QWidget):
         self.queue_page.load_history_records(records)
 
     def _delete_files(self, outputs: list[tuple[str, int]], protected_paths: list[str]) -> dict[int, str]:
-        if self._has_running_download_tasks() or self._download_workers_by_task:
-            return {index: "请先停止所有下载，再删除下载文件。" for index in range(len(outputs))}
-        return delete_recorded_files(outputs, protected_paths)
+        protected = list(protected_paths)
+        unresolved = []
+        active = set(self._download_workers_by_task) | {task for task, state in self._download_task_states.items()
+                                                      if state in {'running', 'pause_requested', 'cancel_requested', 'offline_requested', 'exit_requested', 'stop_failed'}}
+        for task in active:
+            output = self._download_context_by_task.get(task, {}).get('output_path')
+            if output:
+                protected.append(str(output))
+            else:
+                request = self._download_requests_by_task.get(task)
+                try:
+                    unresolved.append(request.output_template.parent.resolve() if request else None)
+                except (OSError, ValueError, RuntimeError, TypeError):
+                    unresolved.append(None)
+        failures, eligible, positions = {}, [], []
+        for index, output in enumerate(outputs):
+            path = output[0]
+            try:
+                in_active_folder = isinstance(path, str) and path and any(
+                    folder is None or Path(path).resolve().is_relative_to(folder) for folder in unresolved)
+            except (OSError, ValueError, RuntimeError, TypeError):
+                failures[index] = '文件路径安全检查失败，已保留文件和记录。'
+                continue
+            if in_active_folder:
+                failures[index] = '当前任务尚未确定保存文件名，请稍后再删除此目录中的文件。'
+            elif path == '':
+                continue
+            else:
+                positions.append(index)
+                eligible.append(output)
+        failures.update({positions[index]: reason for index, reason in delete_recorded_files(eligible, protected).items()})
+        return failures
 
     def _show_deletion_failures(self, failures: dict[int, str]) -> None:
         if failures:
@@ -1083,6 +1116,7 @@ class MainWindow(QWidget):
             expected_title=title,
             uses_cookies=self._cookies_path() is not None,
             temp_dir=self.queue_store.task_dir(task_id) if self.queue_store else None,
+            analysis_info=copy.deepcopy(metadata) if '__ytdl_snapshot_created' in metadata else None,
         )
         self._download_requests_by_task[task_id] = request
         self._download_context_by_task[task_id] = {
@@ -1166,6 +1200,7 @@ class MainWindow(QWidget):
             self.queue_page.update_task(task_id, status='已暂停')
             return
         self.queue_page.update_task(task_id, status="下载中", speed="", eta="")
+        self._download_context_by_task.setdefault(task_id, {}).pop('output_path', None)
         self.download_page.set_status(status_text)
         worker = DownloadWorker(
             request,
@@ -1173,6 +1208,7 @@ class MainWindow(QWidget):
         )
         self._download_workers_by_task[task_id] = worker
         worker.progress.connect(lambda event, task=task_id: self.update_download_progress(task, event))
+        worker.output_reserved.connect(lambda path, task=task_id: self.reserve_download_output(task, path))
         worker.finished.connect(lambda output_path, task=task_id: self.finish_download(task, output_path))
         worker.failed.connect(lambda message, task=task_id: self.fail_download(task, message))
         worker.stopped.connect(lambda reason, task=task_id: self.download_stopped(task, reason))
@@ -1182,6 +1218,12 @@ class MainWindow(QWidget):
 
     def _is_ui_thread(self) -> bool:
         return QThread.currentThread() == self.thread()
+
+    def reserve_download_output(self, task_id: str, path: str) -> None:
+        if not self._is_ui_thread():
+            self._run_on_ui_thread(lambda: self.reserve_download_output(task_id, path))
+            return
+        self._download_context_by_task.setdefault(task_id, {})['output_path'] = path
 
     def _run_on_ui_thread(self, callback) -> None:
         if self._is_ui_thread():
@@ -1218,6 +1260,8 @@ class MainWindow(QWidget):
             return
         self._download_workers_by_task.pop(task_id, None)
         self._download_task_states[task_id] = "finished"
+        if task_id in self._download_requests_by_task:
+            self._download_requests_by_task[task_id] = replace(self._download_requests_by_task[task_id], analysis_info=None)
         saved = self._save_queue()
         if output_path:
             self._download_context_by_task.setdefault(task_id, {})["output_path"] = output_path

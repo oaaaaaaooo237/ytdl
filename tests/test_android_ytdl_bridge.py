@@ -1,4 +1,5 @@
 import base64
+import copy
 import importlib.util
 import io
 import json
@@ -614,6 +615,22 @@ def test_connection_reset_refused_and_dns_failures_are_network_errors():
         assert bridge._error_category(error) == "network", str(error)
 
 
+def test_tls_connection_eof_is_a_retryable_network_failure():
+    import ssl
+
+    bridge = load_android_ytdl_bridge()
+    errors = [
+        ssl.SSLEOFError(8, "EOF occurred in violation of protocol"),
+        RuntimeError(
+            "ERROR: [generic] sample-20s: Unable to download webpage: "
+            "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)"
+        ),
+    ]
+    for error in errors:
+        assert bridge._error_category(error) == "network"
+        assert bridge._safe_error_message(error) == "网络连接失败，请稍后重试。"
+
+
 def test_format_selection_failure_is_not_a_network_outage():
     bridge = load_android_ytdl_bridge()
     assert bridge._error_category(RuntimeError("Requested format is not available")) == "unsupported"
@@ -621,6 +638,137 @@ def test_format_selection_failure_is_not_a_network_outage():
     assert bridge._error_category(FileNotFoundError("output file missing")) == "unknown"
 
 
+def test_empty_site_formats_report_the_site_response_instead_of_file_processing():
+    bridge = load_android_ytdl_bridge()
+    error = RuntimeError("ERROR: [PornHub] sample: No video formats found!")
+    assert bridge._error_category(error) == "unsupported"
+    assert bridge._safe_error_message(error) == "网站本次未返回可下载的视频格式，请稍后重新分析。"
+
+
 def test_http_server_response_is_not_reported_as_a_disconnected_network():
     bridge = load_android_ytdl_bridge()
     assert bridge._error_category(RuntimeError("network request failed: HTTP Error 503")) == "unknown"
+
+
+def test_pornhub_analysis_and_download_use_the_same_verified_tls_profile(tmp_path):
+    sessions = []
+    output = tmp_path / "download-test-240p-media.mp4"
+
+    class ProfileYoutubeDL:
+        def __init__(self, params):
+            self.params = params
+            self.cookiejar = []
+            sessions.append(dict(params))
+
+        @staticmethod
+        def sanitize_info(info, remove_private_keys=False):
+            return copy.deepcopy(info)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def extract_info(self, url, download):
+            assert self.params.get("legacyserverconnect") is True
+            assert not self.params.get("nocheckcertificate", False)
+            if download:
+                assert self.params["format"] == "240p"
+                output.write_bytes(b"downloaded media")
+            return {"id": "test", "title": "test", "format_id": "240p", "filepath": str(output),
+                    "formats": [{"format_id": "240p", "height": 240, "ext": "mp4"}]}
+
+    bridge = load_android_ytdl_bridge(ProfileYoutubeDL)
+    url = "https://cn.pornhub.com/view_video.php?viewkey=test"
+    cookies = tmp_path / "chosen-cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    analysis = json.loads(bridge.analyze(url, cookies_path=str(cookies)))
+    assert analysis["ok"] is True
+    selected = analysis["formats"][0]["format_id"]
+    result = json.loads(bridge.download_format(url, str(tmp_path), selected, "media", cookies_path=str(cookies)))
+    assert result["ok"] is True
+    assert result["formatId"] == selected
+    assert len(sessions) == 2
+    assert all(options["cookiefile"] == str(cookies) for options in sessions)
+
+
+def test_site_tls_profile_does_not_change_other_sites_or_lookalike_hosts():
+    sessions = []
+
+    class ProfileYoutubeDL:
+        def __init__(self, params):
+            self.params = params
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def extract_info(self, url, download):
+            sessions.append((url, self.params.get("legacyserverconnect", False)))
+            return {"title": "test", "formats": []}
+
+    bridge = load_android_ytdl_bridge(ProfileYoutubeDL)
+    for url in (
+        "https://www.pornhub.com/view_video.php?viewkey=test",
+        "https://pornhub.com/view_video.php?viewkey=test",
+        "https://pornhub.com.evil.test/page",
+        "https://notpornhub.com/page",
+        "https://www.youtube.com/watch?v=test",
+    ):
+        assert json.loads(bridge.analyze(url))["ok"] is True
+    assert [enabled for _, enabled in sessions] == [True, True, False, False, False]
+
+
+def test_download_uses_the_analyzed_snapshot_without_requesting_the_page_again(tmp_path):
+    calls = []
+    output = tmp_path / "download-test-240p-media.mp4"
+
+    class SnapshotYoutubeDL:
+        def __init__(self, params):
+            self.params = params
+            self.cookiejar = types.SimpleNamespace(set_cookie=lambda cookie: None)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        @staticmethod
+        def sanitize_info(info, remove_private_keys=False):
+            return copy.deepcopy(info)
+
+        def extract_info(self, url, download):
+            calls.append("page")
+            self.cookiejar = []
+            assert download is False, "下载不应第二次请求网页"
+            return {"id": "test", "title": "test", "formats": [{"format_id": "240p", "height": 240, "ext": "mp4"}]}
+
+        def process_ie_result(self, info, download):
+            calls.append("snapshot")
+            assert download is True
+            assert self.params["format"] == info["formats"][0]["format_id"] == "240p"
+            output.write_bytes(b"downloaded media")
+            return {"id": "test", "title": "test", "format_id": "240p", "filepath": str(output)}
+
+    bridge = load_android_ytdl_bridge(SnapshotYoutubeDL)
+    url = "https://cn.pornhub.com/view_video.php?viewkey=test"
+    analysis = json.loads(bridge.analyze(url))
+    assert analysis.get("analysisKey")
+    result = json.loads(bridge.download_format(url, str(tmp_path), "240p", "media", analysis_key=analysis["analysisKey"]))
+    assert result["ok"] is True
+    assert calls == ["page", "snapshot"]
+    other = json.loads(bridge.download_format(
+        "https://cn.pornhub.com/view_video.php?viewkey=other", str(tmp_path), "240p", "media",
+        analysis_key=analysis["analysisKey"]))
+    assert other["ok"] is False
+    assert calls[-1] == "page"
+    changed_cookies = tmp_path / "changed-cookies.txt"
+    changed_cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    changed = json.loads(bridge.download_format(url, str(tmp_path), "240p", "media",
+        cookies_path=str(changed_cookies), analysis_key=analysis["analysisKey"]))
+    assert changed["ok"] is False
+    assert calls.count("snapshot") == 1

@@ -20,6 +20,7 @@ data class DownloadRequest(
     val taskId: String = java.util.UUID.randomUUID().toString().replace("-", ""),
     val usesCookies: Boolean = !cookiesPath.isNullOrBlank(),
     val storageTarget: com.garyapp.ytdl.core.storage.StorageTarget? = null,
+    val analysisKey: String? = null,
 ) {
     init {
         require(taskId.matches(Regex("^[0-9a-f]{32}$"))) { "任务标识不可用。" }
@@ -52,6 +53,7 @@ data class DownloadRequest(
                     thumbnailUrl = analysis.thumbnailUrl,
                     selectedSubtitles = selectedSubtitles,
                     cookiesPath = cookiesPath,
+                    analysisKey = analysis.analysisKey,
                 )
             }
         }

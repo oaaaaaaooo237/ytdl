@@ -1,4 +1,7 @@
 import json
+import copy
+import hashlib
+import time
 import re
 import threading
 import shutil
@@ -6,7 +9,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -17,7 +20,31 @@ from ytdl_gui.ffmpeg import FfmpegStatus, find_ffmpeg
 from ytdl_gui.subprocess_utils import hidden_window_kwargs
 from ytdl_gui.process_tree import ManagedProcess
 from ytdl_gui.update_manager import UpdateOutcome, download_and_install_latest_ytdlp
-from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error, parse_progress_line
+from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error, parse_progress_line, uses_compatible_tls
+
+
+def _cookies_digest(path):
+    if path is None:
+        return None
+    with Path(path).open('rb') as source:
+        return hashlib.file_digest(source, 'sha256').hexdigest()
+
+
+def reusable_analysis(metadata, url, cookies_path):
+    if not uses_compatible_tls(url) or not metadata:
+        return None
+    if metadata.get('__ytdl_snapshot_url') != url:
+        return None
+    if not 0 <= time.monotonic() - metadata.get('__ytdl_snapshot_created', 0) <= 900:
+        return None
+    try:
+        if metadata.get('__ytdl_snapshot_cookies') != _cookies_digest(cookies_path):
+            return None
+    except OSError:
+        return None
+    if not metadata.get('formats'):
+        return None
+    return copy.deepcopy({key: value for key, value in metadata.items() if not key.startswith('__ytdl')})
 
 
 @dataclass(frozen=True)
@@ -70,6 +97,7 @@ class AnalysisWorker(QObject):
             return
 
         try:
+            snapshot_cookies = _cookies_digest(self.request.cookies_path) if uses_compatible_tls(self.request.url) else None
             result = self._runner(
                 make_analysis_command(self.request),
                 capture_output=True,
@@ -101,6 +129,13 @@ class AnalysisWorker(QObject):
             self.failed.emit(AnalysisFailureKind.UNKNOWN_YTDLP_FAILURE.value)
             return
 
+        if uses_compatible_tls(self.request.url):
+            try:
+                if snapshot_cookies == _cookies_digest(self.request.cookies_path):
+                    payload.update(__ytdl_snapshot_cookies=snapshot_cookies,
+                                   __ytdl_snapshot_created=time.monotonic(), __ytdl_snapshot_url=self.request.url)
+            except OSError:
+                pass
         self.finished.emit(payload)
 
     @staticmethod
@@ -213,6 +248,7 @@ class DownloadRequest:
     expected_title: str = ""
     temp_dir: Path | None = None
     uses_cookies: bool = False
+    analysis_info: dict | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -225,6 +261,7 @@ class PreviewUrlRequest:
 
 
 class DownloadWorker(QObject):
+    output_reserved = Signal(str)
     progress = Signal(object)
     finished = Signal(str)
     failed = Signal(str)
@@ -275,7 +312,7 @@ class DownloadWorker(QObject):
         except Exception:
             # File-system and pipe failures must not strand the QThread loop.
             # Do not expose exception text, which can contain URLs/cookies.
-            self._terminal = ('failed', '下载处理失败，文件已保留；请检查磁盘和保存位置后重试。')
+            self._terminal = ('stopped', self._stop_reason) if self._stop_reason else ('failed', '下载处理失败，文件已保留；请检查磁盘和保存位置后重试。')
         finally:
             try:
                 self._dispose_process()
@@ -329,6 +366,11 @@ class DownloadWorker(QObject):
             ffmpeg_path=self.request.ffmpeg_path,
             temp_dir=self.request.temp_dir,
         )
+        snapshot = reusable_analysis(self.request.analysis_info, self.request.url, self.request.cookies_path)
+        input_options = {}
+        if snapshot is not None:
+            command[-1:] = ['--load-info-json', '-']
+            input_options['stdin'] = subprocess.PIPE
         try:
             if self.request.temp_dir:
                 self.request.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -338,7 +380,7 @@ class DownloadWorker(QObject):
                     return
                 self._process = self._popen_factory(
                     command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, **hidden_window_kwargs())
+                    text=True, **input_options, **hidden_window_kwargs())
         except OSError:
             self._complete('failed', "启动 yt-dlp 下载失败，请检查 yt-dlp 路径。")
             return
@@ -346,12 +388,27 @@ class DownloadWorker(QObject):
             self._complete('failed', "启动 yt-dlp 下载失败，请稍后重试。")
             return
 
+        if snapshot is not None:
+            # A pipe keeps extracted media URLs and headers out of disk and argv.
+            try:
+                self._process.stdin.write(json.dumps(snapshot, ensure_ascii=True))
+            finally:
+                self._process.stdin.close()
+
         output_path = ""
         error_lines = []
         stdout = getattr(self._process, "stdout", None)
         if stdout is not None:
             for line in stdout:
                 text = line.strip()
+                if text.startswith('__YTDL_OUTPUT__'):
+                    try:
+                        reserved = json.loads(text[len('__YTDL_OUTPUT__'):])
+                    except (ValueError, TypeError):
+                        continue
+                    if isinstance(reserved, str):
+                        self.output_reserved.emit(reserved)
+                    continue
                 if 'ERROR:' in text:
                     error_lines.append(text)
                     error_lines = error_lines[-5:]
@@ -381,7 +438,9 @@ class DownloadWorker(QObject):
                 return
             self._complete('finished', resolved_output_path)
         else:
-            if is_network_download_error('\n'.join(error_lines)):
+            if 'no video formats' in errors.casefold():
+                self._complete('failed', '网站本次未返回可下载的视频格式，请稍后重新分析。')
+            elif is_network_download_error('\n'.join(error_lines)):
                 self._complete('network_failed')
             else:
                 self._complete('failed', f"yt-dlp 下载失败，退出码 {return_code}；请检查网站权限或所选格式后重试。")

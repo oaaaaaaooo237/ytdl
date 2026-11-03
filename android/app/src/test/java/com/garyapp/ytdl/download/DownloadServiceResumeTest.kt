@@ -51,6 +51,35 @@ class DownloadServiceResumeTest {
         DownloadCoordinator.enqueueForServiceStart(request, root).getOrThrow()
         return DownloadCoordinator.claimPendingLaunch()!!.also { DownloadCoordinator.activateLaunch(it) }
     }
+    @Test fun cancelCommandRemovesOnlyQueuedTaskAndKeepsActiveDownloadAndRemainingOrder() {
+        val active = enqueue(request())
+        val token = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(token)
+        val marker = File(repository.workspace.directory(active.request.taskId), "keep.part").apply { writeText("active") }
+        val pending = request().copy(title = "等待取消")
+        val next = request().copy(title = "继续等待")
+        listOf(pending, next).forEach {
+            repository.create(it).getOrThrow()
+            DownloadCoordinator.enqueueForServiceStart(it, root).getOrThrow()
+        }
+        val removed = CountDownLatch(1)
+        val subscription = DownloadCoordinator.addPendingListener { requests ->
+            if (requests.none { it.taskId == pending.taskId }) removed.countDown()
+        }
+        try {
+            service.onStartCommand(android.content.Intent(service, DownloadService::class.java)
+                .setAction(DownloadService.ActionCancel)
+                .putExtra(DownloadService.ExtraTaskId, pending.taskId), 0, 1)
+            assertTrue("等待任务应被单独取消", removed.await(5, TimeUnit.SECONDS))
+            assertNull(token.stopReason)
+            assertEquals("active", marker.readText())
+            assertEquals("canceled", database.queueDao().getByTaskId(pending.taskId).status)
+            assertFalse(repository.workspace.exists(pending.taskId))
+            assertEquals(1, database.historyDao().listAll().count { it.status == "canceled" })
+            DownloadCoordinator.finishActiveLaunch(active)
+            assertEquals(next.taskId, DownloadCoordinator.claimPendingLaunch()!!.request.taskId)
+        } finally { subscription.close() }
+    }
     @Test fun notificationCancelForPausedTaskLeavesNoResumeAction() {
         val launch = enqueue(request())
         val paused = DownloadTaskState(DownloadStage.Paused, launch.request)
@@ -227,7 +256,7 @@ class DownloadServiceResumeTest {
         subscription.close()
     }
     private class BlockingEngine(val entered: CountDownLatch, val release: CountDownLatch) : DownloadEngine {
-        override fun downloadFormat(url: String, outputDirectory: File, formatId: String, role: DownloadFormatRole, cookiesPath: String?, listener: DownloadProgressListener?): Result<DownloadResult> = runCatching {
+        override fun downloadFormat(url: String, outputDirectory: File, formatId: String, role: DownloadFormatRole, cookiesPath: String?, listener: DownloadProgressListener?, analysisKey: String?): Result<DownloadResult> = runCatching {
             File(outputDirectory, "video.part").writeText("partial")
             listener?.onProgress(DownloadProgress("downloading", 50.0, 7, 14, 1.0, null, null))
             entered.countDown(); check(release.await(5, TimeUnit.SECONDS))

@@ -6,6 +6,7 @@ data class VideoAnalysis(
     val thumbnailUrl: String?,
     val formats: List<VideoFormat>,
     val subtitles: List<SubtitleInfo>,
+    val analysisKey: String? = null,
 )
 
 data class VideoFormat(

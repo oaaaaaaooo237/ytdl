@@ -369,7 +369,9 @@ class DownloadResumeTest {
         var continued = false
         var returnedFile: File? = null
         override fun downloadFormat(url: String, outputDirectory: File, formatId: String, role: DownloadFormatRole,
-            cookiesPath: String?, listener: DownloadProgressListener?): Result<DownloadResult> {
+            cookiesPath: String?, listener: DownloadProgressListener?,
+            analysisKey: String?,
+        ): Result<DownloadResult> {
             calls += "${role.pythonValue}:$formatId"
             duringDownload(outputDirectory, listener)
             continued = true

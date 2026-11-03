@@ -1084,6 +1084,23 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithText("下一条视频").assertExists()
     }
 
+    @Test
+    fun waitingTaskCancelTargetsOnlyTheSelectedRequest() {
+        val current = requestFor(progressiveFormat(id = "18", height = 360))
+        val pending = requestFor(progressiveFormat(id = "22", height = 720)).copy(title = "等待取消")
+        var canceledId: String? = null
+        renderTasksPage(
+            RuntimeDownloadState().withPipelineStateForUiTest(DownloadTaskState.waiting(current)),
+            listOf(pending), emptyList(), onCancelDownload = { canceledId = it },
+        )
+        composeRule.onNodeWithTag("test-tasks-list")
+            .performScrollToNode(hasTestTag("ytdl-pending-queue-card-0"))
+        composeRule.onNode(hasTestTag("ytdl-queue-cancel-action") and
+            androidx.compose.ui.test.hasAnyAncestor(hasTestTag("ytdl-pending-queue-card-0")))
+            .performClick()
+        assertEquals(pending.taskId, canceledId)
+    }
+
     @Test fun pausedTaskRetainsProgressAndContinueActionDoesNotAutoStart() {
         val request = requestFor(progressiveFormat(id = "18", height = 360))
         var resumed: String? = null
@@ -1265,7 +1282,7 @@ class DownloadGuiBindingTest {
         state: RuntimeDownloadState,
         pendingRequests: List<DownloadRequest>,
         historyItems: List<HistoryUiItem>,
-        onCancelDownload: () -> Unit = {},
+        onCancelDownload: (String?) -> Unit = {},
         savedTasks: List<com.garyapp.ytdl.download.ResumeTaskItem> = emptyList(),
         onResumeTask: (String) -> Unit = {},
     ) {
@@ -1279,7 +1296,7 @@ class DownloadGuiBindingTest {
                         historyQuery = "",
                         selectedFilterIndex = 0,
                         userMessage = "",
-                        onCancelDownload = { onCancelDownload() },
+                        onCancelDownload = onCancelDownload,
                         onHistoryQueryChange = {},
                         onHistoryFilterChange = {},
                         onOpen = {},

@@ -2,6 +2,13 @@ from enum import Enum
 from pathlib import Path
 import re
 from dataclasses import dataclass
+from urllib.parse import urlsplit
+
+
+def uses_compatible_tls(url: str) -> bool:
+    parsed = urlsplit(url)
+    host = (parsed.hostname or '').lower()
+    return parsed.scheme in {'http', 'https'} and (host == 'pornhub.com' or host.endswith('.pornhub.com'))
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,8 @@ class YtdlpCommandBuilder:
         ]
         self._append_cookies(command, cookies_path)
         command.append(url)
+        if uses_compatible_tls(url):
+            command.insert(1, '--legacy-server-connect')
         return command
 
     def playlist_probe_command(self, url: str, cookies_path: Path | None = None) -> list[str]:
@@ -82,6 +91,8 @@ class YtdlpCommandBuilder:
         ]
         self._append_cookies(command, cookies_path)
         command.append(url)
+        if uses_compatible_tls(url):
+            command.insert(1, '--legacy-server-connect')
         return command
 
     def download_command(
@@ -104,6 +115,8 @@ class YtdlpCommandBuilder:
             output_template.name if temp_dir is not None else str(output_template),
             "--print",
             "after_move:filepath",
+            "--print",
+            "before_dl:__YTDL_OUTPUT__%(filename)j",
         ]
         command.extend(['--continue', '--part', '--socket-timeout', '15', '--retries', '2', '--fragment-retries', '2', '--no-playlist'])
         if temp_dir is not None:
@@ -118,6 +131,8 @@ class YtdlpCommandBuilder:
             command.extend(["--ffmpeg-location", str(ffmpeg_path)])
         self._append_cookies(command, cookies_path)
         command.append(url)
+        if uses_compatible_tls(url):
+            command.insert(1, '--legacy-server-connect')
         return command
 
     def preview_url_command(
@@ -131,6 +146,8 @@ class YtdlpCommandBuilder:
             command.extend(["-f", format_id])
         self._append_cookies(command, cookies_path)
         command.append(url)
+        if uses_compatible_tls(url):
+            command.insert(1, '--legacy-server-connect')
         return command
 
     @staticmethod
@@ -143,6 +160,7 @@ PLAYLIST_EXPANSION_LIMIT = 50
 
 
 class AnalysisFailureKind(str, Enum):
+    NO_FORMATS = 'no_formats'
     LOGIN_REQUIRED = "login_required"
     UNAVAILABLE = "unavailable"
     NETWORK_TIMEOUT = "network_timeout"
@@ -158,7 +176,9 @@ def categorize_analysis_error(stderr: str) -> AnalysisFailureKind:
         return AnalysisFailureKind.CANCELED
     if "playlist" in text and ("confirm" in text or "confirmation" in text or "entries" in text or "items" in text):
         return AnalysisFailureKind.PLAYLIST_CONFIRMATION_NEEDED
-    if "sign in" in text or "login" in text or "age" in text:
+    if 'no video formats' in text:
+        return AnalysisFailureKind.NO_FORMATS
+    if "sign in" in text or "login" in text or any(term in text for term in ('age-restricted', 'age restricted', 'confirm your age', 'age verification')):
         return AnalysisFailureKind.LOGIN_REQUIRED
     if "unavailable" in text or "private" in text or "removed" in text:
         return AnalysisFailureKind.UNAVAILABLE

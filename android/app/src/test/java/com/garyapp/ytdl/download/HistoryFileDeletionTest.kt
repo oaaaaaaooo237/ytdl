@@ -23,6 +23,49 @@ class HistoryFileDeletionTest {
     }
     private fun uri(name: String) = "app-private://outputs/task-$taskId/$name"
 
+    @Test fun unrelatedPrivateHistoryCanBeDeletedWhileAnotherTaskRuns() {
+        val (files, cache) = roots()
+        DownloadCoordinator.resetForTests()
+        try {
+            val active = DownloadRequest("https://example.test/video", "当前任务", DownloadRoute.DirectSingleFile("18"))
+            DownloadCoordinator.enqueueForServiceStart(active, files).getOrThrow()
+            val launch = DownloadCoordinator.claimPendingLaunch()!!
+            DownloadCoordinator.activateLaunch(launch)
+            val activeFile = files.resolve("task-${active.taskId}/keep.part").apply { parentFile!!.mkdirs(); writeText("active") }
+            val oldFile = files.resolve("task-$taskId/old.mp4").apply { parentFile!!.mkdirs(); writeText("old") }
+            val selected = row(1, uri("old.mp4"))
+            val deletion = HistoryFileDeletion(files, cache, FakeSaf())
+            val result = deletion.runWhenSafe(selected) {
+                deletion.delete(selected, listOf(selected), setOf(active.taskId))
+            }
+            assertTrue(result is IdleDownloadActionResult.Executed)
+            assertEquals(1, (result as IdleDownloadActionResult.Executed).value.getOrThrow())
+            assertFalse(oldFile.exists())
+            assertEquals("active", activeFile.readText())
+            val activeRow = row(2, "app-private://outputs/task-${active.taskId}/keep.part")
+            val protected = deletion.runWhenSafe(activeRow) {
+                deletion.delete(activeRow, listOf(activeRow), setOf(active.taskId))
+            }
+            assertTrue((protected as IdleDownloadActionResult.Executed).value.isFailure)
+            assertEquals("active", activeFile.readText())
+        } finally { DownloadCoordinator.resetForTests() }
+    }
+
+    @Test fun unfinishedHistoryWithoutOutputsDoesNotWaitForUnrelatedDownload() {
+        val (files, cache) = roots()
+        DownloadCoordinator.resetForTests()
+        try {
+            DownloadCoordinator.enqueueForServiceStart(
+                DownloadRequest("https://example.test/video", "当前任务", DownloadRoute.DirectSingleFile("18")), files,
+            ).getOrThrow()
+            val deletion = HistoryFileDeletion(files, cache, FakeSaf())
+            assertEquals(IdleDownloadActionResult.Executed("deleted"),
+                deletion.runWhenSafe(row(1, null)) { "deleted" })
+            assertEquals(IdleDownloadActionResult.ActiveDownload,
+                deletion.runWhenSafe(row(2, "content://test/document/output")) { "must not run" })
+        } finally { DownloadCoordinator.resetForTests() }
+    }
+
     @Test fun deletesOnlyRecordedFilesAndAcceptsMissingTargets() {
         val (files, cache) = roots()
         val task = files.resolve("task-$taskId").apply { mkdirs() }

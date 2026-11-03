@@ -34,6 +34,51 @@ class ResumeTaskRepositoryTest {
         repository = ResumeTaskRepository(database, store, workspace)
     }
     @After fun cleanup() { DownloadCoordinator.resetForTests(); database.close(); root.deleteRecursively() }
+    @Test fun pendingCancellationCleanupFailureCannotReturnTheTaskToTheRunnableQueue() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        DownloadCoordinator.restore(repository)
+        val active = request("当前任务")
+        val pending = request("等待任务")
+        listOf(active, pending).forEach {
+            repository.create(it).getOrThrow()
+            DownloadCoordinator.enqueueForServiceStart(it, workspace.directory(it.taskId).parentFile!!).getOrThrow()
+        }
+        val launch = DownloadCoordinator.claimPendingLaunch()!!
+        DownloadCoordinator.activateLaunch(launch)
+        val saved = mutableListOf<ResumeTaskItem>()
+        val subscription = DownloadCoordinator.addSavedListener { saved.clear(); saved.addAll(it) }
+        try {
+            database.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER reject_pending_cancel BEFORE INSERT ON history_items BEGIN SELECT RAISE(ABORT, 'blocked'); END")
+            assertTrue(DownloadCoordinator.cancelPending(context, pending.taskId).isFailure)
+            assertEquals(pending.taskId, saved.single().taskId)
+            assertNull(saved.single().state.request)
+            assertNotNull(saved.single().recoveryError)
+            DownloadCoordinator.finishActiveLaunch(launch)
+            assertNull(DownloadCoordinator.claimPendingLaunch())
+            database.openHelper.writableDatabase.execSQL("DROP TRIGGER reject_pending_cancel")
+            DownloadCoordinator.cancelSaved(context, pending.taskId).getOrThrow()
+            assertTrue(saved.isEmpty())
+            assertTrue(workspace.exists(active.taskId))
+        } finally { subscription.close() }
+    }
+
+    @Test fun cancelPendingDoesNotDeleteATaskAlreadyClaimedByTheWorker() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        DownloadCoordinator.restore(repository)
+        val request = request()
+        repository.create(request).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(request, workspace.directory(request.taskId).parentFile!!).getOrThrow()
+        val launch = DownloadCoordinator.claimPendingLaunch()!!
+        assertFalse(DownloadCoordinator.cancelPending(context, request.taskId).getOrThrow())
+        assertTrue(workspace.exists(request.taskId))
+        assertTrue(DownloadCoordinator.cancelActive(request.taskId))
+        DownloadCoordinator.activateLaunch(launch)
+        val token = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(token)
+        assertEquals(DownloadStopReason.UserCancel, token.stopReason)
+    }
+
     private fun request(title: String = "测试任务") = DownloadRequest("https://example.test/page?token=secret", title,
         DownloadRoute.DirectSingleFile("18"), storageTarget = StorageTarget.SafTree("content://test/tree/original", "原位置"))
 
