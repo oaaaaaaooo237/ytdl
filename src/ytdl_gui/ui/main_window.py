@@ -1,12 +1,16 @@
 from collections.abc import Callable
 from datetime import datetime
+from dataclasses import replace
 import os
+import copy
+import time
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QObject, QSize, Qt, QThread, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -27,9 +31,11 @@ from PySide6.QtWidgets import (
 from ytdl_gui.config_store import AppConfig
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
+from ytdl_gui.file_deletion import delete_recorded_files
 from ytdl_gui.format_selector import FormatPreference, available_resolution_values, choose_format
 from ytdl_gui.history_store import HistoryRecord
 from ytdl_gui.paths import bundled_ytdlp_path, local_ffmpeg_candidates, resource_root
+from ytdl_gui.queue_store import QueueRecoveryWorker
 from ytdl_gui.subtitles import subtitle_action_requires_ffmpeg
 from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 from ytdl_gui.ui.pages.about_page import AboutPage
@@ -97,6 +103,7 @@ class MainWindow(QWidget):
         worker_runner: Callable[[object], object] | None = None,
         save_folder_picker: Callable[[], str] | None = None,
         confirmation_dialog: Callable[[QWidget, str, str], bool] | None = None,
+        queue_store=None,
         ):
         super().__init__()
         self._ui_dispatcher = _UiCallDispatcher(self)
@@ -105,6 +112,14 @@ class MainWindow(QWidget):
         self.setMinimumSize(488, 760)
         self.config_store = config_store
         self.history_store = history_store
+        self.queue_store = queue_store
+        self._queue_ready = queue_store is None
+        self._queue_save_failed = False
+        self._progress_saved_at = 0.0
+        self._closing = False
+        self._shutdown_deadline = None
+        self._network_available = True
+        self._network_info = None
         self.analyzed_url = ""
         self.analyzed_metadata: dict = {}
         self.analyzed_results: dict[str, dict] = {}
@@ -189,6 +204,132 @@ class MainWindow(QWidget):
         self.connect_update_actions()
         self.connect_format_actions()
         self.connect_about_actions()
+        if self.queue_store is not None:
+            self.download_page.start_button.setEnabled(False)
+            recovery = QueueRecoveryWorker(self.queue_store)
+            recovery.finished.connect(self._restore_queue)
+            recovery.failed.connect(self._queue_recovery_failed)
+            self._worker_runner(recovery)
+
+    @Slot(dict)
+    def _restore_queue(self, items):
+        errors = []
+        for task_id, item in items.items():
+            request = item['request']
+            self._download_requests_by_task[task_id] = request
+            self._download_context_by_task[task_id] = {**item['context'], 'url': request.url,
+                                                       'format_id': request.format_id}
+            state = item['state']
+            self._download_task_states[task_id] = state
+            self.queue_page.add_task(task_id, request.expected_title or '恢复任务', '失败' if state == 'failed' else '已暂停')
+            self.queue_page.update_task(task_id, progress=item['context'].get('progress', 0))
+            if state == 'failed':
+                error = item['context'].get('error') or '上次下载失败，请检查网站权限和所选格式后重试。'
+                self.queue_page._task_cards[task_id]['meta'].setToolTip(error)
+                errors.append(error)
+        self._queue_ready = True
+        self.download_page.start_button.setEnabled(True)
+        if items:
+            self.queue_page.show_notice('已恢复暂停任务。点击继续将使用原格式和保存位置；不支持续传的网站会重新下载当前文件。')
+        if errors:
+            self.queue_page.show_notice('已恢复失败任务：' + '；'.join(dict.fromkeys(errors)))
+
+    @Slot(str)
+    def _queue_recovery_failed(self, message):
+        self.download_page.set_status(message)
+        self.queue_page.show_notice(message)
+
+    def _save_queue(self) -> bool:
+        if self.queue_store is None:
+            return True
+        if not self._queue_ready:
+            return False
+        try:
+            self.queue_store.save({task: (request, self._download_context_by_task.get(task, {}),
+                                           self._download_task_states.get(task, 'paused'))
+                                   for task, request in self._download_requests_by_task.items()})
+        except (OSError, ValueError, TypeError):
+            self._queue_save_failed = True
+            self.download_page.set_status('恢复队列保存失败，未启动新下载；请检查磁盘与数据目录。')
+            return False
+        self._queue_save_failed = False
+        return True
+
+    def _set_download_state(self, task_id, state) -> bool:
+        previous = self._download_task_states.get(task_id)
+        self._download_task_states[task_id] = state
+        if self._save_queue():
+            return True
+        if previous is None:
+            self._download_task_states.pop(task_id, None)
+        else:
+            self._download_task_states[task_id] = previous
+        return False
+
+    def watch_network(self):
+        from PySide6.QtNetwork import QNetworkInformation
+        if QNetworkInformation.loadDefaultBackend():
+            self._network_info = QNetworkInformation.instance()
+            self._network_info.reachabilityChanged.connect(self._reachability_changed)
+            self._network_available = self._network_info.reachability() != QNetworkInformation.Reachability.Disconnected
+
+    def _reachability_changed(self, reachability):
+        from PySide6.QtNetwork import QNetworkInformation
+        if reachability == QNetworkInformation.Reachability.Disconnected:
+            self.network_changed(False)
+        else:
+            # Ignore short connectivity flaps; this timer performs no network I/O.
+            QTimer.singleShot(1500, self._network_stable)
+
+    def _network_stable(self):
+        from PySide6.QtNetwork import QNetworkInformation
+        if self._network_info.reachability() != QNetworkInformation.Reachability.Disconnected:
+            self.network_changed(True)
+
+    def network_changed(self, available):
+        self._network_available = available
+        if self._closing:
+            return
+        for task_id, state in list(self._download_task_states.items()):
+            if not available and state == 'running':
+                self._stop_queue_task(task_id, 'offline')
+            elif not available and state == 'pending':
+                if self._set_download_state(task_id, 'waiting_network'):
+                    self._remove_pending_download_task(task_id)
+                    self.queue_page.update_task(task_id, status='等待网络')
+            elif available and state == 'waiting_network':
+                self.retry_queue_task(task_id)
+
+    def closeEvent(self, event):
+        if not self._threads:
+            event.accept()
+            return
+        event.ignore()
+        if not self._closing:
+            self._closing = True
+            self._shutdown_deadline = time.monotonic() + 20
+            self.setEnabled(False)
+            for task in list(self._download_workers_by_task):
+                self._stop_queue_task(task, 'exit')
+        if self._shutdown_deadline is not None and time.monotonic() >= self._shutdown_deadline:
+            # Last resort only after an explicit exit request. OS teardown
+            # closes every non-inheritable KILL_ON_JOB_CLOSE handle.
+            os._exit(1)
+        self.download_page.set_status('正在停止后台任务，完成后退出…')
+        QTimer.singleShot(100, self.close)
+
+    @Slot()
+    def shutdown_for_quit(self):
+        # Normal window/tray exit uses closeEvent's nonblocking drain. This
+        # fallback also covers an external QApplication.quit/OS shutdown.
+        self._closing = True
+        for task in list(self._download_workers_by_task):
+            self._stop_queue_task(task, 'exit')
+        deadline = time.monotonic() + 20
+        for thread in list(self._threads):
+            if not thread.wait(max(1, int((deadline - time.monotonic()) * 1000))):
+                os._exit(1)
+                return
 
     def _scroll_page(self, page: QWidget) -> QScrollArea:
         scroll = QScrollArea()
@@ -634,7 +775,7 @@ class MainWindow(QWidget):
         )
 
     def _has_running_download_tasks(self) -> bool:
-        return any(state in {"running", "pause_requested", "cancel_requested"} for state in self._download_task_states.values())
+        return self._active_download_count() > 0
 
     def _has_ffmpeg_configured(self) -> bool:
         return self._configured_ffmpeg_path() is not None
@@ -676,9 +817,11 @@ class MainWindow(QWidget):
             worker = AnalysisWorker(request)
         else:
             worker = AnalysisWorker(request, runner=self._analysis_runner)
-        worker.finished.connect(lambda payload, analyzed_url=url: self.apply_analysis_result(analyzed_url, payload))
-        worker.failed.connect(lambda message, failed_url=url: self.show_analysis_error(message, failed_url))
-        worker.canceled.connect(lambda: self.download_page.set_status("分析已取消。"))
+        worker.finished.connect(lambda payload, analyzed_url=url: self._run_on_ui_thread(
+            lambda: self.apply_analysis_result(analyzed_url, payload)))
+        worker.failed.connect(lambda message, failed_url=url: self._run_on_ui_thread(
+            lambda: self.show_analysis_error(message, failed_url)))
+        worker.canceled.connect(lambda: self._run_on_ui_thread(lambda: self.download_page.set_status("分析已取消。")))
         self._worker_runner(worker)
 
     def apply_analysis_result(self, url: str, metadata: dict) -> None:
@@ -713,6 +856,7 @@ class MainWindow(QWidget):
             self.start_playlist_probe(url)
             return
         messages = {
+            "no_formats": "网站本次未返回可下载的视频格式，请稍后重新分析。",
             "login_required": "视频可能需要登录或年龄验证。请在设置中选择 cookies.txt 后重试。",
             "unavailable": "视频不可用、私有或已删除。",
             "network_timeout": "分析超时，请检查网络后重试。",
@@ -775,12 +919,92 @@ class MainWindow(QWidget):
         self.download_page.set_save_folder(selected)
 
     def clear_history(self) -> None:
-        if not self.history_store:
-            self.history_page.load_records([])
+        records = self._history_records()
+        self._delete_history_records(records, list(range(len(records))), "清空历史")
+
+    def _history_records(self) -> list[HistoryRecord]:
+        return self.history_store.list() if self.history_store else list(self.history_page._records)
+
+    def _confirm_record_deletion(self, title: str, count: int) -> bool | None:
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setText(f"确认移除 {count} 条记录？\n默认保留下载文件。勾选后永久删除已记录的主文件，并移除同一任务的历史记录；独立字幕、未完成的分片及其他副本保留。")
+        checkbox = QCheckBox("同时删除下载文件", dialog)
+        checkbox.setChecked(False)
+        dialog.setCheckBox(checkbox)
+        confirm = dialog.addButton("确认删除", QMessageBox.ButtonRole.AcceptRole)
+        cancel = dialog.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+        dialog.setDefaultButton(cancel)
+        dialog.setEscapeButton(cancel)
+        dialog.exec()
+        return checkbox.isChecked() if dialog.clickedButton() == confirm else None
+
+    def _remove_history_indices(self, records: list[HistoryRecord], indices: list[int]) -> None:
+        for index in sorted(indices, reverse=True):
+            if self.history_store:
+                self.history_store.delete(index)
+            del records[index]
+        self.history_page.load_records(records)
+        self.queue_page.load_history_records(records)
+
+    def _delete_files(self, outputs: list[tuple[str, int]], protected_paths: list[str]) -> dict[int, str]:
+        protected = list(protected_paths)
+        unresolved = []
+        active = set(self._download_workers_by_task) | {task for task, state in self._download_task_states.items()
+                                                      if state in {'running', 'pause_requested', 'cancel_requested', 'offline_requested', 'exit_requested', 'stop_failed'}}
+        for task in active:
+            output = self._download_context_by_task.get(task, {}).get('output_path')
+            if output:
+                protected.append(str(output))
+            else:
+                request = self._download_requests_by_task.get(task)
+                try:
+                    unresolved.append(request.output_template.parent.resolve() if request else None)
+                except (OSError, ValueError, RuntimeError, TypeError):
+                    unresolved.append(None)
+        failures, eligible, positions = {}, [], []
+        for index, output in enumerate(outputs):
+            path = output[0]
+            try:
+                in_active_folder = isinstance(path, str) and path and any(
+                    folder is None or Path(path).resolve().is_relative_to(folder) for folder in unresolved)
+            except (OSError, ValueError, RuntimeError, TypeError):
+                failures[index] = '文件路径安全检查失败，已保留文件和记录。'
+                continue
+            if in_active_folder:
+                failures[index] = '当前任务尚未确定保存文件名，请稍后再删除此目录中的文件。'
+            elif path == '':
+                continue
+            else:
+                positions.append(index)
+                eligible.append(output)
+        failures.update({positions[index]: reason for index, reason in delete_recorded_files(eligible, protected).items()})
+        return failures
+
+    def _show_deletion_failures(self, failures: dict[int, str]) -> None:
+        if failures:
+            self._information_dialog(self, "部分记录未删除", f"有 {len(failures)} 条记录已保留：\n" + "\n".join(dict.fromkeys(failures.values())))
+
+    def _delete_history_records(self, records: list[HistoryRecord], indices: list[int], title: str) -> None:
+        if not indices:
             return
-        self.history_store.clear()
-        self.history_page.load_records([])
-        self.queue_page.load_history_records([])
+        choice = self._confirm_record_deletion(title, len(indices))
+        if choice is None:
+            return
+        if records != self._history_records():
+            self._information_dialog(self, "记录已更新", "历史记录已变化，请重新选择后删除。")
+            return
+        failures = {}
+        if choice:
+            selected = [records[index] for index in indices]
+            owned_tasks = {record.task_id for record in selected if record.task_id}
+            protected = [record.output_path for index, record in enumerate(records) if index not in indices]
+            protected.extend(str(context.get("output_path", "")) for task, context in self._download_context_by_task.items()
+                             if task not in owned_tasks or self._download_task_states.get(task) != "finished")
+            failures = self._delete_files([(record.output_path, record.file_size_bytes) for record in selected], protected)
+        self._remove_history_indices(records, [index for position, index in enumerate(indices) if position not in failures])
+        self._show_deletion_failures(failures)
 
     def open_download_folder(self) -> None:
         folder = self.settings_page.default_folder.text().strip()
@@ -796,6 +1020,9 @@ class MainWindow(QWidget):
         if record_index < 0 or record_index >= len(records):
             return
         record = records[record_index]
+        if action == "delete":
+            self.delete_history_record(record_index)
+            return
         output_path = Path(record.output_path)
         if action == "open_file":
             if not output_path.exists():
@@ -816,22 +1043,15 @@ class MainWindow(QWidget):
             self.download_page.url_input.setPlainText(record.url)
             self.start_analysis()
             return
-        if action == "delete":
-            self.delete_history_record(record_index)
-
     def delete_history_record(self, record_index: int) -> None:
-        if not self.history_store:
-            records = list(self.history_page._records)
-            if 0 <= record_index < len(records):
-                del records[record_index]
-            self.history_page.load_records(records)
-            return
-        self.history_store.delete(record_index)
-        records = self.history_store.list()
-        self.history_page.load_records(records)
-        self.queue_page.load_history_records(records)
+        records = self._history_records()
+        if 0 <= record_index < len(records):
+            self._delete_history_records(records, [record_index], "删除历史记录")
 
     def start_download(self) -> None:
+        if not self._queue_ready or self._closing:
+            self.download_page.set_status('恢复队列尚未就绪，暂不能启动下载。')
+            return
         analyzed_items = list(self.analyzed_results.items())
         if not analyzed_items and self.analyzed_url and self.analyzed_metadata:
             analyzed_items = [(self.analyzed_url, self.analyzed_metadata)]
@@ -846,6 +1066,9 @@ class MainWindow(QWidget):
         for url, metadata in analyzed_items:
             if self._start_download_for_analysis(url, metadata, allow_preview=started == 0):
                 started += 1
+            if self._queue_save_failed:
+                self.queue_page.show_notice('恢复队列保存失败，任务尚未启动；请检查磁盘后继续。')
+                return
         if started:
             message = f"已添加 {started} 个下载任务，正在队列页显示进度。"
             self.queue_page.show_notice(message)
@@ -891,6 +1114,9 @@ class MainWindow(QWidget):
             subtitle_action=subtitle_action,
             ffmpeg_path=ffmpeg_path,
             expected_title=title,
+            uses_cookies=self._cookies_path() is not None,
+            temp_dir=self.queue_store.task_dir(task_id) if self.queue_store else None,
+            analysis_info=copy.deepcopy(metadata) if '__ytdl_snapshot_created' in metadata else None,
         )
         self._download_requests_by_task[task_id] = request
         self._download_context_by_task[task_id] = {
@@ -902,17 +1128,30 @@ class MainWindow(QWidget):
             "subtitle_behavior": self.formats_page.subtitle_combo.currentText(),
             "preview_on_start": allow_preview and self.download_page.preview_checkbox.isChecked(),
         }
-        self._queue_download_task(task_id, "下载已开始，进度见队列。")
+        if not self._queue_download_task(task_id, "下载已开始，进度见队列。"):
+            self.queue_page.remove_tasks([task_id])
+            self._download_requests_by_task.pop(task_id, None)
+            self._download_context_by_task.pop(task_id, None)
+            self._download_task_states.pop(task_id, None)
+            return False
         return True
 
-    def _queue_download_task(self, task_id: str, status_text: str) -> None:
-        self._download_task_states[task_id] = "pending"
+    def _queue_download_task(self, task_id: str, status_text: str) -> bool:
+        state = 'pending' if self._network_available else 'waiting_network'
+        if not self._set_download_state(task_id, state):
+            return False
+        if state == 'waiting_network':
+            self.queue_page.update_task(task_id, status='等待网络')
+            return True
         if task_id not in self._pending_download_task_ids:
             self._pending_download_task_ids.append(task_id)
         self._pending_download_status_by_task[task_id] = status_text
         self._start_ready_download_workers()
+        return True
 
     def _start_ready_download_workers(self) -> None:
+        if self._closing or not self._queue_ready or not self._network_available:
+            return
         while self._active_download_count() < self._max_concurrency() and self._pending_download_task_ids:
             task_id = self._pending_download_task_ids.pop(0)
             if self._download_task_states.get(task_id) != "pending":
@@ -930,7 +1169,7 @@ class MainWindow(QWidget):
         return sum(
             1
             for state in self._download_task_states.values()
-            if state in {"running", "pause_requested", "cancel_requested"}
+            if state in {"running", "pause_requested", "cancel_requested", "offline_requested", "exit_requested", "stop_failed"}
         )
 
     def _max_concurrency(self) -> int:
@@ -956,8 +1195,12 @@ class MainWindow(QWidget):
         self._worker_runner(worker)
 
     def _start_download_worker(self, task_id: str, request: DownloadRequest, status_text: str) -> None:
-        self._download_task_states[task_id] = "running"
-        self.queue_page.update_task(task_id, status="下载中", progress=0.0, speed="", eta="")
+        if not self._set_download_state(task_id, 'running'):
+            self._download_task_states[task_id] = 'paused'
+            self.queue_page.update_task(task_id, status='已暂停')
+            return
+        self.queue_page.update_task(task_id, status="下载中", speed="", eta="")
+        self._download_context_by_task.setdefault(task_id, {}).pop('output_path', None)
         self.download_page.set_status(status_text)
         worker = DownloadWorker(
             request,
@@ -965,12 +1208,22 @@ class MainWindow(QWidget):
         )
         self._download_workers_by_task[task_id] = worker
         worker.progress.connect(lambda event, task=task_id: self.update_download_progress(task, event))
+        worker.output_reserved.connect(lambda path, task=task_id: self.reserve_download_output(task, path))
         worker.finished.connect(lambda output_path, task=task_id: self.finish_download(task, output_path))
         worker.failed.connect(lambda message, task=task_id: self.fail_download(task, message))
+        worker.stopped.connect(lambda reason, task=task_id: self.download_stopped(task, reason))
+        worker.network_failed.connect(lambda task=task_id: self.download_stopped(task, 'offline'))
+        worker.stop_failed.connect(lambda message, task=task_id: self.download_stop_failed(task, message))
         self._worker_runner(worker)
 
     def _is_ui_thread(self) -> bool:
         return QThread.currentThread() == self.thread()
+
+    def reserve_download_output(self, task_id: str, path: str) -> None:
+        if not self._is_ui_thread():
+            self._run_on_ui_thread(lambda: self.reserve_download_output(task_id, path))
+            return
+        self._download_context_by_task.setdefault(task_id, {})['output_path'] = path
 
     def _run_on_ui_thread(self, callback) -> None:
         if self._is_ui_thread():
@@ -983,19 +1236,39 @@ class MainWindow(QWidget):
             self._run_on_ui_thread(lambda task_id=task_id, event=event: self.update_download_progress(task_id, event))
             return
         if event.percent is None:
+            if 'Unable to resume' in event.raw:
+                self.queue_page.show_notice('此来源不支持续传，正在重新下载当前文件；其他已完成文件保留。')
             return
+        if self._download_task_states.get(task_id) != 'running':
+            return
+        self._download_context_by_task.setdefault(task_id, {})['progress'] = event.percent
         self.queue_page.update_task(task_id, status="下载中", progress=event.percent, speed=event.speed, eta=event.eta)
+        now = time.monotonic()
+        if self.queue_store is not None and now - self._progress_saved_at >= 1:
+            self._progress_saved_at = now
+            if not self._save_queue():
+                message = '进度保存失败，下载仍在继续；已保留上次恢复快照，请检查磁盘。'
+                self.download_page.set_status(message)
+                self.queue_page.show_notice(message)
 
     def finish_download(self, task_id: str, output_path: str = "") -> None:
         if not self._is_ui_thread():
             self._run_on_ui_thread(lambda task_id=task_id, output_path=output_path: self.finish_download(task_id, output_path))
             return
+        if self._download_task_states.get(task_id) in {'cancel_requested', 'canceled'}:
+            self.download_stopped(task_id, 'cancel')
+            return
         self._download_workers_by_task.pop(task_id, None)
         self._download_task_states[task_id] = "finished"
+        if task_id in self._download_requests_by_task:
+            self._download_requests_by_task[task_id] = replace(self._download_requests_by_task[task_id], analysis_info=None)
+        saved = self._save_queue()
         if output_path:
             self._download_context_by_task.setdefault(task_id, {})["output_path"] = output_path
         self.queue_page.update_task(task_id, status="已完成", progress=100.0, speed="", eta="00:00")
         self.download_page.set_status("下载完成。")
+        if not saved:
+            self.download_page.set_status('下载完成，但恢复队列保存失败；重启后可能仍显示暂停任务。')
         try:
             self.record_finished_download(task_id)
         except Exception:
@@ -1008,11 +1281,8 @@ class MainWindow(QWidget):
             return
         self._download_workers_by_task.pop(task_id, None)
         state = self._download_task_states.get(task_id, "")
-        if state == "cancel_requested":
-            self._download_task_states[task_id] = "canceled"
-            self.queue_page.update_task(task_id, status="已取消")
-            self.download_page.set_status("下载已取消。")
-            self._start_ready_download_workers()
+        if state in {"cancel_requested", "canceled"}:
+            self.download_stopped(task_id, 'cancel')
             return
         if state == "pause_requested":
             self._download_task_states[task_id] = "paused"
@@ -1022,9 +1292,50 @@ class MainWindow(QWidget):
             return
         self._download_task_states[task_id] = "failed"
         safe_message = "下载失败，请检查地址、网络或 yt-dlp 状态后重试。"
+        shown_message = safe_message if "cookies" in message.lower() else message
+        self._download_context_by_task.setdefault(task_id, {})['error'] = shown_message
+        saved = self._save_queue()
         self.queue_page.update_task(task_id, status="失败")
-        self.download_page.set_status(safe_message if "cookies" in message.lower() else message)
+        if saved:
+            self.download_page.set_status(shown_message)
         self._start_ready_download_workers()
+
+    def download_stopped(self, task_id, reason):
+        if not self._is_ui_thread():
+            self._run_on_ui_thread(lambda: self.download_stopped(task_id, reason))
+            return
+        previous = self._download_task_states.get(task_id)
+        if previous in {'cancel_requested', 'canceled'}:
+            reason = 'cancel'
+        elif previous in {'pause_requested', 'exit_requested'}:
+            reason = 'pause'
+        self._download_workers_by_task.pop(task_id, None)
+        state, label = {'cancel': ('canceled', '已取消'), 'offline': ('waiting_network', '等待网络')}.get(reason, ('paused', '已暂停'))
+        self._download_task_states[task_id] = state
+        saved = self._save_queue()
+        if state == 'canceled':
+            self._remove_canceled_task_card(task_id)
+        else:
+            self.queue_page.update_task(task_id, status=label)
+        if saved:
+            self.download_page.set_status({'paused': '下载已暂停，可继续。', 'canceled': '下载已取消。',
+                                           'waiting_network': '连接已中断，等待网络恢复；也可点击继续重试。'}[state])
+        # Only restart after a real network transition. A timeout with an online
+        # OS hint must not loop forever against the same inaccessible website.
+        if reason == 'offline' and previous == 'offline_requested' and self._network_available:
+            self.retry_queue_task(task_id)
+        self._start_ready_download_workers()
+
+    def download_stop_failed(self, task_id, message):
+        if not self._is_ui_thread():
+            self._run_on_ui_thread(lambda: self.download_stop_failed(task_id, message))
+            return
+        # Keep the durable cancellation tombstone while retaining its slot.
+        if self._download_task_states.get(task_id) != 'cancel_requested':
+            self._download_task_states[task_id] = 'stop_failed'
+        self._save_queue()
+        self.queue_page.update_task(task_id, status='停止未确认')
+        self.download_page.set_status(message)
 
     def handle_queue_action(self, task_id: str, action: str) -> None:
         if action == "cancel":
@@ -1035,43 +1346,74 @@ class MainWindow(QWidget):
             self.retry_queue_task(task_id)
 
     def cancel_queue_task(self, task_id: str) -> None:
-        if self._download_task_states.get(task_id) == "pending":
-            self._remove_pending_download_task(task_id)
-            self._download_task_states[task_id] = "canceled"
-            self.queue_page.update_task(task_id, status="已取消")
-            self.download_page.set_status("下载已取消。")
-            return
-        self._download_task_states[task_id] = "cancel_requested"
-        worker = self._download_workers_by_task.get(task_id)
-        if worker:
-            worker.cancel()
-        self.queue_page.update_task(task_id, status="已取消")
-        self.download_page.set_status("下载已取消。")
+        self._stop_queue_task(task_id, 'cancel')
 
     def pause_queue_task(self, task_id: str) -> None:
-        if self._download_task_states.get(task_id) == "pending":
-            self._remove_pending_download_task(task_id)
-            self._download_task_states[task_id] = "paused"
-            self.queue_page.update_task(task_id, status="已暂停")
-            self.download_page.set_status("下载已暂停，可继续。")
+        self._stop_queue_task(task_id, 'pause')
+
+    def _stop_queue_task(self, task_id, reason):
+        state = self._download_task_states.get(task_id)
+        if state is None or state in {'finished', 'canceled', 'cancel_requested', 'stop_failed'}:
             return
-        self._download_task_states[task_id] = "pause_requested"
         worker = self._download_workers_by_task.get(task_id)
+        next_state = reason + '_requested' if worker else ('canceled' if reason == 'cancel' else 'paused')
+        if not self._set_download_state(task_id, next_state):
+            # A failing disk must not prevent shutdown, but cancellation must
+            # not be claimed durable until its tombstone has been saved.
+            if worker:
+                self._download_task_states[task_id] = 'pause_requested'
+                worker.stop('pause')
+            return
+        self._remove_pending_download_task(task_id)
         if worker:
-            worker.cancel()
-        self.queue_page.update_task(task_id, status="已暂停")
-        self.download_page.set_status("下载已暂停，可继续。")
+            label = {'pause': '正在暂停', 'cancel': '正在取消', 'offline': '正在等待网络', 'exit': '正在暂停'}[reason]
+            self.queue_page.update_task(task_id, status=label)
+            self.download_page.set_status(label + '，正在停止下载进程…')
+            worker.stop(reason)
+            QTimer.singleShot(5000, lambda task=task_id: self._show_stop_delay(task))
+        else:
+            if reason == 'cancel':
+                self._remove_canceled_task_card(task_id)
+            else:
+                self.queue_page.update_task(task_id, status='已暂停')
+            self.download_page.set_status('下载已取消。' if reason == 'cancel' else '下载已暂停，可继续。')
+
+    def _remove_canceled_task_card(self, task_id):
+        # Retain the canceled state as a tombstone for late worker signals.
+        self.queue_page.remove_tasks([task_id])
+        self._download_requests_by_task.pop(task_id, None)
+        self._download_context_by_task.pop(task_id, None)
+        self._pending_download_status_by_task.pop(task_id, None)
+        self._remove_pending_download_task(task_id)
+        self.queue_page.show_notice('任务已取消并移出队列，已下载文件保留。')
+
+    def _show_stop_delay(self, task_id):
+        if task_id in self._download_workers_by_task and self._download_task_states.get(task_id, '').endswith('_requested'):
+            self.download_page.set_status('下载进程尚未完全退出，仍保留任务占用；请等待停止完成。')
 
     def retry_queue_task(self, task_id: str) -> None:
         state = self._download_task_states.get(task_id, "")
-        if state not in {"paused", "canceled", "failed", "pause_requested", "cancel_requested"}:
+        if state not in {"paused", "canceled", "failed", "waiting_network"} or task_id in self._download_workers_by_task:
             self.download_page.set_status("只能重试已暂停、已取消或失败的任务。")
             return
         request = self._download_requests_by_task.get(task_id)
         if request is None:
             return
-        self.queue_page.update_task(task_id, status="等待中", progress=0.0, speed="", eta="")
-        self._queue_download_task(task_id, "已重新开始下载。")
+        uses_cookies = request.uses_cookies or request.cookies_path is not None
+        cookies = self._cookies_path() if uses_cookies else None
+        if uses_cookies and (cookies is None or not validate_netscape_cookies(cookies).ok):
+            self.download_page.set_status('此任务需要 cookies.txt，请在设置中重新选择有效文件后继续。')
+            return
+        if not request.output_template.parent.is_dir():
+            self.download_page.set_status('原保存位置不可用，请恢复该目录后继续。')
+            return
+        self._download_requests_by_task[task_id] = replace(request, cookies_path=cookies,
+            uses_cookies=uses_cookies, ytdlp_path=self._active_ytdlp_path(), ffmpeg_path=self._configured_ffmpeg_path())
+        self.queue_page.update_task(task_id, status="等待中", speed="", eta="")
+        if not self._queue_download_task(task_id, "已重新开始下载。"):
+            self._download_requests_by_task[task_id] = request
+            self.queue_page.update_task(task_id, status={'paused': '已暂停', 'failed': '失败',
+                                                         'canceled': '已取消', 'waiting_network': '等待网络'}[state])
 
     def pause_all_tasks(self) -> None:
         for row in range(self.queue_page.table.rowCount()):
@@ -1080,7 +1422,39 @@ class MainWindow(QWidget):
                 self.pause_queue_task(task_item.text())
 
     def clear_completed_queue_tasks(self) -> None:
-        task_ids = self.queue_page.completed_task_ids()
+        task_ids = [task for task in self.queue_page.completed_task_ids()
+                    if self._download_task_states.get(task) in {"finished", "canceled"}]
+        if not task_ids:
+            return
+        choice = self._confirm_record_deletion("清除已完成任务", len(task_ids))
+        if choice is None:
+            return
+        # A modal dialog may process worker signals or retries; recheck states.
+        task_ids = [task for task in task_ids if self._download_task_states.get(task) in {"finished", "canceled"}]
+        failures = {}
+        if choice:
+            records = self._history_records()
+            outputs = []
+            for task in task_ids:
+                context = self._download_context_by_task.get(task, {})
+                matching = [record for record in records if record.task_id == task]
+                sizes = {record.file_size_bytes for record in matching if record.file_size_bytes}
+                outputs.append((str(context.get("output_path", "")), next(iter(sizes), 0)))
+            protected = [record.output_path for record in records if record.task_id not in task_ids]
+            protected.extend(str(context.get("output_path", "")) for task, context in self._download_context_by_task.items() if task not in task_ids)
+            # Never discard a history path which differs from its queue output.
+            mapping_failures = {}
+            for index, task in enumerate(task_ids):
+                matching = [record for record in records if record.task_id == task]
+                if (any(record.output_path != outputs[index][0] for record in matching)
+                        or len({record.file_size_bytes for record in matching if record.file_size_bytes}) > 1):
+                    mapping_failures[index] = "任务与历史记录中的文件信息不一致，已保留文件和记录。"
+                    protected.append(outputs[index][0])
+                    protected.extend(record.output_path for record in matching)
+            failures = self._delete_files(outputs, protected)
+            failures.update(mapping_failures)
+            task_ids = [task for index, task in enumerate(task_ids) if index not in failures]
+            self._remove_history_indices(records, [index for index, record in enumerate(records) if record.task_id in task_ids])
         self.queue_page.remove_tasks(task_ids)
         for task_id in task_ids:
             self._download_workers_by_task.pop(task_id, None)
@@ -1089,6 +1463,8 @@ class MainWindow(QWidget):
             self._download_task_states.pop(task_id, None)
             self._pending_download_status_by_task.pop(task_id, None)
             self._remove_pending_download_task(task_id)
+        self._show_deletion_failures(failures)
+        self._save_queue()
 
     def _remove_pending_download_task(self, task_id: str) -> None:
         self._pending_download_task_ids = [pending_id for pending_id in self._pending_download_task_ids if pending_id != task_id]
@@ -1108,6 +1484,7 @@ class MainWindow(QWidget):
             status="finished",
             created_at=datetime.now().isoformat(timespec="seconds"),
             file_size_bytes=_file_size_bytes(output_path),
+            task_id=task_id or "",
         )
         self.history_store.add(record)
         records = self.history_store.list()
@@ -1183,13 +1560,10 @@ class MainWindow(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
 
-        def finish_thread(*_args) -> None:
-            thread.quit()
-
-        for signal_name in ("finished", "failed", "canceled"):
+        for signal_name in ("finished", "failed", "canceled", "stopped", "network_failed", "stop_failed"):
             signal = getattr(worker, signal_name, None)
             if signal is not None:
-                signal.connect(finish_thread)
+                signal.connect(thread.quit, Qt.ConnectionType.DirectConnection)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(lambda: self._forget_thread(thread))

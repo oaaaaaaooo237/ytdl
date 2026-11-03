@@ -1,10 +1,15 @@
 import json
+import copy
+import hashlib
+import time
+import re
+import threading
 import shutil
 import subprocess
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -13,8 +18,33 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from ytdl_gui.ffmpeg import FfmpegStatus, find_ffmpeg
 from ytdl_gui.subprocess_utils import hidden_window_kwargs
+from ytdl_gui.process_tree import ManagedProcess
 from ytdl_gui.update_manager import UpdateOutcome, download_and_install_latest_ytdlp
-from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error, parse_progress_line
+from ytdl_gui.ytdlp_runner import AnalysisFailureKind, YtdlpCommandBuilder, categorize_analysis_error, parse_progress_line, uses_compatible_tls
+
+
+def _cookies_digest(path):
+    if path is None:
+        return None
+    with Path(path).open('rb') as source:
+        return hashlib.file_digest(source, 'sha256').hexdigest()
+
+
+def reusable_analysis(metadata, url, cookies_path):
+    if not uses_compatible_tls(url) or not metadata:
+        return None
+    if metadata.get('__ytdl_snapshot_url') != url:
+        return None
+    if not 0 <= time.monotonic() - metadata.get('__ytdl_snapshot_created', 0) <= 900:
+        return None
+    try:
+        if metadata.get('__ytdl_snapshot_cookies') != _cookies_digest(cookies_path):
+            return None
+    except OSError:
+        return None
+    if not metadata.get('formats'):
+        return None
+    return copy.deepcopy({key: value for key, value in metadata.items() if not key.startswith('__ytdl')})
 
 
 @dataclass(frozen=True)
@@ -67,6 +97,7 @@ class AnalysisWorker(QObject):
             return
 
         try:
+            snapshot_cookies = _cookies_digest(self.request.cookies_path) if uses_compatible_tls(self.request.url) else None
             result = self._runner(
                 make_analysis_command(self.request),
                 capture_output=True,
@@ -98,6 +129,13 @@ class AnalysisWorker(QObject):
             self.failed.emit(AnalysisFailureKind.UNKNOWN_YTDLP_FAILURE.value)
             return
 
+        if uses_compatible_tls(self.request.url):
+            try:
+                if snapshot_cookies == _cookies_digest(self.request.cookies_path):
+                    payload.update(__ytdl_snapshot_cookies=snapshot_cookies,
+                                   __ytdl_snapshot_created=time.monotonic(), __ytdl_snapshot_url=self.request.url)
+            except OSError:
+                pass
         self.finished.emit(payload)
 
     @staticmethod
@@ -208,6 +246,9 @@ class DownloadRequest:
     subtitle_action: str = "none"
     ffmpeg_path: Path | None = None
     expected_title: str = ""
+    temp_dir: Path | None = None
+    uses_cookies: bool = False
+    analysis_info: dict | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -220,9 +261,13 @@ class PreviewUrlRequest:
 
 
 class DownloadWorker(QObject):
+    output_reserved = Signal(str)
     progress = Signal(object)
     finished = Signal(str)
     failed = Signal(str)
+    stopped = Signal(str)
+    network_failed = Signal()
+    stop_failed = Signal(str)
 
     def __init__(
         self,
@@ -232,18 +277,85 @@ class DownloadWorker(QObject):
     ):
         super().__init__()
         self.request = request
-        self._popen_factory = popen_factory or subprocess.Popen
-        self._ffmpeg_runner = ffmpeg_runner or subprocess.run
+        self._popen_factory = popen_factory or ManagedProcess
+        self._ffmpeg_runner = ffmpeg_runner
         self._process = None
         self._canceled = False
+        self._stop_reason = ''
+        self._process_lock = threading.Lock()
+        self._terminal = None
+        self._cleanup_unconfirmed = False
 
     def cancel(self) -> None:
         self._canceled = True
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
+        self.stop('cancel')
+
+    def stop(self, reason: str) -> None:
+        if reason not in {'pause', 'cancel', 'offline', 'exit'}:
+            raise ValueError('未知停止原因')
+        with self._process_lock:
+            if self._stop_reason != 'cancel':
+                self._stop_reason = reason
+            if self._process and (isinstance(self._process, ManagedProcess) or self._process.poll() is None):
+                try:
+                    self._process.terminate()
+                except OSError:
+                    # The worker's final cleanup retries and verifies the tree.
+                    pass
 
     @Slot()
     def run(self) -> None:
+        self._terminal = None
+        self._cleanup_unconfirmed = False
+        try:
+            self._run_download()
+        except Exception:
+            # File-system and pipe failures must not strand the QThread loop.
+            # Do not expose exception text, which can contain URLs/cookies.
+            self._terminal = ('stopped', self._stop_reason) if self._stop_reason else ('failed', '下载处理失败，文件已保留；请检查磁盘和保存位置后重试。')
+        finally:
+            try:
+                self._dispose_process()
+            except Exception:
+                self._cleanup_unconfirmed = True
+        if self._cleanup_unconfirmed:
+            self._terminal = ('stop_failed', '未能确认下载进程已完全停止；任务仍占用槽位，请退出程序后重试。')
+        name, value = self._terminal or ('failed', '下载未返回有效结果，请重试。')
+        signal = getattr(self, name)
+        signal.emit() if value is None else signal.emit(value)
+
+    def _complete(self, name, value=None):
+        self._terminal = (name, value)
+
+    def _dispose_process(self):
+        process = self._process
+        if process is None:
+            return
+        try:
+            process.terminate()
+            if isinstance(process, ManagedProcess):
+                process.wait(timeout=5)
+            else:
+                process.wait()
+        except Exception:
+            # Preserve this result across the yt-dlp -> ffmpeg transition,
+            # even if a stage-level handler catches the cleanup exception.
+            self._cleanup_unconfirmed = True
+            raise
+        finally:
+            try:
+                if isinstance(process, ManagedProcess):
+                    process.close()
+            except Exception:
+                self._cleanup_unconfirmed = True
+                raise
+            finally:
+                self._process = None
+
+    def _run_download(self) -> None:
+        if self._stop_reason:
+            self._complete('stopped', self._stop_reason)
+            return
         before_files = _snapshot_output_files(self.request.output_template.parent)
         command = YtdlpCommandBuilder(self.request.ytdlp_path).download_command(
             self.request.url,
@@ -252,37 +364,66 @@ class DownloadWorker(QObject):
             self.request.cookies_path,
             subtitle_action=self.request.subtitle_action,
             ffmpeg_path=self.request.ffmpeg_path,
+            temp_dir=self.request.temp_dir,
         )
+        snapshot = reusable_analysis(self.request.analysis_info, self.request.url, self.request.cookies_path)
+        input_options = {}
+        if snapshot is not None:
+            command[-1:] = ['--load-info-json', '-']
+            input_options['stdin'] = subprocess.PIPE
         try:
-            self._process = self._popen_factory(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                **hidden_window_kwargs(),
-            )
+            if self.request.temp_dir:
+                self.request.temp_dir.mkdir(parents=True, exist_ok=True)
+            with self._process_lock:
+                if self._stop_reason:
+                    self._complete('stopped', self._stop_reason)
+                    return
+                self._process = self._popen_factory(
+                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, **input_options, **hidden_window_kwargs())
         except OSError:
-            self.failed.emit("启动 yt-dlp 下载失败，请检查 yt-dlp 路径。")
+            self._complete('failed', "启动 yt-dlp 下载失败，请检查 yt-dlp 路径。")
             return
         except subprocess.SubprocessError:
-            self.failed.emit("启动 yt-dlp 下载失败，请稍后重试。")
+            self._complete('failed', "启动 yt-dlp 下载失败，请稍后重试。")
             return
 
+        if snapshot is not None:
+            # A pipe keeps extracted media URLs and headers out of disk and argv.
+            try:
+                self._process.stdin.write(json.dumps(snapshot, ensure_ascii=True))
+            finally:
+                self._process.stdin.close()
+
         output_path = ""
+        error_lines = []
         stdout = getattr(self._process, "stdout", None)
         if stdout is not None:
             for line in stdout:
-                if self._canceled:
-                    break
                 text = line.strip()
+                if text.startswith('__YTDL_OUTPUT__'):
+                    try:
+                        reserved = json.loads(text[len('__YTDL_OUTPUT__'):])
+                    except (ValueError, TypeError):
+                        continue
+                    if isinstance(reserved, str):
+                        self.output_reserved.emit(reserved)
+                    continue
+                if 'ERROR:' in text:
+                    error_lines.append(text)
+                    error_lines = error_lines[-5:]
                 event = parse_progress_line(text)
                 self.progress.emit(event)
                 if event.percent is None and _looks_like_output_path(text):
                     output_path = text
 
         return_code = self._process.wait()
-        if self._canceled:
-            self.failed.emit("下载已取消。")
+        errors = '\n'.join(error_lines)
+        permanent_error = bool(re.search(r'http (?:error )?\d{3}\b', errors.casefold()) or 'requested format' in errors.casefold())
+        if self._stop_reason == 'offline' and permanent_error:
+            self._complete('failed', '网站拒绝访问或所选格式不可用，请检查权限与格式后重试。')
+        elif self._stop_reason:
+            self._complete('stopped', self._stop_reason)
         elif return_code == 0:
             resolved_output_path = _resolve_output_path(
                 output_path,
@@ -293,47 +434,71 @@ class DownloadWorker(QObject):
             if self.request.subtitle_action == "burn":
                 burned_output_path = self._burn_subtitle(resolved_output_path, before_files)
                 if burned_output_path:
-                    self.finished.emit(burned_output_path)
+                    self._complete('finished', burned_output_path)
                 return
-            self.finished.emit(resolved_output_path)
+            self._complete('finished', resolved_output_path)
         else:
-            self.failed.emit(f"yt-dlp 下载失败，退出码 {return_code}")
+            if 'no video formats' in errors.casefold():
+                self._complete('failed', '网站本次未返回可下载的视频格式，请稍后重新分析。')
+            elif is_network_download_error('\n'.join(error_lines)):
+                self._complete('network_failed')
+            else:
+                self._complete('failed', f"yt-dlp 下载失败，退出码 {return_code}；请检查网站权限或所选格式后重试。")
 
     def _burn_subtitle(self, output_path: str, before_files: set[Path]) -> str:
         media_path = Path(output_path)
         if not output_path or not media_path.exists():
-            self.failed.emit(BURN_FAILURE_MESSAGE)
+            self._complete('failed', BURN_FAILURE_MESSAGE)
             return ""
         if self.request.ffmpeg_path is None:
-            self.failed.emit("烧录字幕需要 ffmpeg；请先在设置中搜索或选择 ffmpeg.exe。")
+            self._complete('failed', "烧录字幕需要 ffmpeg；请先在设置中搜索或选择 ffmpeg.exe。")
             return ""
         subtitle_path = _find_subtitle_file(media_path, before_files)
         if subtitle_path is None:
-            self.failed.emit("未找到可烧录的字幕文件；原始文件已保留，可改为下载字幕文件或嵌入字幕后重试。")
+            self._complete('failed', "未找到可烧录的字幕文件；原始文件已保留，可改为下载字幕文件或嵌入字幕后重试。")
             return ""
 
         burned_output_path = _burned_output_path(media_path)
         safe_subtitle_path = _copy_subtitle_for_ffmpeg(subtitle_path)
         command = _burn_subtitle_command(Path(self.request.ffmpeg_path), media_path, safe_subtitle_path, burned_output_path)
         try:
-            result = self._ffmpeg_runner(
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-                cwd=str(safe_subtitle_path.parent),
-                **hidden_window_kwargs(),
-            )
+            if self._ffmpeg_runner is not None:
+                result = self._ffmpeg_runner(command, capture_output=True, text=True, check=False,
+                                             cwd=str(safe_subtitle_path.parent), **hidden_window_kwargs())
+            else:
+                self._dispose_process()
+                with self._process_lock:
+                    if self._stop_reason:
+                        self._complete('stopped', self._stop_reason)
+                        return ''
+                    self._process = ManagedProcess(command, cwd=str(safe_subtitle_path.parent))
+                for _line in self._process.stdout:
+                    pass
+                returncode = self._process.wait()
+                if self._stop_reason:
+                    self._complete('stopped', self._stop_reason)
+                    return ''
+                result = subprocess.CompletedProcess(command, returncode)
         except (OSError, subprocess.SubprocessError):
-            self.failed.emit(BURN_FAILURE_MESSAGE)
+            self._complete('failed', BURN_FAILURE_MESSAGE)
             return ""
         finally:
             safe_subtitle_path.unlink(missing_ok=True)
 
         if result.returncode != 0 or not burned_output_path.exists():
-            self.failed.emit(BURN_FAILURE_MESSAGE)
+            self._complete('failed', BURN_FAILURE_MESSAGE)
             return ""
         return str(burned_output_path)
+
+
+def is_network_download_error(message: str) -> bool:
+    text = message.casefold()
+    if re.search(r'http (?:error )?\d{3}\b', text) or 'requested format' in text:
+        return False
+    return any(fragment in text for fragment in (
+        'timed out', 'timeout', 'getaddrinfo failed', 'name resolution', 'network is unreachable',
+        'network is down', 'connection reset', 'connection refused', 'connection aborted',
+        'unable to resolve', 'remote end closed connection'))
 
 
 def _snapshot_output_files(output_dir: Path) -> set[Path]:
@@ -388,10 +553,10 @@ def _find_subtitle_file(media_path: Path, before_files: set[Path]) -> Path | Non
     subtitle_files = [
         path
         for path in output_dir.iterdir()
-        if path.is_file() and path not in before_files and path.suffix.casefold() in SUBTITLE_SUFFIXES
+        if path.is_file() and path.suffix.casefold() in SUBTITLE_SUFFIXES
     ]
     preferred = [path for path in subtitle_files if path.stem == media_path.stem or path.stem.startswith(media_path.stem + ".")]
-    candidates = preferred or subtitle_files
+    candidates = preferred or [path for path in subtitle_files if path not in before_files]
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime)
