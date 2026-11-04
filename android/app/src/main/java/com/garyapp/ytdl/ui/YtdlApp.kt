@@ -1,6 +1,7 @@
 package com.garyapp.ytdl.ui
 
 import android.Manifest
+import com.garyapp.ytdl.core.settings.cookiesForUrl
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -773,6 +774,9 @@ internal fun YtdlApp(
         retryDraftStoreOverride ?: FileRetryDraftStore.fromContext(context.applicationContext)
     }
     var appSettings by remember { mutableStateOf(settingsRepository.getSettings()) }
+    var showSiteCookies by remember { mutableStateOf(false) }
+    var pendingCookiesDomain by rememberSaveable { mutableStateOf("") }
+    var pendingCookiesName by rememberSaveable { mutableStateOf("") }
     var historyItems by remember { mutableStateOf(emptyList<HistoryUiItem>()) }
     var pendingDownloadRequests by remember { mutableStateOf(emptyList<DownloadRequest>()) }
     var savedDownloadTasks by remember { mutableStateOf(emptyList<ResumeTaskItem>()) }
@@ -950,8 +954,21 @@ internal fun YtdlApp(
         if (reference == null) {
             runtimeState = runtimeState.copy(userMessage = "cookies 文件引用无效，请重新选择 cookies.txt。")
         } else {
-            appSettings = settingsRepository.setCookiesReference(reference)
+            appSettings = if (pendingCookiesDomain.isBlank()) settingsRepository.setCookiesReference(reference)
+            else settingsRepository.setSiteCookies(pendingCookiesName, pendingCookiesDomain, reference)
             runtimeState = runtimeState.copy(userMessage = "已保存 cookies 文件引用，仅任务运行时临时读取。")
+        }
+    }
+
+    val siteLoginLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
+            val domain = com.garyapp.ytdl.core.settings.CookieSites.normalizeDomain(data.getStringExtra("domain").orEmpty())
+            val reference = SettingsCookiesReference.fromUserReference(data.getStringExtra("reference").orEmpty(), "App 内登录")
+            if (domain != null && domain == pendingCookiesDomain && reference != null) {
+                appSettings = settingsRepository.setSiteCookies(pendingCookiesName, domain, reference)
+                runtimeState = runtimeState.copy(userMessage = "已保存该网站登录状态。")
+            }
         }
     }
 
@@ -1096,7 +1113,7 @@ internal fun YtdlApp(
         )
         Thread {
             val temporaryCookiesResult = prepareTemporaryCookiesForDownload(
-                settingsReference = settingsRepository.getSettings().cookiesReference,
+                settingsReference = settingsRepository.getSettings().cookiesForUrl(url),
                 context = context.applicationContext,
                 taskId = "analyze-${System.currentTimeMillis()}",
             )
@@ -1167,8 +1184,9 @@ internal fun YtdlApp(
             return
         }
         val url = runtimeState.url.trim()
+        val selectedCookies = settingsRepository.getSettings().cookiesForUrl(url)
         val temporaryCookies = prepareTemporaryCookiesForDownload(
-            settingsReference = settingsRepository.getSettings().cookiesReference,
+            settingsReference = selectedCookies,
             context = context.applicationContext,
             taskId = "download-${System.currentTimeMillis()}",
         ).getOrElse {
@@ -1193,7 +1211,11 @@ internal fun YtdlApp(
             )
             return
         }
-        val request = requestResult.getOrThrow().copy(storageTarget = settingsRepository.getSettings().defaultStorageTarget)
+        val request = requestResult.getOrThrow().copy(
+            storageTarget = settingsRepository.getSettings().defaultStorageTarget,
+            pinnedCookiesReference = selectedCookies,
+            cookiesSelectionPinned = true,
+        )
         val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
         Thread {
         val startResult = downloadStarter(context.applicationContext, request, outputDir)
@@ -1490,7 +1512,7 @@ internal fun YtdlApp(
                             notificationsAllowed = notificationsAllowed,
                             notificationRuntimePermissionRequired = notificationRuntimePermissionRequired,
                             onSelectCookies = {
-                                cookiesPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+                                showSiteCookies = true
                             },
                             onSelectStorageTarget = { storageTreePicker.launch(null) },
                             onResetStorageTarget = {
@@ -1697,6 +1719,51 @@ internal fun YtdlApp(
                     TextButton(onClick = { dismissParserUpdatePrompt(parserUpdateVersion) }) {
                         Text("稍后")
                     }
+                },
+            )
+        }
+        if (showSiteCookies) {
+            SiteCookiesDialog(
+                settings = appSettings,
+                onDismiss = { showSiteCookies = false },
+                onAdd = { name, domain ->
+                    val previous = appSettings.siteCookies[domain]?.reference
+                    appSettings = settingsRepository.setSiteCookies(name, domain, previous)
+                },
+                onChoose = { name, domain ->
+                    pendingCookiesDomain = domain
+                    pendingCookiesName = name
+                    cookiesPicker.launch(arrayOf("*/*"))
+                },
+                onLogin = { name, domain ->
+                    pendingCookiesDomain = domain
+                    pendingCookiesName = name
+                    siteLoginLauncher.launch(Intent(context, com.garyapp.ytdl.cookies.SiteLoginActivity::class.java)
+                        .putExtra("domain", domain))
+                },
+                onClear = { domain ->
+                    runCatching {
+                        if (domain.isBlank()) appSettings = settingsRepository.setCookiesReference(null)
+                        else {
+                            com.garyapp.ytdl.cookies.SiteLoginStore.fromContext(context).clear(domain)
+                            val name = appSettings.siteCookies[domain]?.name ?: domain
+                            appSettings = settingsRepository.setSiteCookies(name, domain, null)
+                        }
+                    }.onFailure { runtimeState = runtimeState.copy(userMessage = "清理登录状态失败，请重试。") }
+                },
+                onCheck = { domain ->
+                    val reference = if (domain.isBlank()) appSettings.cookiesReference else appSettings.siteCookies[domain]?.reference
+                    Thread {
+                        val temporary = prepareTemporaryCookiesForDownload(reference, context.applicationContext, "readability-check")
+                        val readable = reference != null && temporary.isSuccess
+                        temporary.getOrNull()?.delete()
+                        mainHandler.post {
+                            runtimeState = runtimeState.copy(userMessage =
+                                if (readable) "文件可读取；登录是否有效需重新分析网站确认。" else "文件不可读取，请重新选择。")
+                            settingsExplanation = SettingsExplanation("cookies 可读性",
+                                if (readable) "文件可读取；登录是否有效需重新分析网站确认。" else "文件不可读取，请重新选择。")
+                        }
+                    }.start()
                 },
             )
         }
@@ -2974,6 +3041,9 @@ private fun formatProgressBytes(bytes: Double): String {
 internal fun formatProgressBytesForUiTest(bytes: Double): String = formatProgressBytes(bytes)
 
 private fun settingsCookiesSubtitle(settings: AppSettings): String {
+    if (settings.siteCookies.isNotEmpty()) {
+        return "已配置 ${settings.siteCookies.values.count { it.reference != null }} 个网站 · 自动匹配域名"
+    }
     val reference = settings.cookiesReference
         ?: return "未选择 · 仅保存文件引用，不保存内容"
     return "${reference.displayName ?: "cookies 文件"} · 仅保存引用"
@@ -3365,7 +3435,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
             "Cookies 文件",
             settingsCookiesSubtitle(settings),
             "▤",
-            "选择",
+            "按网站管理",
             LocalYtdlAppPalette.current.settingsAccent,
             modifier = Modifier
                 .clickable(onClick = onSelectCookies)

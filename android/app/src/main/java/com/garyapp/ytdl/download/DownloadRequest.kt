@@ -8,6 +8,9 @@ import com.garyapp.ytdl.ui.FormatSelection
 import com.garyapp.ytdl.ui.formatSelectionSummary
 import com.garyapp.ytdl.ui.isNativeMp4MergeAudioCompatible
 import com.garyapp.ytdl.ui.isNativeMp4MergeVideoCompatible
+import com.garyapp.ytdl.core.settings.AppSettings
+import com.garyapp.ytdl.core.settings.CookiesReference
+import com.garyapp.ytdl.core.settings.cookiesForUrl
 
 data class DownloadRequest(
     val url: String,
@@ -21,7 +24,13 @@ data class DownloadRequest(
     val usesCookies: Boolean = !cookiesPath.isNullOrBlank(),
     val storageTarget: com.garyapp.ytdl.core.storage.StorageTarget? = null,
     val analysisKey: String? = null,
+    val pinnedCookiesReference: CookiesReference? = null,
+    val cookiesSelectionPinned: Boolean = false,
 ) {
+    fun cookiesReferenceFor(settings: AppSettings): CookiesReference? {
+        if (!usesCookies) return null
+        return if (cookiesSelectionPinned) pinnedCookiesReference else settings.cookiesForUrl(url)
+    }
     init {
         require(taskId.matches(Regex("^[0-9a-f]{32}$"))) { "任务标识不可用。" }
     }

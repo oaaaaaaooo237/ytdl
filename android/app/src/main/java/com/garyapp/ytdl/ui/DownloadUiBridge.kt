@@ -256,7 +256,7 @@ fun settingsMediaProcessorLabel(): String = "原生合并 · 不转码"
 
 fun settingsPrivacyLegalLines(): List<String> = listOf(
     "仅处理用户粘贴的公开 http/https 页面地址。",
-    "Cookies 只保存文件引用，不保存内容；任务运行时临时读取并清理。",
+    "导入的 Cookies 只保存文件引用，不保存内容；App 内登录的 Cookies 加密保存在本机。任务临时文件用后清理。",
     "下载结果默认保存在 App 私有目录；打开和分享由系统授权。",
     "历史缩略图可能刷新公开预览图；请求不携带 Cookies 或授权信息。",
     "不绕过 DRM、付费墙或未授权访问限制。",

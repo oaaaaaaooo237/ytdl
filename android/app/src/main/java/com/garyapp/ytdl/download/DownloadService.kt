@@ -146,7 +146,7 @@ class DownloadService : Service() {
             try {
                 if (!network.isAvailable() && token.stopReason == null) token.waitForNetwork()
                 val temporaryCookies = if (launch.request.usesCookies && token.stopReason == null) {
-                    prepareTemporaryCookiesForDownload(SettingsRepository.fromContext(this).getSettings().cookiesReference,
+                    prepareTemporaryCookiesForDownload(launch.request.cookiesReferenceFor(SettingsRepository.fromContext(this).getSettings()),
                         this, "resume-${launch.request.taskId}").getOrNull()
                         ?: run {
                             state = restoredState(launch).copy(stage = DownloadStage.Paused,

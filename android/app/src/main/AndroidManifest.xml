@@ -22,6 +22,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".cookies.SiteLoginActivity" android:exported="false" />
         <service
             android:name=".download.DownloadService"
             android:exported="false"

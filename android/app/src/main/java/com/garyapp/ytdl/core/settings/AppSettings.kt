@@ -7,6 +7,7 @@ data class AppSettings(
     val cookiesReference: CookiesReference? = null,
     val themeModeId: String = AppearanceSettings.ThemeModeSystem,
     val colorPresetId: String = AppearanceSettings.ColorPresetReferenceV3,
+    val siteCookies: Map<String, SiteCookies> = emptyMap(),
 )
 
 object AppearanceSettings {
