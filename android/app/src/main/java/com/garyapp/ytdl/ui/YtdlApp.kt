@@ -1919,6 +1919,7 @@ private fun analysisFailureMessage(error: Throwable): String {
     val category = (error as? YtdlpAnalysisException)?.category
         ?: return "分析失败，请检查地址或网络。"
     return when (category) {
+        AnalysisErrorCategory.XNoVideo -> "X 未返回这条帖子的视频。请在 X 打开原帖；若登录后可播放，可在设置中选择 X 的 cookies 文件再试。"
         AnalysisErrorCategory.Network -> "分析失败：网络连接失败，请检查网络后重试。"
         AnalysisErrorCategory.Unsupported -> "分析失败：当前地址不受支持或格式不正确。"
         AnalysisErrorCategory.Permission -> "分析失败：网站需要登录或 cookies 文件，请确认授权后重试。"

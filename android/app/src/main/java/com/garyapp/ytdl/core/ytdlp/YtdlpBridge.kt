@@ -229,6 +229,7 @@ class YtdlpBridge(
 
         fun mapErrorCategory(raw: String?): AnalysisErrorCategory {
             return when (raw?.lowercase()) {
+                "x_no_video" -> AnalysisErrorCategory.XNoVideo
                 "network" -> AnalysisErrorCategory.Network
                 "unsupported" -> AnalysisErrorCategory.Unsupported
                 "permission" -> AnalysisErrorCategory.Permission

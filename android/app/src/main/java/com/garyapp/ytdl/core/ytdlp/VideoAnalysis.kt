@@ -87,6 +87,7 @@ enum class DownloadFormatRole(val pythonValue: String) {
 }
 
 enum class AnalysisErrorCategory {
+    XNoVideo,
     Network,
     Unsupported,
     Permission,

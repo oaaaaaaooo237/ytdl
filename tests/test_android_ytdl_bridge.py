@@ -8,6 +8,12 @@ import types
 from pathlib import Path
 
 
+def test_x_post_without_visible_video_has_distinct_error():
+    bridge = load_android_ytdl_bridge()
+    exc = RuntimeError("ERROR: [twitter] 2109772550783856786: No video could be found in this tweet")
+    assert bridge._error_category(exc) == "x_no_video"
+
+
 def load_android_ytdl_bridge(youtube_dl_class=object):
     bridge_path = (
         Path(__file__).resolve().parents[1]
@@ -496,6 +502,16 @@ def test_explicit_format_id_rejects_ytdlp_selector_aliases():
         assert not bridge._is_explicit_format_id(selector), selector
 
     assert bridge._is_explicit_format_id("394")
+
+
+def test_x_hls_audio_uses_declared_mp4a_path_when_codec_field_is_missing():
+    bridge = load_android_ytdl_bridge()
+    audio = {"vcodec": "none", "ext": "mp4", "protocol": "m3u8_native",
+             "url": "https://video.twimg.com/amplify_video/123/pl/mp4a/128000/audio.m3u8"}
+    assert bridge._safe_format(audio)["acodec"] == "mp4a"
+    assert bridge._safe_format(dict(audio, acodec="opus"))["acodec"] == "opus"
+    assert bridge._safe_format(dict(audio, url="https://example.com/pl/mp4a/audio.m3u8"))["acodec"] is None
+    assert bridge._safe_format(dict(audio, url="https://video.twimg.com/audio.m3u8?hint=/mp4a/"))["acodec"] is None
 
 
 def test_safe_format_preserves_unknown_codecs_without_inventing_none():

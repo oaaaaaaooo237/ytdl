@@ -515,6 +515,13 @@ def _to_result(info):
 
 
 def _safe_format(item):
+    acodec = _safe_codec(item.get("acodec"))
+    if (acodec is None and item.get("vcodec") == "none" and item.get("ext") == "mp4"
+            and item.get("protocol") in ("m3u8", "m3u8_native")):
+        # X identifies these standalone audio playlists in the CDN path.
+        playlist = urllib.parse.urlsplit(item.get("url") or "")
+        if playlist.hostname == "video.twimg.com" and "/mp4a/" in playlist.path:
+            acodec = "mp4a"
     return {
         "format_id": str(item.get("format_id") or ""),
         "ext": str(item.get("ext") or ""),
@@ -522,7 +529,7 @@ def _safe_format(item):
         "width": item.get("width"),
         "fps": item.get("fps"),
         "vcodec": _safe_codec(item.get("vcodec")),
-        "acodec": _safe_codec(item.get("acodec")),
+        "acodec": acodec,
         "filesize": item.get("filesize") or item.get("filesize_approx"),
         "tbr": item.get("tbr"),
     }
@@ -722,6 +729,8 @@ def _as_float(value):
 
 def _error_category(exc):
     text = str(exc).lower()
+    if "[twitter]" in text and "no video could be found in this tweet" in text:
+        return "x_no_video"
     if "canceled" in text or "cancelled" in text or "取消" in text:
         return "canceled"
     # An HTTP response is a site response, not proof of lost connectivity.
@@ -771,6 +780,8 @@ def _error_category(exc):
 
 def _safe_error_message(exc):
     category = _error_category(exc)
+    if category == "x_no_video":
+        return "X 未返回这条帖子的视频。"
     if "no video formats found" in str(exc).lower():
         return "网站本次未返回可下载的视频格式，请稍后重新分析。"
     if category == "canceled":

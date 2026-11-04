@@ -213,6 +213,7 @@ class FormatMappingTest {
 
     @Test
     fun mapsSafeErrorCategories() {
+        assertEquals(AnalysisErrorCategory.XNoVideo, YtdlpBridge.mapErrorCategory("x_no_video"))
         assertEquals(AnalysisErrorCategory.Network, YtdlpBridge.mapErrorCategory("network"))
         assertEquals(AnalysisErrorCategory.Unsupported, YtdlpBridge.mapErrorCategory("unsupported"))
         assertEquals(AnalysisErrorCategory.Permission, YtdlpBridge.mapErrorCategory("permission"))
