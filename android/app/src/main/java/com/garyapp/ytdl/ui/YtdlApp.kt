@@ -938,7 +938,7 @@ internal fun YtdlApp(
         }
     }
 
-    val cookiesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    val cookiesPicker = rememberLauncherForActivityResult(CookiesDocumentPicker()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         runCatching {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
