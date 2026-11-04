@@ -35,7 +35,7 @@ internal fun SiteCookiesDialog(
         title = { Text("网站登录状态") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("能直接下载的网站无需设置。配置后仅对应网站使用；仅保存文件引用，App 内登录状态加密保存。")
+                Text("需要登录的网站可在此配置，其他网站保持匿名访问。")
                 OutlinedTextField(name, { name = it }, label = { Text("网站名称") },
                     singleLine = true, modifier = Modifier.testTag("site-cookie-name"))
                 OutlinedTextField(domain, { domain = it }, label = { Text("域名，例如 x.com") },

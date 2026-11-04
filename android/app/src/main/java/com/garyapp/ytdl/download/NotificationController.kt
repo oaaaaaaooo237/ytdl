@@ -46,7 +46,7 @@ class NotificationController(
         return builder
             .addExtras(android.os.Bundle().apply { putString(DownloadService.ExtraTaskId, state.request?.taskId) })
             .setSmallIcon(R.drawable.ic_stat_ytdl_download)
-            .setContentTitle("YTDL 下载任务")
+            .setContentTitle("CaptainFlash 下载任务")
             .setContentText(state.stage.notificationText())
             .setContentIntent(contentPendingIntent())
             .setAutoCancel(state.stage in TerminalStages)

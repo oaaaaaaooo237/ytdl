@@ -411,12 +411,12 @@ class DownloadUiBridgeTest {
         assertFalse(source.contains("M6 下载管线"))
         assertTrue(source.contains("当前和等待"))
         assertTrue(source.contains("当前没有进行中或等待任务"))
-        assertTrue(source.contains("暂无真实历史记录，完成下载后会显示"))
+        assertTrue(source.contains("暂无历史记录，完成下载后会显示"))
         assertTrue(source.contains("notificationPermissionSubtitle("))
         assertTrue(source.contains("ytdl-settings-notification-permission"))
         assertFalse(source.contains("SettingLineCard(\"隐私与授权说明\", \"查看说明\""))
-        assertTrue(source.contains("settingsPrivacyLegalLines()"))
-        assertTrue(source.contains("ytdl-settings-privacy-legal"))
+        assertFalse(source.contains("settingsPrivacyLegalLines()"))
+        assertFalse(source.contains("ytdl-settings-privacy-legal"))
     }
 
     @Test
@@ -563,24 +563,12 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun settingsPrivacyLegalTextStatesConcreteBoundariesWithoutSecrets() {
-        val lines = settingsPrivacyLegalLinesForUiTest()
-        val joined = lines.joinToString("\n")
-
-        assertTrue(lines.size >= 4)
-        assertTrue(joined.contains("http/https"))
-        assertTrue(joined.contains("Cookies"))
-        assertTrue(joined.contains("文件引用"))
-        assertTrue(joined.contains("不保存内容"))
-        assertTrue(joined.contains("App 私有目录"))
-        assertTrue(joined.contains("打开和分享由系统授权"))
-        assertTrue(joined.contains("历史缩略图"))
-        assertTrue(joined.contains("公开预览图"))
-        assertTrue(joined.contains("不携带 Cookies"))
-        assertTrue(joined.contains("DRM") || joined.contains("未授权"))
-        listOf("SID=secret", "Authorization", "Bearer raw-token", "--cookies D:/private/cookies.txt").forEach {
-            assertFalse("privacy text leaked $it", joined.contains(it))
-        }
+    fun settingsOpenSourceEntryReplacesDefensiveStatements() {
+        val source = sourceFile("app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt", "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt").readText()
+        assertFalse(source.contains("隐私与授权说明"))
+        assertFalse(source.contains("公开授权内容由用户确认"))
+        assertFalse(source.contains("ytdl-download-authorized-checkbox"))
+        assertTrue(source.contains("开源声明"))
     }
 
     @Test
@@ -977,16 +965,16 @@ class DownloadUiBridgeTest {
         assertTrue(source.contains("ytdl-settings-color-preset"))
     }
     @Test
-    fun startDownloadGateRequiresAnalysisAndUserAuthorization() {
+    fun startDownloadGateRequiresAnalysisWithoutExtraAcknowledgment() {
         val analyzed = RuntimeDownloadState(
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
         )
 
-        assertFalse(canStartDownloadForUiTest(RuntimeDownloadState(), hasUserConfirmed = true))
-        assertFalse(canStartDownloadForUiTest(analyzed, hasUserConfirmed = false))
-        assertFalse(canStartDownloadForUiTest(analyzed.copy(isAnalyzing = true), hasUserConfirmed = true))
-        assertTrue(canStartDownloadForUiTest(analyzed.copy(isDownloading = true), hasUserConfirmed = true))
-        assertTrue(canStartDownloadForUiTest(analyzed, hasUserConfirmed = true))
+        assertFalse(canStartDownloadForUiTest(RuntimeDownloadState()))
+        assertTrue(canStartDownloadForUiTest(analyzed))
+        assertFalse(canStartDownloadForUiTest(analyzed.copy(isAnalyzing = true)))
+        assertTrue(canStartDownloadForUiTest(analyzed.copy(isDownloading = true)))
+        assertTrue(canStartDownloadForUiTest(analyzed))
     }
 
     @Test

@@ -254,13 +254,6 @@ class YtdlAppDownloadFlowTest {
 
         composeRule.onNodeWithText(expectedSummary).assertExists()
         composeRule.onNodeWithTag("ytdl-screen-download")
-            .performScrollToNode(hasTestTag("ytdl-download-authorized-checkbox"))
-        composeRule.onNodeWithTag("ytdl-download-authorized-checkbox")
-            .assertIsOff()
-            .performClick()
-            .assertIsOn()
-        composeRule.onNodeWithTag("ytdl-download-start").assertIsEnabled()
-        composeRule.onNodeWithTag("ytdl-screen-download")
             .performScrollToNode(hasTestTag("ytdl-download-start"))
         composeRule.onNodeWithTag("ytdl-download-start")
             .assertIsEnabled()

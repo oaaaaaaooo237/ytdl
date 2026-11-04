@@ -187,7 +187,7 @@ import java.util.concurrent.atomic.AtomicLong
 private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
 private val HistoryFailureRed = Color(0xFFFF5B63)
 
-private const val DefaultRuntimeMessage = "等待输入公开视频页面地址。"
+private const val DefaultRuntimeMessage = "等待输入视频页面地址。"
 private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始下载。"
 private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
 private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
@@ -249,11 +249,6 @@ private val MediaProcessorExplanation = SettingsExplanation(
         "源轨道或容器不兼容时可能无法合并。",
 )
 
-private val UrlValidationExplanation = SettingsExplanation(
-    title = "地址校验提示",
-    body = "当前只检查三类问题：地址为空、地址格式无效（包括缺少有效主机名），以及协议不是 http 或 https。" +
-        "此校验不判断站点是否受支持、内容权限、登录状态或网络是否可用。",
-)
 
 private fun tabIcon(name: String, draw: PathBuilder.() -> Unit): ImageVector =
     ImageVector.Builder(
@@ -703,8 +698,8 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
     YtdlDestination(
         route = "download",
         label = "下载",
-        title = "视频地址提取器",
-        summary = "粘贴公开视频页面地址，分析后再开始保存。",
+        title = "CaptainFlash",
+        summary = "粘贴视频页面地址，分析后再开始保存。",
         icon = DownloadTabIcon,
         accent = palette.downloadAccent,
     ),
@@ -720,7 +715,7 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
         route = "settings",
         label = "设置",
         title = "设置",
-        summary = "管理保存位置、解析器、媒体处理、隐私和外观。",
+        summary = "管理保存位置、解析器和外观。",
         icon = SettingsTabIcon,
         accent = palette.settingsAccent,
         reservedEntries = listOf("外观与颜色"),
@@ -735,9 +730,9 @@ internal fun ytdlNavigationAccentHexesForUiTest(
         .associate { destination -> destination.label to colorArgbHexForUiTest(destination.accent) }
 }
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
-    "download" to listOf("粘贴公开视频页面地址", "分析", "等待真实分析", "下载模式", "视频+音频", "视频", "音频", "分辨率", "视频编码", "容器格式", "保存位置", "开始下载"),
-    "tasks" to listOf("当前任务", "等待中", "搜索历史", "全部", "视频", "音频", "暂无真实历史记录", "完成下载后会显示"),
-    "settings" to listOf("保存位置", "恢复默认路径", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格", "MVP2"),
+    "download" to listOf("粘贴视频页面地址", "分析", "等待分析", "下载模式", "视频+音频", "视频", "音频", "分辨率", "视频编码", "容器格式", "保存位置", "开始下载"),
+    "tasks" to listOf("当前任务", "等待中", "搜索历史", "全部", "视频", "音频", "暂无历史记录", "完成下载后会显示"),
+    "settings" to listOf("保存位置", "恢复默认路径", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "App 私有目录", "外观与颜色", "Codex 风格", "开源声明"),
 )
 
 @Composable
@@ -766,7 +761,6 @@ internal fun YtdlApp(
     val currentSelectedRoute by rememberUpdatedState(selectedRoute)
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
     val analysisRequestRevision = remember { AtomicLong(0L) }
-    var hasUserConfirmed by rememberSaveable { mutableStateOf(false) }
     var historyQuery by rememberSaveable { mutableStateOf("") }
     var historyFilterIndex by rememberSaveable { mutableStateOf(0) }
     val settingsRepository = remember { SettingsRepository.fromContext(context.applicationContext) }
@@ -795,6 +789,7 @@ internal fun YtdlApp(
     var parserOperationRunning by remember { mutableStateOf(initialParserOperationState.isRunning) }
     var pendingDeleteParserVersion by remember { mutableStateOf<String?>(null) }
     var settingsExplanation by remember { mutableStateOf<SettingsExplanation?>(null) }
+    var showOpenSource by remember { mutableStateOf(false) }
     var downloadCacheStats by remember { mutableStateOf(CacheStats(0, 0)) }
     var showDownloadCacheConfirmation by remember { mutableStateOf(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
@@ -956,7 +951,7 @@ internal fun YtdlApp(
         } else {
             appSettings = if (pendingCookiesDomain.isBlank()) settingsRepository.setCookiesReference(reference)
             else settingsRepository.setSiteCookies(pendingCookiesName, pendingCookiesDomain, reference)
-            runtimeState = runtimeState.copy(userMessage = "已保存 cookies 文件引用，仅任务运行时临时读取。")
+            runtimeState = runtimeState.copy(userMessage = "已选择 cookies 文件。")
         }
     }
 
@@ -1095,16 +1090,14 @@ internal fun YtdlApp(
     ) {
         val url = requestedUrl.trim()
         if (url.isBlank()) {
-            runtimeState = runtimeState.copy(userMessage = "请先输入公开视频页面地址。")
+            runtimeState = runtimeState.copy(userMessage = "请先输入视频页面地址。")
             return
         }
         val requestRevision = analysisRequestRevision.incrementAndGet()
-
-        hasUserConfirmed = false
         runtimeState = runtimeState.copy(
             url = url,
             isAnalyzing = true,
-            userMessage = if (retryDraft == null) "正在真实分析地址..." else "正在重新分析原地址...",
+            userMessage = if (retryDraft == null) "正在分析地址..." else "正在重新分析原地址...",
             analysis = null,
             formatSelection = FormatSelection(),
             appliedFormatSelection = FormatSelection(),
@@ -1173,13 +1166,9 @@ internal fun YtdlApp(
     }
 
     fun startRealDownload() {
-        if (!canStartDownload(runtimeState, hasUserConfirmed)) {
+        if (!canStartDownload(runtimeState)) {
             runtimeState = runtimeState.copy(
-                userMessage = if (runtimeState.analysis == null) {
-                    "请先分析公开视频页面地址。"
-                } else {
-                    "请先确认有权保存该内容。"
-                },
+                userMessage = "请先分析视频页面地址。",
             )
             return
         }
@@ -1222,7 +1211,6 @@ internal fun YtdlApp(
         mainHandler.post {
         runtimeState = startResult.fold(
             onSuccess = { waiting ->
-                hasUserConfirmed = false
                 runtimeState.withAcceptedDownload(waiting)
             },
             onFailure = { _ ->
@@ -1393,7 +1381,7 @@ internal fun YtdlApp(
             formatSelection = selection,
             appliedFormatSelection = selection,
             userMessage = if (runtimeState.analysis == null) {
-                "已切换下载模式：${mode.label}，请先分析后生成真实格式。"
+                "已切换下载模式：${mode.label}，请先分析地址以获取可用格式。"
             } else {
                 "已切换下载模式：${formatSelectionSummary(runtimeState.analysis, selection)}。"
             },
@@ -1444,11 +1432,9 @@ internal fun YtdlApp(
                         "download" -> downloadPageItems(
                             state = runtimeState,
                             storageTarget = appSettings.defaultStorageTarget,
-                            hasUserConfirmed = hasUserConfirmed,
                             onUrlChange = { updatedUrl ->
                                 if (updatedUrl != runtimeState.url) {
                                     analysisRequestRevision.incrementAndGet()
-                                    hasUserConfirmed = false
                                     runtimeState = runtimeState.copy(
                                         url = updatedUrl,
                                         isAnalyzing = false,
@@ -1463,7 +1449,6 @@ internal fun YtdlApp(
                             },
                             onAnalyze = ::analyzeCurrentUrl,
                             onStartDownload = ::startRealDownload,
-                            onUserConfirmedChange = { hasUserConfirmed = it },
                             onModeSelected = ::selectDownloadMode,
                             onSelectStorageTarget = { storageTreePicker.launch(null) },
                             onFormatSelectionChange = { selection ->
@@ -1522,8 +1507,8 @@ internal fun YtdlApp(
                             onShowParserStatus = {
                                 showParserStatusDialog = true
                             },
+                            onShowOpenSource = { showOpenSource = true },
                             onShowMediaProcessorExplanation = { settingsExplanation = MediaProcessorExplanation },
-                            onShowUrlValidationExplanation = { settingsExplanation = UrlValidationExplanation },
                             onRequestDownloadCacheClear = { showDownloadCacheConfirmation = true },
                             onRequestNotifications = {
                                 notificationsAllowed = notificationController.canPostNotifications()
@@ -1767,6 +1752,7 @@ internal fun YtdlApp(
                 },
             )
         }
+        if (showOpenSource) OpenSourceNoticesDialog { showOpenSource = false }
         val explanation = settingsExplanation
         if (explanation != null) {
             AlertDialog(
@@ -1862,7 +1848,7 @@ internal fun RuntimeDownloadState.withForegroundStartStateForUiTest(state: Downl
 private fun RuntimeDownloadState.withForegroundStartState(state: DownloadTaskState): RuntimeDownloadState {
     val stageText = userVisibleDownloadStatus(state.stage)
     return withPipelineState(state).copy(
-        userMessage = "真实下载已加入前台队列，当前阶段：$stageText。",
+        userMessage = "下载已加入队列，当前阶段：$stageText。",
     )
 }
 
@@ -2178,12 +2164,19 @@ private fun PageHeader(destination: YtdlDestination) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = destination.title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = palette.titleText,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = destination.title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = palette.titleText,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (destination.route == "download") {
+                    Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
+                        color = palette.softText, modifier = Modifier.testTag("captainflash-version"))
+                }
+            }
             if (destination.route == "download") {
                 Text(
                     text = "?",
@@ -2279,11 +2272,9 @@ private fun TaskListScrollIndicator(
 internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     state: RuntimeDownloadState,
     storageTarget: StorageTarget,
-    hasUserConfirmed: Boolean,
     onUrlChange: (String) -> Unit,
     onAnalyze: () -> Unit,
     onStartDownload: () -> Unit,
-    onUserConfirmedChange: (Boolean) -> Unit,
     onModeSelected: (FormatMode) -> Unit,
     onSelectStorageTarget: () -> Unit,
     onFormatSelectionChange: (FormatSelection) -> Unit = {},
@@ -2382,17 +2373,9 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     item {
         val palette = LocalYtdlAppPalette.current
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Checkbox(
-                    checked = hasUserConfirmed,
-                    onCheckedChange = onUserConfirmedChange,
-                    modifier = Modifier.testTag("ytdl-download-authorized-checkbox"),
-                )
-                Text("我确认有权保存该内容", style = MaterialTheme.typography.bodyMedium)
-            }
             Button(
                 onClick = onStartDownload,
-                enabled = canStartDownload(state, hasUserConfirmed),
+                enabled = canStartDownload(state),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("ytdl-download-start"),
@@ -2409,10 +2392,10 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     }
 }
 
-internal fun canStartDownloadForUiTest(state: RuntimeDownloadState, hasUserConfirmed: Boolean): Boolean = canStartDownload(state, hasUserConfirmed)
+internal fun canStartDownloadForUiTest(state: RuntimeDownloadState): Boolean = canStartDownload(state)
 
-private fun canStartDownload(state: RuntimeDownloadState, hasUserConfirmed: Boolean): Boolean {
-    return !state.isAnalyzing && state.analysis != null && hasUserConfirmed
+private fun canStartDownload(state: RuntimeDownloadState): Boolean {
+    return !state.isAnalyzing && state.analysis != null
 }
 
 internal fun shouldShowRuntimeMessageForUiTest(message: String): Boolean = shouldShowRuntimeMessage(message)
@@ -2475,7 +2458,7 @@ private fun UrlInputField(
                     background = null
                     includeFontPadding = false
                     textSize = 16f
-                    hint = "粘贴公开视频页面地址"
+                    hint = "粘贴视频页面地址"
                     inputType = InputType.TYPE_CLASS_TEXT or
                         InputType.TYPE_TEXT_VARIATION_URI or
                         InputType.TYPE_TEXT_FLAG_MULTI_LINE or
@@ -2511,7 +2494,7 @@ private fun UrlInputField(
                 }
             },
             update = { editText ->
-                editText.hint = "粘贴公开视频页面地址"
+                editText.hint = "粘贴视频页面地址"
                 editText.setTextColor(inputTextColor.toArgb())
                 editText.setHintTextColor(inputHintColor.toArgb())
                 editText.setShowSoftInputOnFocus(showKeyboardOnFocus)
@@ -2536,7 +2519,7 @@ private fun UrlInputField(
 private fun DownloadPreviewCard(state: RuntimeDownloadState) {
     val analysis = state.analysis
     val duration = analysis?.durationSeconds?.let(::formatDuration) ?: "未分析"
-    val title = analysis?.title?.ifBlank { "未命名视频" } ?: "等待真实分析"
+    val title = analysis?.title?.ifBlank { "未命名视频" } ?: "等待分析"
     val formatSummary = downloadPreviewFormatSummary(state)
 
     AppCard {
@@ -2590,7 +2573,7 @@ private fun DownloadPreviewCard(state: RuntimeDownloadState) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(
-            if (analysis == null) "请输入地址并分析" else "分析完成 · 公开授权内容由用户确认",
+            if (analysis == null) "请输入地址并分析" else "分析完成",
             color = LocalYtdlAppPalette.current.successGreen,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -2786,11 +2769,6 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems
                     "实际下载：${formatSelectionSummary(analysis, selection)}",
                     color = palette.formatAccent,
                     fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "开始下载会按当前格式选择进入真实任务队列。",
-                    color = palette.softText,
-                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
@@ -3045,8 +3023,8 @@ private fun settingsCookiesSubtitle(settings: AppSettings): String {
         return "已配置 ${settings.siteCookies.values.count { it.reference != null }} 个网站 · 自动匹配域名"
     }
     val reference = settings.cookiesReference
-        ?: return "未选择 · 仅保存文件引用，不保存内容"
-    return "${reference.displayName ?: "cookies 文件"} · 仅保存引用"
+        ?: return "未配置网站登录"
+    return "${reference.displayName ?: "cookies 文件"}"
 }
 
 private fun storageTargetSummary(target: StorageTarget): String {
@@ -3360,9 +3338,9 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.historyPageItems(
         item {
             AppCard(modifier = Modifier.testTag("ytdl-history-empty-card")) {
                 val palette = LocalYtdlAppPalette.current
-                Text(if (historyItems.isEmpty()) "暂无真实历史记录，完成下载后会显示" else "没有匹配的历史记录", color = palette.titleText, fontWeight = FontWeight.Bold)
+                Text(if (historyItems.isEmpty()) "暂无历史记录，完成下载后会显示" else "没有匹配的历史记录", color = palette.titleText, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
-                Text(if (historyItems.isEmpty()) "历史页已接入本地 Room 记录；当前数据库为空。" else "请调整搜索关键词或分类筛选。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
+                Text(if (historyItems.isEmpty()) "完成下载后会显示在这里。" else "请调整搜索关键词或分类筛选。", color = palette.softText, style = MaterialTheme.typography.bodySmall)
             }
         }
     } else {
@@ -3389,8 +3367,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     onSelectStorageTarget: () -> Unit,
     onResetStorageTarget: () -> Unit,
     onShowParserStatus: () -> Unit,
+    onShowOpenSource: () -> Unit,
     onShowMediaProcessorExplanation: () -> Unit,
-    onShowUrlValidationExplanation: () -> Unit,
     onRequestDownloadCacheClear: () -> Unit,
     onRequestNotifications: () -> Unit,
     onThemeModeChange: (String) -> Unit,
@@ -3483,27 +3461,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     }
     item {
         val palette = LocalYtdlAppPalette.current
-        AppCard(modifier = Modifier.testTag("ytdl-settings-privacy-legal")) {
-            SectionTitle("隐私与授权说明")
-            settingsPrivacyLegalLines().forEach { line ->
-                Text("• $line", color = palette.softText, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-    item {
-        SettingLineCard(
-            "地址校验提示",
-            "仅校验空地址、非法地址和非 http/https",
-            "!",
-            "›",
-            LocalYtdlAppPalette.current.downloadAccent,
-            modifier = Modifier
-                .clickable(onClick = onShowUrlValidationExplanation)
-                .testTag("ytdl-settings-url-validation"),
-        )
-    }
-    item {
-        val palette = LocalYtdlAppPalette.current
         val presets = ytdlColorPresets()
         AppCard {
             SectionTitle("外观与颜色")
@@ -3536,6 +3493,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
     }
     item { Spacer(Modifier.height(SettingsAppearanceBottomBuffer)) }
     item { SettingLineCard("关于", "版本 ${BuildConfig.VERSION_NAME}", "i", "›", Color(0xFF55606C)) }
+    item {
+        SettingLineCard("开源声明", "组件、许可证与项目来源", "i", "›",
+            LocalYtdlAppPalette.current.settingsAccent,
+            modifier = Modifier.clickable(onClick = onShowOpenSource).testTag("captainflash-open-source"))
+    }
 }
 
 @Composable

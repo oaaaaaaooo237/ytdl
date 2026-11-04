@@ -623,8 +623,6 @@ class YtdlAppUiTest {
 
         scrollUntilTag("ytdl-format-row-1080")
         tapTag("ytdl-format-row-1080")
-        scrollUntilTag("ytdl-download-authorized-checkbox")
-        tapTag("ytdl-download-authorized-checkbox")
         scrollUntilTag("ytdl-download-start")
         tapTag("ytdl-download-start")
     }
@@ -650,8 +648,6 @@ class YtdlAppUiTest {
         tapTag("ytdl-format-row-1080")
         assertTagVisible("ytdl-screen-download")
         assertTextContains("1080p", timeoutMs = 1_000)
-        scrollUntilTag("ytdl-download-authorized-checkbox")
-        tapTag("ytdl-download-authorized-checkbox")
         saveScreen("${screenshotPrefix}03-format-applied.png")
 
         if (!completeDownloadAndHistory) {
@@ -772,8 +768,8 @@ class YtdlAppUiTest {
 
     private fun openNotificationShadeAndTapCancel() {
         device.openNotification()
-        val notificationTitle = device.wait(Until.findObject(By.textContains("YTDL 下载任务")), 10_000)
-        assertNotNull("通知栏未显示 YTDL 下载任务", notificationTitle)
+        val notificationTitle = device.wait(Until.findObject(By.textContains("CaptainFlash 下载任务")), 10_000)
+        assertNotNull("通知栏未显示 CaptainFlash 下载任务", notificationTitle)
         assertAnyTextContains(
             texts = listOf("正在下载视频", "正在下载音频", "正在原生合并", "等待下载"),
             timeoutMs = 10_000,

@@ -418,10 +418,10 @@ class DownloadGuiBindingTest {
 
     @Test
     fun passiveRuntimeMessagesDoNotOccupyDownloadLayout() {
-        assertFalse(shouldShowRuntimeMessageForUiTest("等待输入公开视频页面地址。"))
+        assertFalse(shouldShowRuntimeMessageForUiTest("等待输入视频页面地址。"))
         assertFalse(shouldShowRuntimeMessageForUiTest("分析完成，可以开始下载。"))
         assertTrue(shouldShowRuntimeMessageForUiTest("请先输入公开视频页面地址。"))
-        assertTrue(shouldShowRuntimeMessageForUiTest("真实下载已加入前台队列，当前阶段：等待中。"))
+        assertTrue(shouldShowRuntimeMessageForUiTest("下载已加入队列，当前阶段：等待中。"))
     }
 
     @Test
@@ -624,11 +624,11 @@ class DownloadGuiBindingTest {
                     downloadPageItems(
                         state = state.value,
                         storageTarget = StorageTarget.AppPrivate,
-                        hasUserConfirmed = false,
+
                         onUrlChange = {},
                         onAnalyze = {},
                         onStartDownload = {},
-                        onUserConfirmedChange = {},
+
                         onModeSelected = {},
                         onSelectStorageTarget = {},
                         onFormatSelectionChange = { selection ->
@@ -923,7 +923,7 @@ class DownloadGuiBindingTest {
         assertEquals("等待中", state.downloadStatus)
         assertTrue(shouldShowCurrentTaskForUiTest(state))
         assertEquals("当前阶段 · 等待中", queueCardSubtitleForUiTest(state))
-        assertTrue(state.userMessage.contains("已加入前台队列"))
+        assertTrue(state.userMessage.contains("已加入队列"))
         assertTrue(state.userMessage.contains("当前阶段：等待中"))
     }
 
@@ -1318,11 +1318,11 @@ class DownloadGuiBindingTest {
                     downloadPageItems(
                         state = state,
                         storageTarget = StorageTarget.AppPrivate,
-                        hasUserConfirmed = false,
+
                         onUrlChange = {},
                         onAnalyze = {},
                         onStartDownload = {},
-                        onUserConfirmedChange = {},
+
                         onModeSelected = {},
                         onSelectStorageTarget = {},
                     )

@@ -271,7 +271,7 @@ fun formatSelectionSummary(
     analysis: VideoAnalysis?,
     selection: FormatSelection,
 ): String {
-    if (analysis == null) return "分析后显示真实格式"
+    if (analysis == null) return "分析后显示可用格式"
     val selectedRow = buildFormatResolutionRows(analysis, selection)
         .firstOrNull { it.selected }
         ?: return "请选择可用格式"

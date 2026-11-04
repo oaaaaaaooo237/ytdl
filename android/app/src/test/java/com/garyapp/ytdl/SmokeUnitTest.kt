@@ -19,8 +19,8 @@ import org.junit.Test
 class SmokeUnitTest {
     @Test
     fun packageVersionIsReleaseVersion() {
-        assertEquals("1.0.9", BuildConfig.VERSION_NAME)
-        assertEquals(10, BuildConfig.VERSION_CODE)
+        assertEquals("1.0.10", BuildConfig.VERSION_NAME)
+        assertEquals(11, BuildConfig.VERSION_CODE)
     }
 
     @Test
@@ -43,10 +43,10 @@ class SmokeUnitTest {
         val labels = ytdlVisibleContentLabels()
 
         assertEquals(setOf("download", "tasks", "settings"), labels.keys)
-        assertTrue(labels.getValue("download").containsAll(listOf("粘贴公开视频页面地址", "分析", "视频+音频", "视频", "音频", "分辨率", "开始下载")))
+        assertTrue(labels.getValue("download").containsAll(listOf("粘贴视频页面地址", "分析", "视频+音频", "视频", "音频", "分辨率", "开始下载")))
         assertTrue(labels.getValue("download").none { it.contains("字幕") })
-        assertTrue(labels.getValue("tasks").containsAll(listOf("当前任务", "等待中", "搜索历史", "暂无真实历史记录", "完成下载后会显示")))
-        assertTrue(labels.getValue("settings").containsAll(listOf("Cookies 文件", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "隐私与授权说明", "不保存内容", "App 私有目录", "外观与颜色", "Codex 风格")))
+        assertTrue(labels.getValue("tasks").containsAll(listOf("当前任务", "等待中", "搜索历史", "暂无历史记录", "完成下载后会显示")))
+        assertTrue(labels.getValue("settings").containsAll(listOf("Cookies 文件", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "App 私有目录", "外观与颜色", "Codex 风格")))
     }
 
     @Test

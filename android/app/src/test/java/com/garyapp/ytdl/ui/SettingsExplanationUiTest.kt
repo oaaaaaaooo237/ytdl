@@ -38,19 +38,16 @@ class SettingsExplanationUiTest {
     }
 
     @Test
-    fun urlValidationRowExplainsExactCurrentRules() {
+    fun openSourceEntryShowsLicensesInsteadOfDefensiveStatements() {
         setQuietContent()
-
+        composeRule.onNodeWithText("CaptainFlash").assertExists()
+        composeRule.onNodeWithText("v${com.garyapp.ytdl.BuildConfig.VERSION_NAME}").assertExists()
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
-            .performScrollToNode(hasTestTag("ytdl-settings-url-validation"))
-        composeRule.onNodeWithTag("ytdl-settings-url-validation").performClick()
-
-        composeRule.onNodeWithTag("ytdl-settings-explanation-dialog").assertExists()
-        composeRule.onNodeWithText(
-            "当前只检查三类问题：地址为空、地址格式无效（包括缺少有效主机名），以及协议不是 http 或 https。" +
-                "此校验不判断站点是否受支持、内容权限、登录状态或网络是否可用。",
-        ).assertExists()
+            .performScrollToNode(hasTestTag("captainflash-open-source"))
+        composeRule.onNodeWithTag("captainflash-open-source").performClick()
+        composeRule.onNodeWithTag("captainflash-open-source-dialog").assertExists()
+        composeRule.onNodeWithText(CaptainFlashOpenSourceNotices).assertExists()
     }
 
     private fun setQuietContent() {
