@@ -17,6 +17,7 @@ internal class SiteLoginStore(
 ) {
     fun save(domain: String, cookieHeader: String): CookiesReference {
         val host = CookieSites.normalizeDomain(domain) ?: error("网站域名无效。")
+        require(loginCookiesReady(host, cookieHeader)) { "该网站登录尚未完成。" }
         val data = netscapeCookies(host, cookieHeader)
         check(directory.mkdirs() || directory.isDirectory)
         val id = domainKey(host) + "-" + UUID.randomUUID().toString().replace("-", "")
@@ -54,6 +55,14 @@ internal class SiteLoginStore(
         .digest(domain.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
     companion object {
+        fun loginCookiesReady(domain: String, header: String): Boolean {
+            val values = header.split(';').mapNotNull {
+                val index = it.indexOf('=')
+                if (index <= 0) null else it.substring(0, index).trim() to it.substring(index + 1).trim()
+            }.toMap()
+            return if (domain == "x.com") !values["auth_token"].isNullOrBlank() && !values["ct0"].isNullOrBlank()
+            else values.isNotEmpty()
+        }
         fun fromContext(context: Context) = SiteLoginStore(
             File(context.noBackupFilesDir, "site-logins"), context.packageName + ".sitecookies",
             AndroidKeyStoreRetryPayloadCipher(),

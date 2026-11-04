@@ -29,7 +29,7 @@ class SiteLoginActivity : Activity() {
         }
         setContentView(layout)
         layout.addView(TextView(this).apply {
-            text = "登录 $domain\n请在网站页面完成登录，再保存。登录状态仅用于该网站下载。部分网站可能不支持 App 内登录，可改用文件导入。"
+            text = "登录 $domain\n请使用网站自己的账号完成登录，再保存。Google 等联合登录不支持此内置页面，请在外部浏览器登录后导入 cookies 文件。登录状态仅用于该网站下载。"
         })
         val address = TextView(this)
         layout.addView(address)
@@ -65,8 +65,8 @@ class SiteLoginActivity : Activity() {
         save.setOnClickListener {
             if (saving) return@setOnClickListener
             val header = cookies.getCookie("https://$domain").orEmpty()
-            if (header.isBlank()) {
-                Toast.makeText(this, "没有可保存的 cookies，请先完成网站登录。", Toast.LENGTH_LONG).show()
+            if (!SiteLoginStore.loginCookiesReady(domain, header)) {
+                Toast.makeText(this, "网站登录尚未完成，请完成账号、密码和必要验证，看到账号页面后再保存。", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
             saving = true

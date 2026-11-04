@@ -17,7 +17,7 @@ class SiteLoginStoreTest {
         val cipher = AesGcmRetryPayloadCipher(SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"))
         val store = SiteLoginStore(dir, "com.garyapp.ytdl.sitecookies", cipher)
         val x = store.save("x.com", "auth_token=private-test-value; ct0=csrf")
-        val newer = store.save("x.com", "auth_token=other-value")
+        val newer = store.save("x.com", "auth_token=other-value; ct0=csrf")
         val yt = store.save("youtube.com", "SID=youtube-value")
         assertNotEquals(x, newer)
         assertTrue(store.read(x.value).toString(Charsets.UTF_8).contains(".x.com\tTRUE"))
@@ -38,5 +38,12 @@ class SiteLoginStoreTest {
         assertTrue(result.startsWith("# Netscape HTTP Cookie File\n"))
         assertTrue(result.contains("\ta\tb=c\n"))
         assertFalse(result.contains("second"))
+    }
+
+    @Test fun guestXCookiesCannotBeSavedAsLogin() {
+        assertFalse(SiteLoginStore.loginCookiesReady("x.com", "guest_id=visitor; gt=guest"))
+        assertFalse(SiteLoginStore.loginCookiesReady("x.com", "auth_token=value"))
+        assertFalse(SiteLoginStore.loginCookiesReady("x.com", "auth_token=; ct0=value"))
+        assertTrue(SiteLoginStore.loginCookiesReady("x.com", "auth_token=value; ct0=value"))
     }
 }
