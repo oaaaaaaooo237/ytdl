@@ -46,7 +46,26 @@ class HttpFileProbe {
             var safe = raw.map { if (it.isISOControl() || it in "<>:\"|?*") '_' else it }.joinToString("").trim().trimEnd('.', ' ')
             if (safe.isBlank() || safe == "." || safe == "..") safe = "下载文件"
             if (Regex("(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?$").matches(safe)) safe = "_$safe"
-            return safe.take(180)
+            val dot = safe.lastIndexOf('.')
+            val extension = if (dot > 0) utf8Prefix(safe.substring(dot), 32).trimEnd('.', ' ') else ""
+            val stem = if (dot > 0) safe.substring(0, dot) else safe
+            return utf8Prefix(stem, 230 - extension.toByteArray(Charsets.UTF_8).size)
+                .trimEnd('.', ' ') + extension
+        }
+        private fun utf8Prefix(value: String, budget: Int): String {
+            val result = StringBuilder()
+            var index = 0
+            var size = 0
+            while (index < value.length) {
+                val point = Character.codePointAt(value, index)
+                val text = if (point in 0xD800..0xDFFF) "_" else String(Character.toChars(point))
+                val bytes = text.toByteArray(Charsets.UTF_8).size
+                if (size + bytes > budget) break
+                result.append(text)
+                size += bytes
+                index += Character.charCount(point)
+            }
+            return result.toString()
         }
         private fun classify(mime: String?, name: String): FileKind = when {
             mime?.startsWith("video/") == true -> FileKind.Video
@@ -110,13 +129,15 @@ internal fun reliableLastModified(c: HttpURLConnection): String? {
     format.timeZone = TimeZone.getTimeZone("GMT")
     return modified.takeIf { format.parse(date)!!.time - format.parse(modified)!!.time >= 60000 }
 }
-internal fun readPrefix(input: InputStream): ByteArray {
+internal fun readPrefix(input: InputStream, shouldStop: () -> Boolean = { false }): ByteArray {
     val prefix = ByteArray(512)
     var size = 0
     while (size < prefix.size) {
+        if (shouldStop()) break
         val count = input.read(prefix, size, prefix.size - size)
         if (count < 0) break
         if (count > 0) size += count
+        if (shouldStop()) break
     }
     return prefix.copyOf(size)
 }

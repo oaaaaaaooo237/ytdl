@@ -66,11 +66,14 @@ class ResumableFileDownloader {
             c.inputStream.use { input ->
                 val buffer = ByteArray(256 * 1024)
                 // Inspect before creating or appending a file, even for mislabeled login pages.
-                val prefix = readPrefix(input)
+                val prefix = readPrefix(input, shouldStop)
+                if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
                 prefix.copyInto(buffer)
                 var count = prefix.size
                 if (downloaded == 0L && count > 0 && isWebPage(mime, buffer.copyOf(count))) return restart("链接返回网页或登录页面")
+                if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
                 if (!existing && !partialFile.createNewFile()) return restart("目标文件已存在")
+                if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
                 FileOutputStream(partialFile, true).use { output ->
                     if (!existing) writeCheckpoint(checkpointFile, binding, downloaded)
                     while (count >= 0) {

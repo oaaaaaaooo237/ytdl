@@ -12,6 +12,8 @@ import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 class HttpFilesTest {
@@ -175,5 +177,70 @@ class HttpFilesTest {
             worker.join(1000)
         }
         assertTrue(HttpFileProbe().probe(url) is FileProbeResult.FileFound)
+    }
+    @Test fun longChineseFilenameUsesUtf8BudgetAndKeepsExtension() {
+        val name = HttpFileProbe.fileName("attachment; filename=\"${"中".repeat(180)}.zip\"", url)
+        assertTrue(name.toByteArray(Charsets.UTF_8).size <= 230)
+        assertTrue(name.endsWith(".zip"))
+        assertTrue(name.removeSuffix(".zip").all { it == '中' })
+    }
+    @Test fun longEmojiFilenameKeepsWholeUnicodeCodepointsAndExtension() {
+        val name = HttpFileProbe.fileName("attachment; filename=\"${"a".repeat(179)}😀${"😀".repeat(100)}.zip\"", url)
+        assertTrue(name.toByteArray(Charsets.UTF_8).size <= 230)
+        assertTrue(name.endsWith(".zip"))
+        assertEquals(name, name.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8))
+        assertTrue(name.contains("😀"))
+    }
+    @Test fun abnormalLongExtensionIsBounded() {
+        val name = HttpFileProbe.fileName("attachment; filename=\"正文.${"扩".repeat(300)}\"", url)
+        assertTrue(name.toByteArray(Charsets.UTF_8).size <= 230)
+        assertTrue(name.startsWith("正文."))
+        assertTrue(name.substringAfterLast('.').toByteArray(Charsets.UTF_8).size <= 32)
+    }
+    @Test fun truncatedFilenameHasNoTrailingDotOrSpace() {
+        val name = HttpFileProbe.fileName("attachment; filename=\"${"a".repeat(225)} ${"b".repeat(30)}.zip\"", url)
+        assertFalse(name.removeSuffix(".zip").endsWith(' '))
+    }
+    @Test fun tricklingPrefixCanBeStoppedAndConnectionIsReleased() {
+        val stop = AtomicBoolean(false)
+        val firstByte = CountDownLatch(1)
+        val released = CountDownLatch(1)
+        val accepted = AtomicReference<java.net.Socket>()
+        val result = AtomicReference<FileDownloadResult>()
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { listener ->
+            val endpoint = "http://127.0.0.1:${listener.localPort}/trickle"
+            val m = metadata().copy(sourceUrl = endpoint, finalUrl = endpoint)
+            val worker = thread(isDaemon = true) {
+                try {
+                    listener.accept().use { socket ->
+                        accepted.set(socket)
+                        val input = socket.getInputStream().bufferedReader()
+                        while (!input.readLine().isNullOrEmpty()) { }
+                        socket.soTimeout = 10
+                        val output = socket.getOutputStream()
+                        output.write("HTTP/1.1 200 OK\r\nContent-Length: 100000\r\nContent-Type: application/octet-stream\r\nETag: \"one\"\r\nConnection: close\r\n\r\n".toByteArray())
+                        repeat(512) {
+                            output.write(1); output.flush(); firstByte.countDown()
+                            try { if (input.read() == -1) { released.countDown(); return@thread } }
+                            catch (_: java.net.SocketTimeoutException) { }
+                            Thread.sleep(200)
+                        }
+                    }
+                } catch (_: java.io.IOException) { released.countDown() }
+            }
+            val client = thread(isDaemon = true) { result.set(download(m, { stop.get() })) }
+            try {
+                assertTrue(firstByte.await(2, TimeUnit.SECONDS))
+                stop.set(true)
+                client.join(1500)
+                assertFalse("Cancellation stalled while gathering the sniff prefix", client.isAlive)
+                assertTrue(result.get() is FileDownloadResult.Stopped)
+                assertFalse(File(dir, "body.part").exists())
+                assertTrue("Cancelled connection was not released", released.await(1500, TimeUnit.MILLISECONDS))
+            } finally {
+                stop.set(true); accepted.get()?.close(); listener.close()
+                client.join(4000); worker.join(1000)
+            }
+        }
     }
 }
