@@ -571,13 +571,15 @@ def test_download_options_have_bounded_network_waits(tmp_path):
     bridge = load_android_ytdl_bridge(BoundedProbe)
     bridge.download_format("https://example.test/watch", str(tmp_path), "18", "media")
     bridge.download_subtitle("https://example.test/watch", str(tmp_path), "en", "vtt", "manual")
-    assert len(captured) == 2
-    for options in captured:
+    bridge.download_format("https://example.test/watch", str(tmp_path), "18", "media", resume_transfers=False)
+    bridge.download_subtitle("https://example.test/watch", str(tmp_path), "en", "vtt", "manual", resume_transfers=False)
+    assert len(captured) == 4
+    for index, options in enumerate(captured):
         assert options["socket_timeout"] == 10
         assert options["retries"] == 1
         assert options["fragment_retries"] == 1
         assert options["extractor_retries"] == 1
-        assert options["continuedl"] is True
+        assert options["continuedl"] is (index < 2)
         assert options["nopart"] is False
 
 def test_stop_during_metadata_fallback_does_not_start_python_retry():

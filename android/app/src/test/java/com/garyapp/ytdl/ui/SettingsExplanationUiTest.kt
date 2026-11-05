@@ -65,6 +65,7 @@ class SettingsExplanationUiTest {
             setQuietContent()
             composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
             composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+            composeRule.onNodeWithTag("ytdl-settings-concurrency").performClick()
             composeRule.onNodeWithTag("ytdl-settings-concurrency-0").performClick()
             composeRule.onNodeWithTag("ytdl-screen-settings")
                 .performScrollToNode(hasTestTag("ytdl-settings-file-conflict-1"))

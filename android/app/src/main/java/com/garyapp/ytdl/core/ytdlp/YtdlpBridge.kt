@@ -77,6 +77,7 @@ class YtdlpBridge(
         cookiesPath: String? = null,
         listener: DownloadProgressListener? = null,
         analysisKey: String? = null,
+        resumeTransfers: Boolean = true,
     ): Result<DownloadResult> {
         val normalizedFormatId = formatId.trim()
         if (normalizedFormatId.isBlank() || !isExplicitFormatId(normalizedFormatId)) {
@@ -111,6 +112,7 @@ class YtdlpBridge(
                 PythonProgressProxy(listener),
                 androidHttpFallback,
                 analysisKey,
+                resumeTransfers,
             ).toString()
             parseDownloadJson(json)
         } catch (exc: Exception) {
@@ -126,6 +128,7 @@ class YtdlpBridge(
         source: SubtitleSource,
         cookiesPath: String? = null,
         listener: DownloadProgressListener? = null,
+        resumeTransfers: Boolean = true,
     ): Result<SubtitleDownloadResult> {
         val normalizedLanguage = language.trim()
         val normalizedExt = ext.trim()
@@ -161,6 +164,7 @@ class YtdlpBridge(
                 cookiesPath,
                 PythonProgressProxy(listener),
                 androidHttpFallback,
+                resumeTransfers,
             ).toString()
             parseSubtitleDownloadJson(json)
         } catch (exc: Exception) {

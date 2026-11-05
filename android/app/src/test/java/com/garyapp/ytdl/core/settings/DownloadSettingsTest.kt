@@ -21,18 +21,27 @@ class DownloadSettingsTest {
         assertEquals(HttpFileConflictPolicy.AutoRename, settings.fileConflictPolicy)
         assertTrue(settings.notifyDownloadCompleted)
         assertTrue(settings.notifyDownloadFailed)
+        assertNull(settings.maxWaitingDownloads)
+        assertFalse(settings.jumpToDownloadTask)
+        assertTrue(settings.resumeDownloads)
+        assertFalse(settings.downloadDetectedSubtitles)
     }
 
     @Test fun downloadPreferencesSurviveRecreationAndInvalidConcurrencyUsesDefault() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repository = SettingsRepository.fromContext(context)
-        repository.update { it.copy(maxConcurrentDownloads = 3, fileConflictPolicy = HttpFileConflictPolicy.Ask,
+        repository.update { it.copy(maxConcurrentDownloads = 5, maxWaitingDownloads = 0, jumpToDownloadTask = true,
+            resumeDownloads = false, downloadDetectedSubtitles = true, fileConflictPolicy = HttpFileConflictPolicy.Ask,
             notifyDownloadCompleted = false, notifyDownloadFailed = false) }
         val saved = SettingsRepository.fromContext(context).getSettings()
-        assertEquals(3, saved.maxConcurrentDownloads)
+        assertEquals(5, saved.maxConcurrentDownloads)
+        assertEquals(0, saved.maxWaitingDownloads)
+        assertTrue(saved.jumpToDownloadTask)
+        assertFalse(saved.resumeDownloads)
+        assertTrue(saved.downloadDetectedSubtitles)
         assertEquals(HttpFileConflictPolicy.Ask, saved.fileConflictPolicy)
         assertFalse(saved.notifyDownloadCompleted)
         assertFalse(saved.notifyDownloadFailed)
-        assertEquals(2, repository.update { it.copy(maxConcurrentDownloads = 4) }.maxConcurrentDownloads)
+        assertEquals(2, repository.update { it.copy(maxConcurrentDownloads = 6) }.maxConcurrentDownloads)
     }
 }

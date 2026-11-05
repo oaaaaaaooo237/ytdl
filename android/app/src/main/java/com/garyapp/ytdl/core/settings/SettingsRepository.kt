@@ -61,6 +61,10 @@ class SettingsRepository(
             .putString(KeyThemeMode, settings.themeModeId)
             .putString(KeyColorPreset, settings.colorPresetId)
             .putInt(KeyMaxConcurrentDownloads, settings.maxConcurrentDownloads)
+            .putInt("max_waiting_downloads", settings.maxWaitingDownloads ?: -1)
+            .putBoolean("jump_to_download_task", settings.jumpToDownloadTask)
+            .putBoolean("resume_downloads", settings.resumeDownloads)
+            .putBoolean("download_detected_subtitles", settings.downloadDetectedSubtitles)
             .putString(KeyFileConflictPolicy, settings.fileConflictPolicy.name)
             .putBoolean(KeyNotifyDownloadCompleted, settings.notifyDownloadCompleted)
             .putBoolean(KeyNotifyDownloadFailed, settings.notifyDownloadFailed)
@@ -81,7 +85,8 @@ class SettingsRepository(
         defaultStorageTarget = StorageTargets.sanitizeDefault(defaultStorageTarget),
         themeModeId = AppearanceSettings.normalizeThemeModeId(themeModeId),
         colorPresetId = AppearanceSettings.normalizeColorPresetId(colorPresetId),
-        maxConcurrentDownloads = maxConcurrentDownloads.takeIf { it in 1..3 } ?: AppSettings.DefaultMaxConcurrentDownloads,
+        maxWaitingDownloads = maxWaitingDownloads?.takeIf { it >= 0 },
+        maxConcurrentDownloads = maxConcurrentDownloads.takeIf { it in 1..5 } ?: AppSettings.DefaultMaxConcurrentDownloads,
     )
 
     companion object {
@@ -125,6 +130,10 @@ class SettingsRepository(
                     themeModeId = prefs.getString(KeyThemeMode, null).orEmpty(),
                     colorPresetId = prefs.getString(KeyColorPreset, null).orEmpty(),
                     siteCookies = readSites(prefs.getString(KeySiteCookies, null)),
+                    maxWaitingDownloads = saved["max_waiting_downloads"] as? Int,
+                    jumpToDownloadTask = saved["jump_to_download_task"] as? Boolean ?: false,
+                    resumeDownloads = saved["resume_downloads"] as? Boolean ?: true,
+                    downloadDetectedSubtitles = saved["download_detected_subtitles"] as? Boolean ?: false,
                     maxConcurrentDownloads = saved[KeyMaxConcurrentDownloads] as? Int ?: AppSettings.DefaultMaxConcurrentDownloads,
                     fileConflictPolicy = HttpFileConflictPolicy.entries.firstOrNull { it.name == saved[KeyFileConflictPolicy] }
                         ?: HttpFileConflictPolicy.AutoRename,

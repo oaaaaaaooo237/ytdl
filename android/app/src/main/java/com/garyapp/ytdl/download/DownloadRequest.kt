@@ -26,6 +26,7 @@ data class DownloadRequest(
     val analysisKey: String? = null,
     val pinnedCookiesReference: CookiesReference? = null,
     val cookiesSelectionPinned: Boolean = false,
+    val resumeTransfers: Boolean = true,
 ) {
     fun cookiesReferenceFor(settings: AppSettings): CookiesReference? {
         if (!usesCookies) return null

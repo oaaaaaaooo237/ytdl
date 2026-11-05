@@ -13,6 +13,10 @@ data class AppSettings(
     val fileConflictPolicy: HttpFileConflictPolicy = HttpFileConflictPolicy.AutoRename,
     val notifyDownloadCompleted: Boolean = true,
     val notifyDownloadFailed: Boolean = true,
+    val maxWaitingDownloads: Int? = null,
+    val jumpToDownloadTask: Boolean = false,
+    val resumeDownloads: Boolean = true,
+    val downloadDetectedSubtitles: Boolean = false,
 ) {
     companion object {
         const val DefaultMaxConcurrentDownloads = 2

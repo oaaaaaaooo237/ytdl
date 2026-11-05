@@ -15,6 +15,8 @@ sealed interface IdleDownloadActionResult<out T> {
     data class Executed<T>(val value: T) : IdleDownloadActionResult<T>
 }
 
+internal class WaitingQueueFullException : IllegalStateException("等待队列已满，请等待空位后再试。")
+
 object DownloadCoordinator {
     private val lock = Any()
     private val listeners = linkedSetOf<(DownloadTaskState) -> Unit>()
@@ -57,8 +59,14 @@ object DownloadCoordinator {
 
     fun startForegroundDownload(context: Context, request: DownloadRequest, outputDirectory: File): Result<DownloadTaskState> = runCatching {
         restore(context)
-        val captured = request.copy(storageTarget = request.storageTarget ?: SettingsRepository.fromContext(context).getSettings().defaultStorageTarget)
+        val settings = SettingsRepository.fromContext(context).getSettings()
+        val captured = request.copy(storageTarget = request.storageTarget ?: settings.defaultStorageTarget)
         val state = synchronized(lock) {
+            val pending = queuedLaunches.size + saved.values.count { it.wasQueued && it.recoveryError == null }
+            val freeSlots = (settings.maxConcurrentDownloads - workers.size).coerceAtLeast(0)
+            if (settings.maxWaitingDownloads?.let { pending >= freeSlots + it } == true) {
+                throw WaitingQueueFullException()
+            }
             requireNotNull(repository).create(captured).getOrThrow()
             enqueueForServiceStart(captured, outputDirectory).getOrThrow()
         }
@@ -275,7 +283,7 @@ object DownloadCoordinator {
         } else IdleDownloadActionResult.Executed(action())
     }
     internal fun claimPendingLaunch(limit: Int = 1): DownloadLaunch? = synchronized(lock) {
-        if (workers.size >= limit.coerceIn(1, 3)) return@synchronized null
+        if (workers.size >= limit.coerceIn(1, 5)) return@synchronized null
         queuedLaunches.pollFirst()?.also { launch ->
             val id = launch.request.taskId
             workers[id] = Worker(launch).apply { requestedStop = earlyStops.remove(id) }

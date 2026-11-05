@@ -44,6 +44,20 @@ class HttpFilePipelineTest {
         val metadata = (HttpFileProbe().probe(url) as FileProbeResult.FileFound).metadata
         return DownloadRequest(url, "报告", DownloadRoute.HttpFile(metadata, "用户改名.pdf"))
     }
+    @Test fun resumeDisabledRestartsInterruptedHttpTransferFromZero() {
+        val request = request().copy(resumeTransfers = false)
+        val token = MutableDownloadCancellation()
+        val pipeline = HttpFilePipeline()
+        val paused = pipeline.run(request, root, token) { state ->
+            if ((state.progress?.downloadedBytes ?: 0) >= 100_000) token.pause()
+        }
+        assertEquals(DownloadStage.Paused, paused.state.stage)
+        val resumed = pipeline.run(request, root)
+        assertEquals(DownloadStage.Completed, resumed.state.stage)
+        assertNull(lastRange)
+        assertArrayEquals(body, File(resumed.outputs.single().path).readBytes())
+    }
+
     @Test fun interruptedCopyUnderAskResumesOwnedTarget() {
         verifyPendingPublication(HttpFileConflictPolicy.Ask, body.copyOf(500), false)
     }

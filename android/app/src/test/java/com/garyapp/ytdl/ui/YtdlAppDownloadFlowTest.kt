@@ -337,6 +337,47 @@ class YtdlAppDownloadFlowTest {
     }
 
     @Test
+    fun autoSubtitleAndTaskJumpPreferencesApplyToAcceptedDownload() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<Context>()
+        val repository = com.garyapp.ytdl.core.settings.SettingsRepository.fromContext(context)
+        val previous = repository.getSettings()
+        val captured = AtomicReference<DownloadRequest>()
+        val manual = SubtitleInfo("zh-Hans", "vtt")
+        val duplicate = SubtitleInfo("zh-Hans", "srt")
+        lateinit var hostContext: Context
+        try {
+            repository.update { it.copy(downloadDetectedSubtitles = true, jumpToDownloadTask = true, resumeDownloads = false) }
+            composeRule.setContent {
+                hostContext = LocalContext.current
+                YtdlApp(
+                    parserUpdateCoordinator = offlineParserCoordinator(),
+                    analysisProvider = { _, _ -> Result.success(analysisNamed("媒体结果").copy(subtitles = listOf(manual, duplicate))) },
+                    fileProbeProvider = { FileProbeResult.NotFile("网页") },
+                    downloadStarter = { _, request, _ ->
+                        captured.set(request)
+                        Result.success(DownloadTaskState.waiting(request))
+                    },
+                )
+            }
+            composeRule.runOnIdle {
+                hostContext.requireActivity().findViewById<EditText>(R.id.ytdl_url_input).setText(FirstUrl)
+            }
+            composeRule.onNodeWithTag("ytdl-analyze-button").performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag("ytdl-download-mode").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("ytdl-download-start").performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag("ytdl-screen-tasks").fetchSemanticsNodes().isNotEmpty()
+            }
+            assertEquals(listOf(manual), captured.get().selectedSubtitles)
+            assertEquals(false, captured.get().resumeTransfers)
+        } finally {
+            repository.update { previous }
+        }
+    }
+
+    @Test
     fun realVideoProbeKeepsMediaModesAndOnlyFallsBackForUnavailableParsing() {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/coast.mp4") { exchange ->

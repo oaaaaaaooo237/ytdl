@@ -84,6 +84,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -783,6 +784,7 @@ internal fun YtdlApp(
     var showAdvancedFormats by rememberSaveable { mutableStateOf(false) }
     var confirmExtensionChange by remember { mutableStateOf(false) }
     var activeDownloadStates by remember { mutableStateOf(emptyMap<String, DownloadTaskState>()) }
+    var focusedDownloadTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var historyQuery by rememberSaveable { mutableStateOf("") }
     var taskStatusNames by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     var taskTypeNames by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
@@ -1238,7 +1240,12 @@ internal fun YtdlApp(
                         if (fileSelection != null && FormatMode.entries.none { isFormatModeAvailable(analysis, it) }) {
                             return@fold runtimeState.withFileRecognition(fileSelection)
                         }
-                        val analyzed = runtimeState.withAnalysisResult(analysis)
+                        val analyzed = runtimeState.withAnalysisResult(analysis).let { result ->
+                            if (!appSettings.downloadDetectedSubtitles || result.appliedFormatSelection.mode == FormatMode.AudioOnly) result
+                            else result.copy(selectedSubtitles = analysis.subtitles
+                                .sortedBy { it.source.ordinal }.distinctBy { it.language.lowercase(java.util.Locale.ROOT) }
+                                .take(256))
+                        }
                         if (retryDraft == null) {
                             analyzed
                         } else {
@@ -1306,14 +1313,26 @@ internal fun YtdlApp(
             }
             val startResult = requestResult.getOrNull()?.let {
                 val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
-                downloadStarter(context.applicationContext, it, outputDir)
+                downloadStarter(context.applicationContext, it.copy(resumeTransfers = settings.resumeDownloads), outputDir)
             }
             if (startResult?.isSuccess != true) temporaryCookies?.delete()
             mainHandler.post {
                 runtimeState = runtimeState.copy(isStarting = false)
                 if (analysisRequestRevision.get() != revision) return@post
                 runtimeState = when {
-                    startResult?.isSuccess == true -> runtimeState.withAcceptedDownload(startResult.getOrThrow())
+                    startResult?.isSuccess == true -> {
+                        val accepted = startResult.getOrThrow()
+                        if (settings.jumpToDownloadTask) {
+                            focusedDownloadTaskId = accepted.request?.taskId ?: requestResult.getOrNull()?.taskId
+                            historyQuery = ""
+                            taskStatusNames = arrayListOf()
+                            taskTypeNames = arrayListOf()
+                            selectRoute("tasks")
+                        }
+                        runtimeState.withAcceptedDownload(accepted)
+                    }
+                    startResult?.exceptionOrNull() is com.garyapp.ytdl.download.WaitingQueueFullException ->
+                        runtimeState.copy(userMessage = startResult.exceptionOrNull()?.message.orEmpty())
                     cookiesResult.isFailure -> runtimeState.copy(userMessage = "Cookies 文件读取失败，请重新选择文件。")
                     requestResult.isFailure -> runtimeState.copy(
                         userMessage = if (fileSelection != null) "文件名不可用。" else
@@ -1622,6 +1641,9 @@ internal fun YtdlApp(
                             activeStates = activeDownloadStates,
                             historyItems = historyItems,
                             historyQuery = historyQuery,
+                            focusedTaskId = focusedDownloadTaskId,
+                            taskListState = pageListState,
+                            onTaskFocused = { focusedDownloadTaskId = null },
                             userMessage = runtimeState.userMessage,
                             onCancelDownload = { taskId ->
                                 context.startService(Intent(context, DownloadService::class.java).setAction(DownloadService.ActionCancel)
@@ -2901,6 +2923,40 @@ private fun RecognitionProgress() {
 }
 
 @Composable
+private fun DownloadCountSetting(
+    title: String,
+    value: String,
+    choices: Map<out Int?, String>,
+    tag: String,
+    subtitle: String = "",
+    onSelect: (Int?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        SettingLineCard(title, subtitle, "↓", "$value ▾",
+            modifier = Modifier.clickable { expanded = true }.testTag(tag))
+        androidx.compose.material3.DropdownMenu(
+            expanded = expanded, onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 200.dp),
+        ) {
+            choices.forEach { (choice, label) ->
+                ChoiceItem(label, "$tag-${choice?.let { it - 1 } ?: "unlimited"}") {
+                    onSelect(choice)
+                    expanded = false
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadBehaviorSwitch(title: String, enabled: Boolean, tag: String, onChange: (Boolean) -> Unit) {
+    SettingLineCard(title, "", "↓", "", supportingContent = {
+        Switch(enabled, onChange, modifier = Modifier.testTag("ytdl-settings-$tag"))
+    })
+}
+
+@Composable
 private fun FormatDetailLine(
     title: String,
     value: String,
@@ -3470,6 +3526,9 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     historyAvailabilityRevision: Int = 0,
     filters: TaskFilters = TaskFilters(),
     onFiltersChange: (TaskFilters) -> Unit = {},
+    focusedTaskId: String? = null,
+    taskListState: LazyListState? = null,
+    onTaskFocused: () -> Unit = {},
 ) {
     val liveStates = activeStates?.values?.toList() ?: listOfNotNull(state.activeRequest?.let {
         DownloadTaskState(state.activeStage, it)
@@ -3489,8 +3548,20 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     val visibleWaitingIds = visibleTasks.filter { it.state != null && it.recovery == null }.map { it.id }.toSet().intersect(waitingIds)
     val visibleSavedTasks = visibleTasks.mapNotNull { it.recovery }
     val visibleHistory = visibleTasks.filter { it.state == null }.mapNotNull { it.history }
+    val showMessage = shouldShowRuntimeMessage(userMessage) && userMessage != "正在${state.downloadStatus}..." &&
+        userMessage !in setOf("下载完成", "下载已取消。")
+    val orderedTaskIds = currentTasks.mapNotNull { it.activeRequest?.taskId } +
+        waiting.filter { it.taskId in visibleWaitingIds }.map { it.taskId } +
+        visibleSavedTasks.map { it.taskId } + visibleHistory.map { it.taskId }
+    val focusedIndex = orderedTaskIds.indexOf(focusedTaskId)
     item {
         TaskFilterBar(filters, onFiltersChange)
+        LaunchedEffect(focusedTaskId, focusedIndex) {
+            if (focusedIndex >= 0 && taskListState != null) {
+                taskListState.scrollToItem(3 + focusedIndex + if (showMessage) 1 else 0)
+                onTaskFocused()
+            }
+        }
     }
     item {
         OutlinedTextField(
@@ -3503,9 +3574,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
             shape = RectangleShape,
         )
     }
-    if (shouldShowRuntimeMessage(userMessage) && userMessage != "正在${state.downloadStatus}..." &&
-        userMessage !in setOf("下载完成", "下载已取消。")
-    ) {
+    if (showMessage) {
         item { RuntimeMessageCard(userMessage) }
     }
     if (visibleTasks.isEmpty() && visibleHistory.isEmpty()) item {
@@ -3806,13 +3875,21 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
         }
         "behavior" -> {
             item {
-                AppCard {
-                    SectionTitle("同时下载的任务数")
-                    SegmentedRow(listOf("1 个", "2 个", "3 个"), settings.maxConcurrentDownloads - 1,
-                        LocalYtdlAppPalette.current.settingsAccent, "ytdl-settings-concurrency") { index ->
-                        onSettingsChange { it.copy(maxConcurrentDownloads = index + 1) }
-                    }
-                    Text("超过并发数量的任务进入等待队列。")
+                DownloadCountSetting("同时下载的任务数", "${settings.maxConcurrentDownloads} 个",
+                    (1..5).associateWith { "$it 个" }, "ytdl-settings-concurrency") { value ->
+                    onSettingsChange { it.copy(maxConcurrentDownloads = requireNotNull(value)) }
+                }
+            }
+            item {
+                DownloadCountSetting("等待任务上限", settings.maxWaitingDownloads?.let { "$it 个" } ?: "不限",
+                    linkedMapOf<Int?, String>(null to "不限").apply { (0..50).forEach { put(it, "$it 个") } },
+                    "ytdl-settings-waiting-limit", "不计正在下载的任务") { value ->
+                    onSettingsChange { it.copy(maxWaitingDownloads = value) }
+                }
+            }
+            item {
+                DownloadBehaviorSwitch("开始后跳转到对应任务", settings.jumpToDownloadTask, "jump-to-task") { value ->
+                    onSettingsChange { it.copy(jumpToDownloadTask = value) }
                 }
             }
             item {
@@ -3825,8 +3902,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
                     Text("自动编号会保留两个文件。")
                 }
             }
-            item { SettingLineCard("断点续传", "服务器支持时，从保留的进度继续。源文件变化时会要求确认重新下载。", "↻", "") }
-            item { SettingLineCard("媒体格式与字幕", "识别出媒体后，在该任务的下载选项中选择。", "◇", "") }
+            item {
+                DownloadBehaviorSwitch("断点续传", settings.resumeDownloads, "resume-downloads") { value ->
+                    onSettingsChange { it.copy(resumeDownloads = value) }
+                }
+            }
+            item {
+                DownloadBehaviorSwitch("识别到字幕时下载", settings.downloadDetectedSubtitles, "auto-subtitles") { value ->
+                    onSettingsChange { it.copy(downloadDetectedSubtitles = value) }
+                }
+            }
         }
         "notifications" -> {
             item {

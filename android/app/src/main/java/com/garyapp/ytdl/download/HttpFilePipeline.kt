@@ -80,6 +80,10 @@ class HttpFilePipeline {
             }
             val pending = session.pendingFilePublication
             if (pending == null && requiresNameChoice()) return DownloadPipelineResult(state, outputs)
+            if (!request.resumeTransfers && pending == null) {
+                cleanupTransport(guard, task)
+                state = state.copy(progress = null)
+            }
             val http = guard.child(task, "http").also { check(it.mkdirs() || it.isDirectory); guard.checkSafe(it) }
             val partial = guard.child(http, "body.part")
             val transferCheckpoint = guard.child(http, "resume.bin")

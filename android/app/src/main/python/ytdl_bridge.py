@@ -353,6 +353,7 @@ def download_format(
     progress_listener=None,
     android_http_fallback=None,
     analysis_key=None,
+    resume_transfers=True,
 ):
     try:
         normalized_format_id = str(format_id or "").strip()
@@ -381,7 +382,7 @@ def download_format(
             "retries": 1,
             "fragment_retries": 1,
             "extractor_retries": 1,
-            "continuedl": True,
+            "continuedl": bool(resume_transfers),
             "nopart": False,
         }
         if cookies_path:
@@ -430,6 +431,7 @@ def download_subtitle(
     cookies_path=None,
     progress_listener=None,
     android_http_fallback=None,
+    resume_transfers=True,
 ):
     try:
         normalized_language = str(language or "").strip()
@@ -462,7 +464,7 @@ def download_subtitle(
             "retries": 1,
             "fragment_retries": 1,
             "extractor_retries": 1,
-            "continuedl": True,
+            "continuedl": bool(resume_transfers),
             "nopart": False,
         }
         if cookies_path:

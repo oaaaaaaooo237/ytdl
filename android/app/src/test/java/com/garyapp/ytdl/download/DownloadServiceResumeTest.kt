@@ -51,6 +51,51 @@ class DownloadServiceResumeTest {
         DownloadCoordinator.enqueueForServiceStart(request, root).getOrThrow()
         return DownloadCoordinator.claimPendingLaunch()!!.also { DownloadCoordinator.activateLaunch(it) }
     }
+    @Test fun fiveWorkerSettingRunsFiveTasksAndLeavesSixthWaiting() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = com.garyapp.ytdl.core.settings.SettingsRepository.fromContext(context)
+        val original = settings.getSettings()
+        val entered = CountDownLatch(5)
+        val release = CountDownLatch(1)
+        val exited = CountDownLatch(5)
+        val tasks = List(6) { request() }
+        val subscription = DownloadCoordinator.addWorkerReleasedListener { exited.countDown() }
+        try {
+            settings.update { it.copy(maxConcurrentDownloads = 5) }
+            tasks.forEach {
+                repository.create(it).getOrThrow()
+                DownloadCoordinator.enqueueForServiceStart(it, root).getOrThrow()
+            }
+            service.engineFactory = { BlockingEngine(entered, release) }
+            service.onStartCommand(null, 0, 1)
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertEquals("queued", database.queueDao().getByTaskId(tasks.last().taskId).status)
+            release.countDown()
+            assertTrue(exited.await(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            subscription.close()
+            settings.update { original }
+        }
+    }
+
+    @Test fun fullWaitingQueueRejectsBeforeWritingRecoveryState() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = com.garyapp.ytdl.core.settings.SettingsRepository.fromContext(context)
+        val original = settings.getSettings()
+        try {
+            settings.update { it.copy(maxConcurrentDownloads = 1, maxWaitingDownloads = 0) }
+            enqueue(request())
+            val rejected = request()
+            assertTrue(DownloadCoordinator.startForegroundDownload(context, rejected, root)
+                .exceptionOrNull() is WaitingQueueFullException)
+            assertNull(database.queueDao().getByTaskId(rejected.taskId))
+            assertFalse(values.containsKey(rejected.taskId))
+        } finally {
+            settings.update { original }
+        }
+    }
+
     @Test fun serviceRunsTwoDefaultWorkersAndPauseTargetsOnlyOne() {
         val entered = CountDownLatch(2)
         val release = CountDownLatch(1)

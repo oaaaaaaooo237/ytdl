@@ -33,6 +33,8 @@ internal class PipelineCheckpoint private constructor(
             checkpoint.downloadedBytes * 100.0 / it
         }, checkpoint.downloadedBytes, checkpoint.totalBytes, 0.0, null, null) else null
 
+    fun completedPaths(): Set<File> = completed.map { File(directory, it.relativePath) }.toSet()
+
     fun file(role: String): File? = completed.singleOrNull { it.role == role }?.let { File(directory, it.relativePath) }
 
     fun streamDirectory(merge: Boolean): File = protect {

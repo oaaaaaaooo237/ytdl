@@ -147,12 +147,25 @@ class ResumeRequestStoreTest {
         val store = FileResumeRequestStore(root, cipher)
         store.save(request()).getOrThrow()
         val file = root.resolve("$id.bin")
-        val payload = cipher.decrypt(file.readBytes()).dropLast(2).toByteArray()
+        val payload = cipher.decrypt(file.readBytes()).dropLast(3).toByteArray()
         java.nio.ByteBuffer.wrap(payload).putInt(4, 1)
         file.writeBytes(cipher.encrypt(payload))
         val old = store.load(id).getOrThrow()
         assertFalse(old.cookiesSelectionPinned)
         assertTrue(old.usesCookies)
+        assertTrue(old.resumeTransfers)
+    }
+
+    @Test fun disabledResumePolicyRoundTripsAndLegacyVersionThreeDefaultsToEnabled() {
+        val root = root()
+        val store = FileResumeRequestStore(root, cipher)
+        store.save(request().copy(resumeTransfers = false)).getOrThrow()
+        assertFalse(store.load(id).getOrThrow().resumeTransfers)
+        val file = root.resolve("$id.bin")
+        val payload = cipher.decrypt(file.readBytes()).dropLast(1).toByteArray()
+        java.nio.ByteBuffer.wrap(payload).putInt(4, 3)
+        file.writeBytes(cipher.encrypt(payload))
+        assertTrue(store.load(id).getOrThrow().resumeTransfers)
     }
     private val id = "a".repeat(32)
     private val other = "b".repeat(32)

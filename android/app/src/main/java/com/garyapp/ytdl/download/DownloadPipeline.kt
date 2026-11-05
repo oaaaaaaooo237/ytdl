@@ -46,6 +46,7 @@ interface DownloadEngine {
 
 class YtdlpDownloadEngine(
     private val bridge: YtdlpBridge = YtdlpBridge(),
+    private val resumeTransfers: Boolean = true,
 ) : DownloadEngine {
     override fun downloadFormat(
         url: String,
@@ -56,7 +57,7 @@ class YtdlpDownloadEngine(
         listener: DownloadProgressListener?,
         analysisKey: String?,
     ): Result<DownloadResult> {
-        return bridge.downloadFormat(url, outputDirectory, formatId, role, cookiesPath, listener, analysisKey)
+        return bridge.downloadFormat(url, outputDirectory, formatId, role, cookiesPath, listener, analysisKey, resumeTransfers)
     }
 
     override fun downloadSubtitle(
@@ -68,7 +69,7 @@ class YtdlpDownloadEngine(
         cookiesPath: String?,
         listener: DownloadProgressListener?,
     ): Result<SubtitleDownloadResult> {
-        return bridge.downloadSubtitle(url, outputDirectory, language, ext, source, cookiesPath, listener)
+        return bridge.downloadSubtitle(url, outputDirectory, language, ext, source, cookiesPath, listener, resumeTransfers)
     }
 }
 
@@ -165,7 +166,23 @@ class DownloadPipeline(
             taskDirectory = checkpoint.directory
             val appPrivateRoot = requireNotNull(taskDirectory.parentFile).canonicalFile
             ExportController.markPrivateTaskStarted(taskDirectory).getOrThrow()
-            state = state.copy(progress = checkpoint.progress())
+            if (!request.resumeTransfers && checkpoint.isResuming) {
+                val retained = checkpoint.completedPaths()
+                val guard = ControlledDirectory(taskDirectory)
+                fun removeIncomplete(directory: File) {
+                    directory.listFiles().orEmpty().forEach { file ->
+                        guard.checkSafe(file)
+                        if (file.isDirectory) removeIncomplete(file)
+                        else if (file !in retained && (file.name.endsWith(".part") ||
+                                file.name.endsWith(".ytdl") || ".part-Frag" in file.name)) {
+                            check(file.delete())
+                        }
+                    }
+                }
+                removeIncomplete(taskDirectory)
+                checkpoint.resumingPhase = null
+            }
+            state = state.copy(progress = checkpoint.progress().takeIf { request.resumeTransfers })
             if (checkpoint.isResuming) emit(state.copy(stage = DownloadStage.Resuming))
             ensureActive()
 

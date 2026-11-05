@@ -23,14 +23,14 @@ class DownloadService : Service() {
     private lateinit var retryDraftStore: RetryDraftStore
     internal lateinit var repository: ResumeTaskRepository
     internal lateinit var network: DownloadNetwork
-    internal var engineFactory: () -> DownloadEngine = { YtdlpDownloadEngine(YtdlpBridge()) }
+    internal var engineFactory: (Boolean) -> DownloadEngine = { resume -> YtdlpDownloadEngine(YtdlpBridge(), resume) }
     internal var exportToTree: (String, List<ExportController.AppPrivateOutput>, DownloadCancellation) -> List<String> = { uri, outputs, token ->
         synchronized(SafExportLock) {
             ExportController.copyToSafTreeWithDocuments(contentResolver, uri, outputs,
                 isCancellationRequested = { token.isCancellationRequested }).getOrThrow().documentUris
         }
     }
-    private val launchExecutor = Executors.newFixedThreadPool(3)
+    private val launchExecutor = Executors.newFixedThreadPool(5)
     private val controlExecutor = Executors.newSingleThreadExecutor()
     private val running = ConcurrentHashMap.newKeySet<DownloadLaunch>()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -182,7 +182,7 @@ class DownloadService : Service() {
                 val result = if (request.route is DownloadRoute.HttpFile) {
                     HttpFilePipeline().run(request, launch.outputDirectory, token, onState)
                 } else {
-                    DownloadPipeline(engineFactory(), NativeMuxerMediaProcessor(launch.outputDirectory),
+                    DownloadPipeline(engineFactory(request.resumeTransfers), NativeMuxerMediaProcessor(launch.outputDirectory),
                         isNetworkAvailable = network::isAvailable).run(request, launch.outputDirectory, token, onState)
                 }
                 state = exportCompletedOutputs(result, request.storageTarget ?: StorageTarget.AppPrivate, token)
