@@ -44,6 +44,60 @@ class HttpFilePipelineTest {
         val metadata = (HttpFileProbe().probe(url) as FileProbeResult.FileFound).metadata
         return DownloadRequest(url, "报告", DownloadRoute.HttpFile(metadata, "用户改名.pdf"))
     }
+    @Test fun interruptedCopyUnderAskResumesOwnedTarget() {
+        verifyPendingPublication(HttpFileConflictPolicy.Ask, body.copyOf(500), false)
+    }
+
+    @Test fun fullyCopiedUncommittedTargetIsRebuiltWithoutAnotherSuffix() {
+        // Matching length alone must never make the uncommitted copy a finished output.
+        verifyPendingPublication(HttpFileConflictPolicy.AutoRename, ByteArray(body.size), true)
+    }
+
+    private fun verifyPendingPublication(policy: HttpFileConflictPolicy, interruptedCopy: ByteArray, nameAlreadyTaken: Boolean) {
+        val base = request()
+        val route = (base.route as DownloadRoute.HttpFile).copy(conflictPolicy = policy)
+        val req = base.copy(route = route)
+        val session = PipelineCheckpoint.open(TaskWorkspace(root), req)
+        val outputs = File(session.directory, "outputs").apply { mkdirs() }
+        val preexisting = File(outputs, if (nameAlreadyTaken) route.fileName else "other.pdf").apply { writeText("keep") }
+        val name = if (nameAlreadyTaken) "用户改名 (1).pdf" else route.fileName
+        val target = File(outputs, name)
+        val http = File(session.directory, "http").apply { mkdirs() }
+        val transfer = ResumableFileDownloader().download(route.metadata, File(http, "body.part"), File(http, "resume.bin"))
+        assertEquals(FileDownloadResult.Completed(body.size.toLong()), transfer)
+        session.prepareFilePublication(target, body.size.toLong())
+        session.save(DownloadStage.DownloadingFile, null, null)
+        target.writeBytes(interruptedCopy)
+        server.stop(0)
+
+        val resumed = HttpFilePipeline().run(req, root)
+
+        assertEquals(DownloadStage.Completed, resumed.state.stage)
+        assertEquals(target, File(resumed.outputs.single().path))
+        assertArrayEquals(body, target.readBytes())
+        assertEquals(setOf(preexisting.name, name), outputs.list()!!.toSet())
+        assertEquals("keep", preexisting.readText())
+        assertFalse(http.exists())
+        assertNull(TaskWorkspace(root).loadCheckpoint(req.taskId).getOrThrow().pendingFilePublication)
+    }
+
+    @Test fun recordedOutputRecoveryRemovesOnlyTransportFiles() {
+        val req = request()
+        val first = HttpFilePipeline().run(req, root)
+        val finished = File(first.outputs.single().path)
+        val http = File(finished.parentFile!!.parentFile, "http").apply { mkdirs() }
+        File(http, "body.part").writeBytes(body)
+        File(http, "resume.bin").writeText("old transport receipt")
+        val unrelated = File(http, "keep.txt").apply { writeText("keep") }
+
+        val resumed = HttpFilePipeline().run(req, root)
+
+        assertEquals(DownloadStage.Completed, resumed.state.stage)
+        assertArrayEquals(body, File(resumed.outputs.single().path).readBytes())
+        assertEquals(listOf("keep.txt"), http.list()!!.toList())
+        assertEquals("keep", unrelated.readText())
+    }
+
     @Test fun unsupportedCookieInputIsExplicitlyRejectedAndManagedTemporaryFileIsRemoved() {
         val temporary = com.garyapp.ytdl.cookies.TemporaryCookiesFile.materializeFromStream(
             "private-cookie-content".byteInputStream(), File(root, "cache"), "file-test").getOrThrow()

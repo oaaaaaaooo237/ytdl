@@ -65,6 +65,7 @@ class HttpFilePipeline {
             fun output(file: File) = DownloadOutputFile(outputKind, file.path, file.length(), outputDirectory.canonicalPath, mimeType = route.metadata.mimeType)
             val existing = session.file("file")
             if (existing != null) {
+                cleanupTransport(guard, task)
                 outputs = listOf(output(existing)); emit(state.completeWith(outputs).getOrThrow())
                 return DownloadPipelineResult(state, outputs)
             }
@@ -77,7 +78,8 @@ class HttpFilePipeline {
                 save(); emit(state)
                 return true
             }
-            if (requiresNameChoice()) return DownloadPipelineResult(state, outputs)
+            val pending = session.pendingFilePublication
+            if (pending == null && requiresNameChoice()) return DownloadPipelineResult(state, outputs)
             val http = guard.child(task, "http").also { check(it.mkdirs() || it.isDirectory); guard.checkSafe(it) }
             val partial = guard.child(http, "body.part")
             val transferCheckpoint = guard.child(http, "resume.bin")
@@ -85,7 +87,10 @@ class HttpFilePipeline {
             save(); emit(state)
             val started = System.nanoTime()
             val initialBytes = partial.takeIf { it.isFile }?.length() ?: 0L
-            val result = ResumableFileDownloader().download(route.metadata, partial, transferCheckpoint,
+            val result = pending?.let {
+                check(partial.isFile && partial.length() == it.sizeBytes)
+                FileDownloadResult.Completed(it.sizeBytes)
+            } ?: ResumableFileDownloader().download(route.metadata, partial, transferCheckpoint,
                 shouldStop = { cancellation.stopReason != null },
                 onProgress = { downloaded, total ->
                     val seconds = (System.nanoTime() - started) / 1_000_000_000.0
@@ -100,36 +105,44 @@ class HttpFilePipeline {
                 is FileDownloadResult.Completed -> {
                     check(result.bytes > 0 || outputKind == DownloadOutputKind.File) { "媒体输出为空。" }
                     val directory = guard.child(task, "outputs").also { check(it.mkdirs() || it.isDirectory); guard.checkSafe(it) }
-                    if (requiresNameChoice()) return DownloadPipelineResult(state, outputs)
-                    var target = guard.child(directory, route.fileName)
-                    var index = 1
-                    while (target.exists()) {
-                        val extension = route.fileName.substringAfterLast('.', "")
-                        val base = if (extension.isEmpty()) route.fileName else route.fileName.dropLast(extension.length + 1)
-                        target = guard.child(directory, "$base (${index++})${if (extension.isEmpty()) "" else ".$extension"}")
+                    val target = if (pending != null) {
+                        guard.child(directory, pending.relativePath.substringAfter('/'))
+                    } else {
+                        if (requiresNameChoice()) return DownloadPipelineResult(state, outputs)
+                        var available = guard.child(directory, route.fileName)
+                        var index = 1
+                        while (available.exists()) {
+                            val extension = route.fileName.substringAfterLast('.', "")
+                            val base = if (extension.isEmpty()) route.fileName else route.fileName.dropLast(extension.length + 1)
+                            available = guard.child(directory, "$base (${index++})${if (extension.isEmpty()) "" else ".$extension"}")
+                        }
+                        session.prepareFilePublication(available, result.bytes)
+                        save()
+                        check(available.createNewFile())
+                        available
                     }
-                    check(target.createNewFile())
-                    try {
-                        partial.inputStream().use { input -> FileOutputStream(target).use { out ->
+                    // Rebuild any uncommitted copy from the complete transfer, even when its length matches.
+                    partial.inputStream().use { input ->
+                        FileOutputStream(target).use { out ->
                             val buffer = ByteArray(64 * 1024)
                             while (true) {
                                 if (cancellation.stopReason != null) return@use
-                                val count = input.read(buffer); if (count < 0) break
+                                val count = input.read(buffer)
+                                if (count < 0) break
                                 out.write(buffer, 0, count)
                             }
                             out.fd.sync()
-                        } }
-                        if (cancellation.stopReason != null) { stopped(); return DownloadPipelineResult(state, outputs) }
-                        guard.checkSafe(target); check(target.length() == result.bytes)
-                        session.record("file", target)
-                        outputs = listOf(output(target))
-                        state = state.completeWith(outputs).getOrThrow(); save(); emit(state)
-                    } finally {
-                        if (state.stage != DownloadStage.Completed && target.exists()) { guard.checkSafe(target); target.delete() }
+                        }
                     }
-                    // The final checkpoint is durable before removing transfer data.
-                    listOf(partial, transferCheckpoint).forEach { guard.checkSafe(it); check(!it.exists() || it.delete()) }
-                    check(http.delete())
+                    if (cancellation.stopReason != null) { stopped(); return DownloadPipelineResult(state, outputs) }
+                    guard.checkSafe(target)
+                    check(target.length() == result.bytes)
+                    session.record("file", target)
+                    outputs = listOf(output(target))
+                    state = state.completeWith(outputs).getOrThrow()
+                    save()
+                    cleanupTransport(guard, task)
+                    emit(state)
                 }
                 is FileDownloadResult.RestartRequired -> {
                     state = state.failed(result.reason).copy(fileRecoveryAction = FileRecoveryAction.ConfirmRestart)
@@ -154,13 +167,24 @@ class HttpFilePipeline {
         return DownloadPipelineResult(state, outputs)
     }
 
+    private fun cleanupTransport(guard: ControlledDirectory, task: File) {
+        val http = guard.child(task, "http")
+        if (!http.exists()) return
+        check(http.isDirectory)
+        for (name in listOf("body.part", "resume.bin", "resume.bin.tmp")) {
+            val file = guard.child(http, name)
+            if (file.exists()) check(file.isFile && file.delete())
+        }
+        if (requireNotNull(http.list()).isEmpty()) check(http.delete())
+    }
+
     companion object {
         /** Call only after the user confirms discarding the old partial. Keeps the stable task identity. */
         internal fun confirmRestart(workspace: TaskWorkspace, request: DownloadRequest): Result<Unit> = runCatching {
             require(request.route is DownloadRoute.HttpFile)
             val checkpoint = workspace.loadCheckpoint(request.taskId).getOrThrow()
             require(checkpoint.fileRecoveryAction == FileRecoveryAction.ConfirmRestart.name)
-            require(checkpoint.completedFiles.isEmpty())
+            require(checkpoint.completedFiles.isEmpty() && checkpoint.pendingFilePublication == null)
             val task = workspace.directory(request.taskId)
             val guard = ControlledDirectory(task)
             val http = guard.child(task, "http")

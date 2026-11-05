@@ -18,6 +18,15 @@ internal class PipelineCheckpoint private constructor(
     var resumingPhase: String? = if (isResuming) checkpoint.phase else null
     private val identities = identities(request)
     private val completed = checkpoint.completedFiles.toMutableList()
+    var pendingFilePublication = checkpoint.pendingFilePublication
+        private set
+
+    fun prepareFilePublication(target: File, bytes: Long) {
+        check(pendingFilePublication == null)
+        ControlledDirectory(directory).checkSafe(target)
+        check(!target.exists())
+        pendingFilePublication = PendingFilePublication(identities.getValue("file"), target.relativeTo(directory).invariantSeparatorsPath, bytes)
+    }
 
     fun progress(): DownloadProgress? = if (checkpoint.downloadedBytes > 0 || checkpoint.totalBytes != null)
         DownloadProgress("downloading", checkpoint.totalBytes?.takeIf { it > 0 }?.let {
@@ -41,6 +50,7 @@ internal class PipelineCheckpoint private constructor(
         val entry = CompletedTaskFile(role, identities.getValue(role), file.relativeTo(directory).invariantSeparatorsPath, file.length())
         completed.removeAll { it.role == role }
         completed += entry
+        if (role == "file") pendingFilePublication = null
     }
 
     fun forget(vararg roles: String, onlyForMerged: Boolean = false) {
@@ -49,7 +59,7 @@ internal class PipelineCheckpoint private constructor(
 
     fun save(stage: DownloadStage, progress: DownloadProgress?, reason: DownloadStopReason?, recoveryAction: FileRecoveryAction? = null) = protect {
         checkpoint = TaskCheckpoint(request.taskId, stage.name, reason?.name,
-            progress?.downloadedBytes ?: 0, progress?.totalBytes, completedFiles = completed.toList(), fileRecoveryAction = recoveryAction?.name)
+            progress?.downloadedBytes ?: 0, progress?.totalBytes, completedFiles = completed.toList(), fileRecoveryAction = recoveryAction?.name, pendingFilePublication = pendingFilePublication)
         workspace.saveCheckpoint(request.taskId, checkpoint).getOrThrow()
     }
 
@@ -68,6 +78,7 @@ internal class PipelineCheckpoint private constructor(
             check(DownloadStage.entries.any { it.name == checkpoint.phase })
             check(checkpoint.stopReason == null || DownloadStopReason.entries.any { it.name == checkpoint.stopReason })
             val allowed = identities(request)
+            checkpoint.pendingFilePublication?.let { check(it.identity == allowed["file"]) }
             check(checkpoint.completedFiles.map { it.role }.distinct().size == checkpoint.completedFiles.size)
             checkpoint.completedFiles.forEach {
                 check(allowed[it.role] == it.formatId)
