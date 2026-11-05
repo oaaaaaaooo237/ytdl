@@ -1,0 +1,8 @@
+.c .accordion .field input,.c .accordion .field select,.c .bottomsheet .field input{color:#342f27;background:#f6f2ea}
+.b .mini-preview .preview{width:104px;height:56px;background-size:700% auto;background-position:3.4% 32%}
+.b .mini-preview{margin-bottom:13px;padding-bottom:11px}
+.b .choice{min-height:58px;padding:10px}
+.b .choice.selected{padding:9px}
+.b .stepdesc{margin-bottom:12px}
+.c .hero-preview .preview{background-size:900% auto;background-position:3.4% 32.4%}
+.c .hero-preview .duration{display:none}

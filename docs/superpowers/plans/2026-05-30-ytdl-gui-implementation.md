@@ -1,5 +1,7 @@
 # YTDL GUI Implementation Plan
 
+Android 2026-11-05 修订按 [通用下载器执行计划](2026-11-05-android-universal-downloader.md) 逐项推进；旧媒体安全与数据兼容约束保留，Windows 不在本轮修改范围。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a polished Win11 x64 desktop GUI downloader that uses PySide6, bundled `yt-dlp.exe`, optional local ffmpeg, non-blocking updates, queue/history, cookies guidance, and best-effort preview playback.

@@ -1,5 +1,7 @@
 # YTDL GUI Design
 
+Android 2026-11-05 修订：用户已批准 A 浅深色与通用文件下载，新增/变更规则见 [Android 通用下载器增量设计](2026-11-05-android-universal-downloader-design.md)。本文件的 Windows 规则继续有效。
+
 Date: 2026-05-30
 
 ## Status
