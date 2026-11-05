@@ -65,10 +65,33 @@ class ResumeTaskRepositoryTest {
         assertEquals(request.taskId, DownloadCoordinator.claimPendingLaunch()!!.request.taskId)
     }
 
+    @Test fun failedConfirmedRestartSnapshotKeepsOldPartialAndRecoverableTask() {
+        var failSnapshot = false
+        val safeWorkspace = TaskWorkspace(File(root, "restart-failure"), AtomicSnapshotWriter { source, target ->
+            if (failSnapshot) error("injected snapshot failure")
+            java.nio.file.Files.move(source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            Unit
+        })
+        val repo = ResumeTaskRepository(database, store, safeWorkspace)
+        val request = fileRequest(); repo.create(request).getOrThrow()
+        val task = safeWorkspace.directory(request.taskId)
+        val http = File(task, "http").apply { mkdirs() }
+        val partial = File(http, "body.part").apply { writeText("old") }
+        File(http, "resume.bin").writeText("old checkpoint")
+        PipelineCheckpoint.open(safeWorkspace, request).save(DownloadStage.Failed, null, null, FileRecoveryAction.ConfirmRestart)
+        failSnapshot = true
+        val metadata = (request.route as DownloadRoute.HttpFile).metadata.copy(etag = "\"two\"")
+        assertTrue(repo.confirmFileRestart(request, metadata).isFailure)
+        assertEquals("old", partial.readText())
+        assertEquals(FileRecoveryAction.ConfirmRestart.name, safeWorkspace.loadCheckpoint(request.taskId).getOrThrow().fileRecoveryAction)
+        assertNull(repo.recover().single().recoveryError)
+    }
+
     @Test fun explicitFileRestartUpdatesEncryptedMetadataAndClearsOnlyConfirmedWorkspace() {
         val request = fileRequest(); repository.create(request).getOrThrow()
         val task = workspace.directory(request.taskId)
-        File(task, "partial").writeText("old")
+        File(task, "http").mkdirs()
+        File(task, "http/body.part").writeText("old")
         PipelineCheckpoint.open(workspace, request).save(DownloadStage.Failed, null, null, FileRecoveryAction.ConfirmRestart)
         val metadata = (request.route as DownloadRoute.HttpFile).metadata.copy(etag = "\"two\"")
         val updated = repository.confirmFileRestart(request, metadata).getOrThrow()
@@ -76,7 +99,7 @@ class ResumeTaskRepositoryTest {
         assertEquals("用户.pdf", (updated.route as DownloadRoute.HttpFile).fileName)
         assertEquals(metadata, updated.route.metadata)
         assertEquals(updated, store.load(request.taskId).getOrThrow())
-        assertFalse(File(workspace.directory(request.taskId), "partial").exists())
+        assertFalse(File(workspace.directory(request.taskId), "http/body.part").exists())
         assertNull(workspace.loadCheckpoint(request.taskId).getOrThrow().fileRecoveryAction)
     }
 

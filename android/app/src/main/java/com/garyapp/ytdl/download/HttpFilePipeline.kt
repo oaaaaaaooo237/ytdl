@@ -160,8 +160,22 @@ class HttpFilePipeline {
             require(request.route is DownloadRoute.HttpFile)
             val checkpoint = workspace.loadCheckpoint(request.taskId).getOrThrow()
             require(checkpoint.fileRecoveryAction == FileRecoveryAction.ConfirmRestart.name)
-            workspace.deleteTask(request.taskId).getOrThrow()
+            require(checkpoint.completedFiles.isEmpty())
+            val task = workspace.directory(request.taskId)
+            val guard = ControlledDirectory(task)
+            val http = guard.child(task, "http")
+            val entries = if (http.exists()) {
+                check(http.isDirectory)
+                requireNotNull(http.listFiles()).toList().onEach {
+                    guard.checkSafe(it)
+                    check(it.isFile && it.name in setOf("body.part", "resume.bin", "resume.bin.tmp"))
+                }
+            } else emptyList()
+            // Keep a durable main checkpoint throughout reset. A crash can require
+            // confirmation again, but cannot orphan the stable task or erase its identity.
             workspace.saveCheckpoint(request.taskId, TaskCheckpoint(request.taskId, DownloadStage.Waiting.name)).getOrThrow()
+            entries.forEach { guard.checkSafe(it); check(it.delete() || !it.exists()) }
+            if (http.exists()) { guard.checkSafe(http); check(http.delete()) }
         }
     }
 }

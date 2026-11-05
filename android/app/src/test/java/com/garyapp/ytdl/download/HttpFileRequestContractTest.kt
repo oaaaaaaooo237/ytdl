@@ -67,6 +67,26 @@ class HttpFileRequestContractTest {
             { ByteArrayOutputStream().also { stream -> documents[it] = stream } }, { documents.remove(it) }, { false })
         assertEquals(0L, copied.bytesWritten); assertEquals(0, documents.values.single().size())
     }
+    @Test fun fileNamesKeepLeadingDotsAndSpacesThroughPrivateHistoryUriAndSaf() {
+        val task = File(root, "task-${"c".repeat(32)}").apply { mkdirs() }
+        val directory = File(task, "outputs").apply { mkdirs() }
+        for (name in listOf(".env", "  config.json")) {
+            val file = File(directory, name).apply { writeText("payload") }
+            val output = ExportController.discoverAppPrivateOutput(file, root, allowEmptyFile = true).getOrThrow()
+            assertEquals(name, output.displayName)
+            val reopened = ExportController.discoverAppPrivateOutputUri(output.appPrivateUri, root).getOrThrow()
+            assertEquals(file.canonicalFile, reopened.sourceFile)
+            assertEquals(name, reopened.displayName)
+            var savedName = ""
+            ExportController.copyToSafTreeWithDocuments("content://provider/tree/downloads", listOf(output),
+                { _, _, displayName -> savedName = displayName; "content://provider/document/new" }, { ByteArrayOutputStream() }, {}, { false })
+            assertEquals(name, savedName)
+        }
+        for (segment in listOf(".", "..", "%2e%2e", "%2fetc", "%5cetc")) {
+            assertTrue(ExportController.discoverAppPrivateOutputUri("app-private://outputs/task-${"c".repeat(32)}/$segment?kind=file", root).isFailure)
+        }
+    }
+
     @Test fun safDuplicateNamesAreNumberedAndAskReturnsConflictBeforeOpeningStream() {
         val task = File(root, "task-${"b".repeat(32)}").apply { mkdirs() }
         val file = File(task, "report.pdf").apply { writeText("pdf") }

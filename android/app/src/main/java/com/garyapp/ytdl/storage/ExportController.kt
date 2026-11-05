@@ -50,7 +50,7 @@ object ExportController {
                 "只能访问 App 私有目录内的输出文件。"
             }
 
-            val outputName = (displayName ?: canonicalOutput.name).safeDisplayName()
+            val outputName = (displayName ?: canonicalOutput.name).safeDisplayName(preserveLeading = allowEmptyFile || displayName != null)
             AppPrivateOutput(
                 displayName = outputName,
                 askOnConflict = askOnConflict,
@@ -77,7 +77,7 @@ object ExportController {
                 .trimStart('/')
                 .split('/')
                 .filter { it.isNotBlank() }
-                .map { decodeSegment(it).safeDisplayName() }
+                .map { decodeSegment(it).safeOutputPathSegment() }
                 .filter { it.isNotBlank() }
             require(relativeSegments.isNotEmpty()) {
                 "历史记录没有可用的本地输出。"
@@ -257,7 +257,7 @@ object ExportController {
     fun appPrivateOutputUri(path: String?, appPrivateRootPath: String?, allowEmptyFile: Boolean): String {
         val relativeSegments = relativeSegments(path, appPrivateRootPath)
         if (relativeSegments.isNotEmpty()) {
-            return "app-private://outputs/${relativeSegments.joinToString("/") { encodeSegment(it.safeDisplayName()) }}${if (allowEmptyFile) "?kind=file" else ""}"
+            return "app-private://outputs/${relativeSegments.joinToString("/") { encodeSegment(it.safeOutputPathSegment()) }}${if (allowEmptyFile) "?kind=file" else ""}"
         }
         val displayName = path
             ?.takeIf { it.isNotBlank() }
@@ -316,10 +316,17 @@ object ExportController {
         }
     }
 
-    private fun String.safeDisplayName(): String {
-        val normalized = replace(Regex("""[\\/:*?"<>|\r\n\t]"""), "_")
-            .trim('.', ' ')
+    private fun String.safeDisplayName(preserveLeading: Boolean = false): String {
+        val cleaned = replace(Regex("""[\\/:*?"<>|\r\n\t]"""), "_")
+        val normalized = if (preserveLeading) cleaned.trimEnd('.', ' ') else cleaned.trim('.', ' ')
         return normalized.ifBlank { "output" }
+    }
+
+    private fun String.safeOutputPathSegment(): String {
+        require(isNotEmpty() && this !in setOf(".", "..") && none { it in "/\\:" || it.isISOControl() }) {
+            "私有输出路径不可用。"
+        }
+        return this
     }
 
     private fun relativeSegments(path: String?, appPrivateRootPath: String?): List<String> {
@@ -335,7 +342,7 @@ object ExportController {
             root.toPath()
                 .relativize(output.toPath())
                 .safePathSegments()
-                .map { it.safeDisplayName() }
+                .map { it.safeOutputPathSegment() }
                 .filter { it.isNotBlank() }
         }.getOrDefault(emptyList())
     }
