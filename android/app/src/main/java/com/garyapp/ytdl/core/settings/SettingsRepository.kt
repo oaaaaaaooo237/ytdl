@@ -99,6 +99,15 @@ class SettingsRepository(
         private const val KeyStorageTreeUri = "storage_tree_uri"
         private const val KeyStorageDisplayName = "storage_display_name"
 
+        internal fun observeConcurrency(context: Context, onChange: () -> Unit): AutoCloseable {
+            val prefs = context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KeyMaxConcurrentDownloads || key == null) onChange()
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            return AutoCloseable { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+
         fun fromContext(context: Context): SettingsRepository {
             val prefs = context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
             val saved = prefs.all

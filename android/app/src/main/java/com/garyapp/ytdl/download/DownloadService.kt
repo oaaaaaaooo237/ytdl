@@ -16,7 +16,7 @@ import com.garyapp.ytdl.ui.prepareTemporaryCookiesForDownload
 import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
 
 class DownloadService : Service() {
     private lateinit var notificationController: NotificationController
@@ -25,18 +25,22 @@ class DownloadService : Service() {
     internal lateinit var network: DownloadNetwork
     internal var engineFactory: () -> DownloadEngine = { YtdlpDownloadEngine(YtdlpBridge()) }
     internal var exportToTree: (String, List<ExportController.AppPrivateOutput>, DownloadCancellation) -> List<String> = { uri, outputs, token ->
-        ExportController.copyToSafTreeWithDocuments(contentResolver, uri, outputs,
-            isCancellationRequested = { token.isCancellationRequested }).getOrThrow().documentUris
+        synchronized(SafExportLock) {
+            ExportController.copyToSafTreeWithDocuments(contentResolver, uri, outputs,
+                isCancellationRequested = { token.isCancellationRequested }).getOrThrow().documentUris
+        }
     }
-    private val launchExecutor = Executors.newSingleThreadExecutor()
+    private val launchExecutor = Executors.newFixedThreadPool(3)
     private val controlExecutor = Executors.newSingleThreadExecutor()
-    private val draining = AtomicBoolean(false)
+    private val running = ConcurrentHashMap.newKeySet<DownloadLaunch>()
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var destroyed = false
-    @Volatile private var running: DownloadLaunch? = null
-    @Volatile private var cancellation: MutableDownloadCancellation? = null
     private var latestStartId = 0
+    private var foregroundStarted = false
+    private var pendingControls = 0
     private var workerSubscription: AutoCloseable? = null
+    private var stateSubscription: AutoCloseable? = null
+    private var settingsSubscription: AutoCloseable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -44,104 +48,121 @@ class DownloadService : Service() {
         notificationController.ensureChannel()
         retryDraftStore = FileRetryDraftStore.fromContext(this)
         repository = ResumeTaskRepository.fromContext(this)
-        network = NetworkMonitor(this) { cancellation?.waitForNetwork() }
-        workerSubscription = DownloadCoordinator.addWorkerReleasedListener { mainHandler.post { if (!destroyed) drain() } }
+        network = NetworkMonitor(this) {
+            running.forEach { DownloadCoordinator.waitForNetwork(it.request.taskId) }
+        }
+        workerSubscription = DownloadCoordinator.addWorkerReleasedListener { mainHandler.post { drain() } }
+        stateSubscription = DownloadCoordinator.addActiveListener {
+            mainHandler.post { if (!destroyed && foregroundStarted) refreshForeground() }
+        }
+        settingsSubscription = SettingsRepository.observeConcurrency(this) { mainHandler.post { drain() } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         latestStartId = startId
-        DownloadCoordinator.withCurrentState { startTypedForeground(it ?: DownloadTaskState.idle()) }
-        if (intent?.action == ActionCancel) {
-            val taskId = intent.getStringExtra(ExtraTaskId)
-            controlExecutor.execute {
+        val active = DownloadCoordinator.activeStates()
+        startTypedForeground(foregroundState(active), active.size)
+        foregroundStarted = true
+        val taskId = intent?.getStringExtra(ExtraTaskId)
+        when (intent?.action) {
+            ActionCancel -> runControl {
                 DownloadCoordinator.restore(repository)
                 if (taskId == null) DownloadCoordinator.cancelActive()
                 else if (DownloadCoordinator.cancelPending(this, taskId).getOrNull() == false &&
                     !DownloadCoordinator.cancelActive(taskId)) DownloadCoordinator.cancelSaved(this, taskId)
             }
-            watchStop()
-        } else if (intent?.action == ActionPause) {
-            val taskId = intent.getStringExtra(ExtraTaskId)
-            controlExecutor.execute { DownloadCoordinator.pauseActive(taskId) }
-            watchStop()
-        } else if (intent?.action == ActionResume) {
-            intent.getStringExtra(ExtraTaskId)?.let { id -> controlExecutor.execute {
+            ActionPause -> runControl { DownloadCoordinator.pauseActive(taskId) }
+            ActionResume -> if (taskId == null) drain() else runControl {
                 DownloadCoordinator.restore(repository)
-                DownloadCoordinator.resume(this, id)
-            } }
+                DownloadCoordinator.resume(this, taskId)
+            }
+            else -> drain()
         }
-        drain()
+        if (intent?.action in setOf(ActionPause, ActionCancel)) watchStop(taskId)
         return START_NOT_STICKY
     }
 
-    private fun drain() {
-        if (destroyed || !draining.compareAndSet(false, true)) return
-        launchExecutor.execute {
+    private fun runControl(action: () -> Unit) {
+        pendingControls++
+        controlExecutor.execute {
             try {
-                while (!destroyed) {
-                    val launch = DownloadCoordinator.claimPendingLaunch() ?: break
-                    running = launch
-                    DownloadCoordinator.activateLaunch(launch)
-                    try {
-                        runLaunch(launch)
-                    } catch (_: Exception) {
-                        val state = (DownloadCoordinator.currentState() ?: DownloadTaskState.waiting(launch.request))
-                            .copy(stage = DownloadStage.Paused, statusMessage = "任务信息保存失败，已保留文件，请重试。")
-                        runCatching { DownloadCoordinator.park(launch, state) }
-                        if (!destroyed) runCatching { publishForegroundState(state) }
-                    } finally {
-                        DownloadCoordinator.finishActiveLaunch(launch)
-                        running = null
-                    }
-                }
+                if (!destroyed) action()
             } finally {
-                draining.set(false)
-                mainHandler.post {
-                    if (!destroyed) {
-                        // Recheck after releasing the worker flag: a start command may have arrived during exit.
-                        if (DownloadCoordinator.hasPendingLaunch()) drain()
-                        else if (!DownloadCoordinator.hasWorker()) { stopForeground(STOP_FOREGROUND_DETACH); stopSelf(latestStartId) }
-                    }
+                mainHandler.post { pendingControls--; drain() }
+            }
+        }
+    }
+
+    // All claims and shutdown are serialized on the service's main thread.
+    private fun drain() {
+        if (destroyed || !foregroundStarted || pendingControls != 0) return
+        val limit = SettingsRepository.fromContext(this).getSettings().maxConcurrentDownloads
+        while (true) {
+            val launch = DownloadCoordinator.claimPendingLaunch(limit) ?: break
+            running += launch
+            DownloadCoordinator.activateLaunch(launch)
+            launchExecutor.execute {
+                try {
+                    runLaunch(launch)
+                } catch (_: Exception) {
+                    val state = (DownloadCoordinator.activeStates()[launch.request.taskId] ?: DownloadTaskState.waiting(launch.request))
+                        .copy(stage = DownloadStage.Paused, statusMessage = "任务信息保存失败，已保留文件，请重试。")
+                    runCatching { DownloadCoordinator.park(launch, state) }
+                } finally {
+                    running -= launch
+                    DownloadCoordinator.finishActiveLaunch(launch)
                 }
             }
+        }
+        refreshForeground()
+        if (!DownloadCoordinator.hasWorker() && !DownloadCoordinator.hasPendingLaunch()) {
+            val keepPausedAction = foregroundState().stage == DownloadStage.Paused
+            foregroundStarted = false
+            stopForeground(if (keepPausedAction) STOP_FOREGROUND_DETACH else STOP_FOREGROUND_REMOVE)
+            stopSelf(latestStartId)
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
         destroyed = true
-        cancellation?.stopForLifecycle()
-        DownloadCoordinator.stopForLifecycle(running)
+        running.forEach(DownloadCoordinator::stopForLifecycle)
         network.close()
         workerSubscription?.close()
+        stateSubscription?.close()
+        settingsSubscription?.close()
         mainHandler.removeCallbacksAndMessages(null)
-        // No interrupt, cancel, deletion, or new worker while native work still owns files.
+        // Workers keep their slots until the pipelines stop writing and persist their checkpoints.
         launchExecutor.shutdown()
         controlExecutor.shutdown()
         super.onDestroy()
     }
 
-    internal fun watchStop() {
-        val expected = running ?: return
+    internal fun watchStop(taskId: String? = null) {
+        val expected = running.firstOrNull { taskId == null || it.request.taskId == taskId } ?: return
         mainHandler.postDelayed({
-            if (!destroyed && running === expected) controlExecutor.execute {
-                val state = DownloadCoordinator.currentState() ?: return@execute
-                if (state.request?.taskId == expected.request.taskId && cancellation?.stopReason != null) {
-                    publishForegroundState(state.copy(stage = DownloadStage.Pausing,
-                        statusMessage = "下载仍在安全停止中，请稍候；断点文件已保留。"))
-                }
+            if (!destroyed && expected in running) controlExecutor.execute {
+                DownloadCoordinator.warnIfStopping(expected.request.taskId)
             }
         }, 30_000)
     }
 
     internal fun runLaunch(launch: DownloadLaunch) {
-        running = launch
+        val addedHere = running.add(launch)
+        try {
+            executeLaunch(launch)
+        } finally {
+            if (addedHere) running -= launch
+        }
+    }
+
+    private fun executeLaunch(launch: DownloadLaunch) {
+        val taskId = launch.request.taskId
         launch.request.cookiesPath?.let { check(com.garyapp.ytdl.cookies.TemporaryCookiesFile.deleteIfManagedPath(it)) }
         var state = DownloadTaskState.waiting(launch.request)
         while (true) {
             val token = MutableDownloadCancellation()
-            cancellation = token
-            DownloadCoordinator.attachCancellation(token)
+            DownloadCoordinator.attachCancellation(token, taskId)
             if (destroyed) token.stopForLifecycle()
             try {
                 if (!network.isAvailable() && token.stopReason == null) token.waitForNetwork()
@@ -158,7 +179,7 @@ class DownloadService : Service() {
                 } else null
                 val request = launch.request.copy(cookiesPath = temporaryCookies?.file?.absolutePath)
                 val onState: (DownloadTaskState) -> Unit = { next ->
-                    if (next.stage != DownloadStage.Completed) publishForegroundState(next)
+                    if (next.stage !in ResumeTaskRepository.TerminalStages) publishForegroundState(next)
                 }
                 val result = if (request.route is DownloadRoute.HttpFile) {
                     HttpFilePipeline().run(request, launch.outputDirectory, token, onState)
@@ -173,16 +194,16 @@ class DownloadService : Service() {
                 }
                 if (state.stage == DownloadStage.WaitingForNetwork) {
                     publishForegroundState(state)
-                    // This launch retains the sole slot and queue head. Polls are bounded and stoppable.
+                    // A network-waiting launch retains its own slot until retry or stop.
                     while (!destroyed && token.stopReason in setOf(null, DownloadStopReason.NetworkUnavailable) && !network.isStable()) {
                         Thread.sleep(200)
                     }
                     if (destroyed) token.stopForLifecycle()
                     if (token.stopReason in setOf(null, DownloadStopReason.NetworkUnavailable) && !destroyed) {
-                        DownloadCoordinator.clearNetworkStop()
+                        DownloadCoordinator.clearNetworkStop(taskId)
                         continue
                     }
-                    state = stopRetained(launch, state, if (destroyed) DownloadStopReason.LifecycleEnd else token.stopReason ?: DownloadStopReason.LifecycleEnd)
+                    state = stopRetained(launch, state, token.stopReason?.takeUnless { destroyed && it == DownloadStopReason.NetworkUnavailable } ?: DownloadStopReason.LifecycleEnd)
                 }
                 if (state.stage == DownloadStage.Paused || state.fileRecoveryAction != null) {
                     DownloadCoordinator.park(launch, state)
@@ -198,10 +219,10 @@ class DownloadService : Service() {
                     }
                 }
                 publishForegroundState(state)
+                if (!destroyed) notificationController.notifyResult(state, SettingsRepository.fromContext(this).getSettings())
                 return
             } finally {
-                DownloadCoordinator.clearCancellation(token)
-                if (cancellation === token) cancellation = null
+                DownloadCoordinator.clearCancellation(token, taskId)
             }
         }
     }
@@ -233,7 +254,7 @@ class DownloadService : Service() {
                 askOnConflict = (request.route as? DownloadRoute.HttpFile)?.conflictPolicy == HttpFileConflictPolicy.Ask,
                 displayName = (request.route as? DownloadRoute.HttpFile)?.fileName).getOrThrow()
         }
-        if (token.stopReason != null) return stopRetained(requireNotNull(running), result.state, requireNotNull(token.stopReason))
+        if (token.stopReason != null) return stopRetained(DownloadLaunch(request, outputRoot), result.state, requireNotNull(token.stopReason))
         if (target !is StorageTarget.SafTree) {
             ExportController.markAppPrivateTaskCompleted(outputs).getOrThrow()
             return result.state
@@ -253,7 +274,7 @@ class DownloadService : Service() {
             state
         }.getOrElse { error ->
             if (error is CancellationException && token.stopReason != null) {
-                stopRetained(requireNotNull(running), result.state, requireNotNull(token.stopReason))
+                stopRetained(DownloadLaunch(request, outputRoot), result.state, requireNotNull(token.stopReason))
             } else if (error is ExportController.NameConflictException && request.route is DownloadRoute.HttpFile) {
                 val conflict = result.state.failed("文件名已存在，请选择其他名称。").copy(fileRecoveryAction = FileRecoveryAction.ChooseFileName)
                 PipelineCheckpoint.open(repository.workspace, request).save(conflict.stage, conflict.progress, conflict.stopReason, conflict.fileRecoveryAction)
@@ -264,17 +285,30 @@ class DownloadService : Service() {
     }
 
     private fun publishForegroundState(state: DownloadTaskState) {
-        if (destroyed) return
         DownloadCoordinator.publish(state)
-        notificationController.notifyForegroundState(state)
     }
-    private fun startTypedForeground(state: DownloadTaskState) {
-        val notification = notificationController.buildForegroundNotification(state)
+
+    private fun foregroundState(active: Map<String, DownloadTaskState> = DownloadCoordinator.activeStates()): DownloadTaskState =
+        active.values.firstOrNull { it.stage !in ResumeTaskRepository.TerminalStages && it.stage != DownloadStage.Paused }
+            ?: active.values.firstOrNull { it.stage == DownloadStage.Paused }
+            ?: DownloadCoordinator.currentState()?.takeUnless { it.stage in ResumeTaskRepository.TerminalStages }
+            ?: DownloadTaskState.idle()
+
+    private fun refreshForeground() {
+        val active = DownloadCoordinator.activeStates()
+        val state = foregroundState(active)
+        if (state.stage != DownloadStage.Idle) notificationController.notifyForegroundState(state, active.size)
+    }
+
+    private fun startTypedForeground(state: DownloadTaskState, activeCount: Int) {
+        val notification = notificationController.buildForegroundNotification(state, activeCount)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NotificationController.NotificationId,
             notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST)
         else startForeground(NotificationController.NotificationId, notification)
     }
     companion object {
+        // Serialize SAF name checks and creation across transfers to preserve the Ask policy.
+        private val SafExportLock = Any()
         const val ActionStart = "com.garyapp.ytdl.download.START"
         const val ActionCancel = "com.garyapp.ytdl.download.CANCEL"
         const val ActionPause = "com.garyapp.ytdl.download.PAUSE"

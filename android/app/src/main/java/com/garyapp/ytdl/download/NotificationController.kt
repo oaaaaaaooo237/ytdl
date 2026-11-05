@@ -12,6 +12,8 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import com.garyapp.ytdl.MainActivity
 import com.garyapp.ytdl.R
+import com.garyapp.ytdl.core.settings.AppSettings
+import com.garyapp.ytdl.core.privacy.SensitiveText
 
 class NotificationController(
     private val context: Context,
@@ -28,6 +30,7 @@ class NotificationController(
             description = "显示正在进行的下载、合并和保存状态。"
         }
         manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(NotificationChannel(ResultChannelId, "下载结果", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     fun canPostNotifications(): Boolean {
@@ -35,19 +38,24 @@ class NotificationController(
         return context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun buildForegroundNotification(state: DownloadTaskState): Notification {
+    fun buildForegroundNotification(state: DownloadTaskState, activeCount: Int = 0): Notification =
+        buildNotification(state, ChannelId, activeCount)
+
+    private fun buildNotification(state: DownloadTaskState, channelId: String, activeCount: Int = 0): Notification {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(context, ChannelId)
+            Notification.Builder(context, channelId)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(context)
         }
 
+        val title = state.request?.title?.let { SensitiveText.redact(it) }?.takeIf { it.isNotBlank() }
+        val taskStatus = if (state.fileRecoveryAction == FileRecoveryAction.ConfirmRestart) "需要确认重新下载" else state.stage.notificationText()
         return builder
             .addExtras(android.os.Bundle().apply { putString(DownloadService.ExtraTaskId, state.request?.taskId) })
             .setSmallIcon(R.drawable.ic_stat_ytdl_download)
-            .setContentTitle("CaptainFlash 下载任务")
-            .setContentText(if (state.fileRecoveryAction == FileRecoveryAction.ConfirmRestart) "需要确认重新下载" else state.stage.notificationText())
+            .setContentTitle(title ?: "CaptainFlash 下载任务")
+            .setContentText(if (activeCount > 1) "$activeCount 项任务进行中 · $taskStatus" else taskStatus)
             .setContentIntent(contentPendingIntent())
             .setAutoCancel(state.stage in TerminalStages)
             .setOngoing(state.stage !in TerminalStages)
@@ -61,7 +69,7 @@ class NotificationController(
                             actionPendingIntent(DownloadService.ActionCancel, state.request?.taskId, 2),
                         ).build(),
                     )
-                    if (state.stopReason != DownloadStopReason.UserCancel && (state.stage == DownloadStage.Paused || state.stage !in setOf(DownloadStage.Pausing, DownloadStage.WaitingForNetwork))) {
+                    if (state.stopReason != DownloadStopReason.UserCancel && state.stage != DownloadStage.Pausing) {
                         val resume = state.stage == DownloadStage.Paused
                         addAction(Notification.Action.Builder(
                             Icon.createWithResource(context, android.R.drawable.ic_media_play),
@@ -74,9 +82,22 @@ class NotificationController(
             .build()
     }
 
-    fun notifyForegroundState(state: DownloadTaskState) {
+    fun notifyForegroundState(state: DownloadTaskState, activeCount: Int = 0) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.notify(NotificationId, buildForegroundNotification(state))
+        manager.notify(NotificationId, buildForegroundNotification(state, activeCount))
+    }
+
+    internal fun notifyResult(state: DownloadTaskState, settings: AppSettings) {
+        val enabled = when (state.stage) {
+            DownloadStage.Completed -> settings.notifyDownloadCompleted
+            DownloadStage.Failed -> settings.notifyDownloadFailed
+            else -> false
+        }
+        val taskId = state.request?.taskId ?: return
+        if (enabled && canPostNotifications()) {
+            context.getSystemService(NotificationManager::class.java)
+                .notify(taskId, ResultNotificationId, buildNotification(state, ResultChannelId))
+        }
     }
 
     internal fun showsTask(taskId: String): Boolean =
@@ -126,6 +147,8 @@ class NotificationController(
     companion object {
         const val ChannelId = "download_foreground"
         const val NotificationId = 1001
+        private const val ResultChannelId = "download_results"
+        private const val ResultNotificationId = 1002
 
         private val TerminalStages = setOf(
             DownloadStage.Completed,

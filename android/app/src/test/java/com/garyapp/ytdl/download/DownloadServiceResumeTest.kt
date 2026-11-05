@@ -51,6 +51,179 @@ class DownloadServiceResumeTest {
         DownloadCoordinator.enqueueForServiceStart(request, root).getOrThrow()
         return DownloadCoordinator.claimPendingLaunch()!!.also { DownloadCoordinator.activateLaunch(it) }
     }
+    @Test fun serviceRunsTwoDefaultWorkersAndPauseTargetsOnlyOne() {
+        val entered = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val exited = CountDownLatch(2)
+        val tasks = List(3) { request() }
+        tasks.forEach {
+            repository.create(it).getOrThrow()
+            DownloadCoordinator.enqueueForServiceStart(it, root).getOrThrow()
+        }
+        service.engineFactory = { BlockingEngine(entered, release) }
+        val subscription = DownloadCoordinator.addWorkerReleasedListener { exited.countDown() }
+        try {
+            service.onStartCommand(null, 0, 1)
+            assertTrue("默认应并发启动两项", entered.await(5, TimeUnit.SECONDS))
+            DownloadCoordinator.pauseActive(tasks.first().taskId)
+            release.countDown()
+            assertTrue(exited.await(5, TimeUnit.SECONDS))
+            assertEquals("paused", database.queueDao().getByTaskId(tasks[0].taskId).status)
+            assertEquals("failed", database.queueDao().getByTaskId(tasks[1].taskId).status)
+            assertEquals("queued", database.queueDao().getByTaskId(tasks[2].taskId).status)
+        } finally {
+            release.countDown()
+            subscription.close()
+        }
+    }
+    @Test fun raisingLimitStartsWaitingTasksAndLoweringItPreservesRunningTasks() {
+        val settings = com.garyapp.ytdl.core.settings.SettingsRepository.fromContext(service)
+        settings.update { it.copy(maxConcurrentDownloads = 1) }
+        val entered = List(4) { CountDownLatch(1) }
+        val releases = List(4) { CountDownLatch(1) }
+        val tasks = List(4) { request() }
+        tasks.forEach {
+            repository.create(it).getOrThrow()
+            DownloadCoordinator.enqueueForServiceStart(it, root).getOrThrow()
+        }
+        val factories = java.util.concurrent.atomic.AtomicInteger()
+        service.engineFactory = {
+            val index = factories.getAndIncrement()
+            BlockingEngine(entered[index], releases[index])
+        }
+        val released = java.util.concurrent.Semaphore(0)
+        val subscription = DownloadCoordinator.addWorkerReleasedListener { released.release() }
+        val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        try {
+            service.onStartCommand(null, 0, 1)
+            assertTrue(entered[0].await(5, TimeUnit.SECONDS))
+            assertEquals(1, DownloadCoordinator.activeStates().size)
+            settings.update { it.copy(maxConcurrentDownloads = 3) }
+            looper.idle()
+            assertTrue(entered[1].await(5, TimeUnit.SECONDS))
+            assertTrue(entered[2].await(5, TimeUnit.SECONDS))
+            assertEquals(tasks.take(3).map { it.taskId }, DownloadCoordinator.activeStates().keys.toList())
+            settings.update { it.copy(maxConcurrentDownloads = 1) }
+            looper.idle()
+            assertTrue(DownloadCoordinator.activeStates().values.all { it.stopReason == null })
+            DownloadCoordinator.cancelActive(tasks[0].taskId)
+            releases[0].countDown()
+            assertTrue(released.tryAcquire(5, TimeUnit.SECONDS))
+            looper.idle()
+            assertEquals("canceled", database.queueDao().getByTaskId(tasks[0].taskId).status)
+            assertEquals(2, DownloadCoordinator.activeStates().size)
+            assertEquals(1L, entered[3].count)
+            releases[1].countDown(); releases[2].countDown()
+            assertTrue(released.tryAcquire(2, 5, TimeUnit.SECONDS))
+            looper.idle()
+            assertTrue(entered[3].await(5, TimeUnit.SECONDS))
+            assertEquals(setOf(tasks[3].taskId), DownloadCoordinator.activeStates().keys)
+            releases[3].countDown()
+            assertTrue(released.tryAcquire(5, TimeUnit.SECONDS))
+        } finally {
+            releases.forEach { it.countDown() }
+            subscription.close()
+        }
+    }
+
+    @Test fun destroyingServiceKeepsBothWorkingDirectoriesUntilWorkersExitAndRestoresBoth() {
+        val entered = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val exited = CountDownLatch(2)
+        val tasks = List(2) { request() }
+        tasks.forEach {
+            repository.create(it).getOrThrow()
+            DownloadCoordinator.enqueueForServiceStart(it, root).getOrThrow()
+        }
+        service.engineFactory = { BlockingEngine(entered, release) }
+        val subscription = DownloadCoordinator.addWorkerReleasedListener { exited.countDown() }
+        try {
+            service.onStartCommand(null, 0, 1)
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            service.onDestroy()
+            assertEquals(2, DownloadCoordinator.activeStates().size)
+            tasks.forEach { task ->
+                assertTrue(repository.workspace.directory(task.taskId).walk().any { it.name == "video.part" })
+            }
+            release.countDown()
+            assertTrue(exited.await(5, TimeUnit.SECONDS))
+            assertEquals(tasks.map { it.taskId }.toSet(), repository.recover().map { it.taskId }.toSet())
+            assertTrue(repository.recover().all { it.state.stopReason == DownloadStopReason.LifecycleEnd })
+            assertTrue(database.historyDao().listAll().isEmpty())
+        } finally {
+            release.countDown()
+            subscription.close()
+        }
+    }
+
+    @Test fun continuingOneSavedTaskDoesNotChangeOtherPausedOrActiveTasks() {
+        val first = enqueue(request())
+        DownloadCoordinator.park(first, DownloadTaskState(DownloadStage.Paused, first.request))
+        DownloadCoordinator.finishActiveLaunch(first)
+        val second = enqueue(request())
+        DownloadCoordinator.park(second, DownloadTaskState(DownloadStage.Paused, second.request))
+        DownloadCoordinator.finishActiveLaunch(second)
+        val running = enqueue(request())
+        val token = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(token, running.request.taskId)
+        val pending = request()
+        repository.create(pending).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(pending, root).getOrThrow()
+        var waiting = emptyList<DownloadRequest>()
+        val subscription = DownloadCoordinator.addPendingListener { waiting = it }
+        try {
+            DownloadCoordinator.resume(service, second.request.taskId).getOrThrow()
+            assertEquals(listOf(second.request.taskId, pending.taskId), waiting.map { it.taskId })
+            assertEquals(setOf(running.request.taskId), DownloadCoordinator.activeStates().keys)
+            assertNull(token.stopReason)
+            assertEquals("paused", database.queueDao().getByTaskId(first.request.taskId).status)
+            assertEquals("queued", database.queueDao().getByTaskId(second.request.taskId).status)
+        } finally {
+            subscription.close()
+        }
+    }
+
+    @Test fun restoringNetworkContinuesOnlyTheTaskThatWasNotManuallyPaused() {
+        val online = java.util.concurrent.atomic.AtomicBoolean(false)
+        service.network = object : DownloadNetwork {
+            override fun isAvailable() = online.get()
+            override fun isStable() = online.get()
+            override fun close() {}
+        }
+        val tasks = List(2) { request() }
+        tasks.forEach {
+            repository.create(it).getOrThrow()
+            DownloadCoordinator.enqueueForServiceStart(it, root).getOrThrow()
+        }
+        val waiting = CountDownLatch(1)
+        val paused = CountDownLatch(1)
+        val resumed = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val exited = CountDownLatch(2)
+        service.engineFactory = { BlockingEngine(resumed, release) }
+        val workers = DownloadCoordinator.addWorkerReleasedListener { exited.countDown() }
+        val states = DownloadCoordinator.addActiveListener { active ->
+            if (active.size == 2 && active.values.all { it.stage == DownloadStage.WaitingForNetwork }) waiting.countDown()
+            if (active[tasks[0].taskId]?.stage == DownloadStage.Paused) paused.countDown()
+        }
+        try {
+            service.onStartCommand(null, 0, 1)
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            DownloadCoordinator.pauseActive(tasks[0].taskId)
+            assertTrue(paused.await(5, TimeUnit.SECONDS))
+            online.set(true)
+            assertTrue(resumed.await(5, TimeUnit.SECONDS))
+            assertEquals("paused", database.queueDao().getByTaskId(tasks[0].taskId).status)
+            assertEquals(DownloadStage.DownloadingVideo, DownloadCoordinator.activeStates()[tasks[1].taskId]?.stage)
+            release.countDown()
+            assertTrue(exited.await(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            states.close()
+            workers.close()
+        }
+    }
+
     @Test fun httpFileUsesForegroundTaskWithoutCreatingMediaEngineAndExportsEmptyWithMetadataMime() {
         val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/download") { e ->

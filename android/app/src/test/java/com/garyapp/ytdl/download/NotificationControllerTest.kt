@@ -57,6 +57,33 @@ class NotificationControllerTest {
         assertTrue(running.actions.all { it.actionIntent.isImmutable })
     }
 
+    @Test fun resultsRespectIndependentPreferencesAndLeaveForegroundNotificationInPlace() {
+        shadowOf(application).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        controller.ensureChannel()
+        val first = DownloadRequest("https://example.test/first", "一", DownloadRoute.DirectSingleFile("18"))
+        val second = first.copy(taskId = "b".repeat(32))
+        val third = first.copy(taskId = "c".repeat(32))
+        val manager = application.getSystemService(android.app.NotificationManager::class.java)
+        controller.notifyForegroundState(DownloadTaskState(DownloadStage.DownloadingVideo, third), 2)
+        val completed = DownloadTaskState(DownloadStage.Completed, first)
+        val failed = DownloadTaskState(DownloadStage.Failed, second)
+        val disabled = com.garyapp.ytdl.core.settings.AppSettings(notifyDownloadCompleted = false, notifyDownloadFailed = false)
+        controller.notifyResult(completed, disabled)
+        controller.notifyResult(failed, disabled)
+        assertEquals(1, manager.activeNotifications.size)
+
+        controller.notifyResult(completed, disabled.copy(notifyDownloadCompleted = true))
+        controller.notifyResult(failed, disabled.copy(notifyDownloadCompleted = true))
+        assertEquals(setOf(null, first.taskId), manager.activeNotifications.map { it.tag }.toSet())
+        controller.notifyResult(failed, disabled.copy(notifyDownloadFailed = true))
+        controller.notifyResult(DownloadTaskState(DownloadStage.Failed, third), disabled.copy(notifyDownloadFailed = true))
+        assertEquals(setOf(null, first.taskId, second.taskId, third.taskId), manager.activeNotifications.map { it.tag }.toSet())
+        val foreground = manager.activeNotifications.single { it.id == NotificationController.NotificationId }.notification
+        assertEquals("2 项任务进行中 · 正在下载视频", foreground.extras.getCharSequence(Notification.EXTRA_TEXT))
+        assertEquals(third.taskId, foreground.extras.getString(DownloadService.ExtraTaskId))
+        assertTrue(foreground.flags and Notification.FLAG_ONGOING_EVENT != 0)
+    }
+
     @Test fun taskNotificationActionsKeepOriginalIdentityAfterNextTaskNotification() {
         val firstRequest = DownloadRequest("https://example.test/first", "一", DownloadRoute.DirectSingleFile("18"))
         val secondRequest = firstRequest.copy(taskId = "b".repeat(32))
