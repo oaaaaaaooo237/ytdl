@@ -1,0 +1,37 @@
+{
+  "source": "selected-a.css",
+  "approved": "2026-11-05",
+  "navigation": ["下载", "任务", "设置"],
+  "buttonRadiusDp": 0,
+  "inputRadiusDp": 0,
+  "panelRadiusDp": 9,
+  "previewRadiusDp": 7,
+  "touchTargetMinDp": 48,
+  "contentHorizontalPaddingDp": 18,
+  "light": {
+    "background": "#F3F0EB",
+    "surface": "#FCFAF6",
+    "foreground": "#323F40",
+    "controlAccent": "#536F73",
+    "controlContainer": "#E0E7E4",
+    "border": "#D8D9D1",
+    "mutedForeground": "#637071",
+    "error": "#9B4D4A",
+    "primaryAction": "#8B5860",
+    "primaryContainer": "#F0E2E2",
+    "onPrimaryAction": "#FFFDF7"
+  },
+  "dark": {
+    "background": "#232C30",
+    "surface": "#2B373B",
+    "foreground": "#E4E6DF",
+    "controlAccent": "#B0C8C5",
+    "controlContainer": "#3A4E50",
+    "border": "#465458",
+    "mutedForeground": "#B3BFBC",
+    "error": "#E5ADA4",
+    "primaryAction": "#D7B2B7",
+    "primaryContainer": "#493B42",
+    "onPrimaryAction": "#30292D"
+  }
+}
