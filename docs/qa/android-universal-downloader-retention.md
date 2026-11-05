@@ -31,4 +31,6 @@
 ## 本轮状态
 
 Task 0：源码盘点已完成；基线全量单测已通过，50 个测试套件、500 项测试，0 失败、0 错误、0 跳过。命令 `:app:testDebugUnitTest --console=plain`，BUILD SUCCESSFUL in 2m 50s；原始报告在工作树 `android/app/build/reports/tests/testDebugUnitTest/index.html`（后续测试运行会覆盖，计数在此留档）。
-Task 1～6：未完成。目标保持完整，最终逐行补充实现提交、测试输出与前台 GUI 证据。
+Task 1：独立HTTP核心完成并经过两阶段审阅，最终47项目标测试通过；包括文件命名、真实下载、范围/身份校验、暂停恢复与异常响应。前台服务/任务接入尚未完成。
+Task 2：普通文件任务、恢复、导出接入进行中。
+Task 3～6：未完成。目标保持完整，最终逐行补充实现提交、测试输出与前台 GUI 证据。

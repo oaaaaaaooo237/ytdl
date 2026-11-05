@@ -16,12 +16,12 @@
 
 文件：新增 `core/files/FileMetadata.kt`、`core/files/HttpFileProbe.kt`、`core/files/ResumableFileDownloader.kt` 和对应 `src/test/.../core/files/*Test.kt`。不改 UI、Room、DownloadRoute 或现有 pipeline，先独立验证网络传输合同。
 
-- [ ] 测试先行：本地真实 HTTP 响应，文件名 header 优先/编码/路径去除；HTML 和错误响应拒绝；MIME/Content-Disposition 决定类型，未知长度与重定向不误报。
-- [ ] 定义普通数据 API（Android 无依赖，便于 JVM 测试）：`FileMetadata(sourceUrl, finalUrl, fileName, mimeType, totalBytes, etag, lastModified, kind, resumeSupport)`；`HttpFileProbe.probe(url): Result<FileMetadata>`；类型 `Video/Audio/Other`。HTML 探测返回不属于文件的结果供调用方回退原 yt-dlp，不吞掉权限/传输错误。
-- [ ] `ResumableFileDownloader.download(metadata, partialFile, checkpointFile, shouldStop, onProgress)` 返回完成文件或明确暂停/重启确认结果。恢复信息可与临时文件同目录，敏感 URL 不包含在不加密 checkpoint（调用方已有加密请求）；ETag/长度/偏移校验匹配后才能追加。
-- [ ] TDD 测试覆盖 206 正常续传、忽略 Range 的 200、源变更、错误 Content-Range、416 完成/拒绝、截断、未知长度、暂停后恢复和缺少身份信息；不覆盖旧字节，不静默从头下载。连接超时、重定向上限、identity 编码、关闭流、路径约束必须具体验证。
-- [ ] 目标测试先失败后通过：`./gradlew.bat :app:testDebugUnitTest --tests 'com.garyapp.ytdl.core.files.*' --console=plain`。
-- [ ] 主会话审查 API 与合同；规范通过后代码质量审阅；记录提交。
+- [x] 测试先行：本地真实 HTTP 响应，文件名 header 优先/编码/路径去除；HTML 和错误响应拒绝；MIME/Content-Disposition 决定类型，未知长度与重定向不误报。
+- [x] 定义普通数据 API（Android 无依赖，便于 JVM 测试）：`FileMetadata(sourceUrl, finalUrl, fileName, mimeType, totalBytes, etag, lastModified, kind, resumeSupport)`；`HttpFileProbe.probe(url)` 返回 `FileFound/NotFile/Rejected`；类型 `Video/Audio/Other`，未经 Range 验证为 Unknown。
+- [x] `ResumableFileDownloader.download(metadata, partialFile, checkpointFile, shouldStop, onProgress)` 返回 `Completed/Stopped/RestartRequired/Failed`。不加密 checkpoint 只含请求元数据哈希和已提交字节，源 URL 留给加密请求存储。
+- [x] TDD 覆盖 206、忽略范围200、身份变更、错误范围、416、截断、未知长度、空文件、暂停恢复、无身份、重定向、编码、路径、超时、资源释放、慢速首部停止、UTF8长文件名与创建partial后暂停竞态。
+- [x] 主会话最终目标命令通过：47 测试、0失败、0错误、0跳过，BUILD SUCCESSFUL in 10s。此前全量541/0（最后6项增补由目标47验证，最终全量在Task2后再跑）。
+- [x] 主会话 API/合同检查、独立规范与质量review通过。提交：e067f7e、1119ce7、01eefa5、0a1e06d。只证明独立核心，未证明Android GUI或完整任务接入。
 
 ## Task 2：普通文件接入现有任务、恢复与导出
 
