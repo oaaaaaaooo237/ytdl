@@ -19,8 +19,8 @@ import org.junit.Test
 class SmokeUnitTest {
     @Test
     fun packageVersionIsReleaseVersion() {
-        assertEquals("1.0.10", BuildConfig.VERSION_NAME)
-        assertEquals(11, BuildConfig.VERSION_CODE)
+        assertEquals("1.1.0", BuildConfig.VERSION_NAME)
+        assertEquals(12, BuildConfig.VERSION_CODE)
     }
 
     @Test
