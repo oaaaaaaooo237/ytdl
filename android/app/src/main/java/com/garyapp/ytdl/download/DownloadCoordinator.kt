@@ -149,6 +149,9 @@ object DownloadCoordinator {
                     notifySavedListeners()
                     result.getOrThrow()
                 }
+                result.getOrNull()?.let { historyId ->
+                    updateRetryDraftForHistory(item.state.canceled(), Result.success(historyId), FileRetryDraftStore.fromContext(context))
+                }
             }
             saved.remove(taskId)
             val canceled = item.state.canceled().copy(outputs = emptyList())
@@ -232,6 +235,37 @@ object DownloadCoordinator {
         if (shouldPublish) publish(waiting)
         waiting
     }
+    internal data class SavedCacheEntry(val taskId: String, val title: String, val bytes: Long)
+
+    internal fun inspectSavedCache(): List<SavedCacheEntry> = synchronized(lock) {
+        val workspace = repository?.workspace ?: return@synchronized emptyList()
+        saved.values.mapNotNull { item ->
+            if (item.state.request == null || item.taskId in workers || item.wasQueued) return@mapNotNull null
+            runCatching {
+                val checkpoint = workspace.loadCheckpoint(item.taskId).getOrThrow()
+                if (checkpoint.completedFiles.isNotEmpty() || checkpoint.pendingFilePublication != null ||
+                    workspace.loadExportedDocuments(item.taskId).getOrThrow() != null) return@runCatching null
+                val task = workspace.directory(item.taskId)
+                if (com.garyapp.ytdl.storage.ExportController.isCompletedTaskDirectory(task)) return@runCatching null
+                val guard = ControlledDirectory(task)
+                val bytes = task.walkTopDown()
+                    .onEnter { directory -> runCatching { guard.checkSafe(directory) }.isSuccess }
+                    .filter { candidate -> runCatching { guard.checkSafe(candidate) }.isSuccess &&
+                        candidate.isFile && candidate.name !in setOf("checkpoint.bin", "exported.bin") &&
+                        !com.garyapp.ytdl.storage.ExportController.isTaskLifecycleMarker(candidate) }
+                    .sumOf { it.length() }
+                if (bytes == 0L) null else SavedCacheEntry(item.taskId, item.title, bytes)
+            }.getOrNull()
+        }
+    }
+
+    internal fun clearSavedCache(context: Context, confirmed: List<SavedCacheEntry>): Int {
+        val current = inspectSavedCache().associateBy { it.taskId }
+        return confirmed.count { entry ->
+            current[entry.taskId] == entry && cancelSaved(context, entry.taskId).isSuccess
+        }
+    }
+
     internal fun <T> withTaskFilesLocked(action: () -> T): T = synchronized(lock) { action() }
 
     fun <T> runWhenIdle(action: () -> T): IdleDownloadActionResult<T> = synchronized(lock) {

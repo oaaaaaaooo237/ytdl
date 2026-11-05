@@ -269,7 +269,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun historyUiSourceContainsNoManualExportStateLauncherCallbacksOrLabels() {
+    fun historyExportUsesSystemCreateDocumentAndPreservesCompletedStatus() {
         val appSource = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
@@ -284,12 +284,12 @@ class DownloadUiBridgeTest {
             "exportLauncher",
             "exportHistoryItem",
             "exportSubtitleHistoryItem",
-            "onExport:",
             "onExportSubtitle:",
             "HistoryExportIcon",
             "可先导出",
         ).forEach { forbidden -> assertFalse(appSource.contains(forbidden)) }
-        assertFalse(bridgeSource.contains("add(\"导出\")"))
+        assertTrue(appSource.contains("Intent.ACTION_CREATE_DOCUMENT"))
+        assertTrue(appSource.contains("onExport = ::requestHistoryExport"))
         assertFalse(bridgeSource.contains("add(\"导出字幕\")"))
         assertFalse(bridgeSource.contains("suggestedExportDisplayName"))
         assertTrue(appSource.contains("DownloadStage.Completed -> \"下载完成\""))
@@ -409,9 +409,9 @@ class DownloadUiBridgeTest {
         assertFalse(source.contains("海边散步片段"))
         assertFalse(source.contains("SettingLineCard(\"通知权限\", \"待系统确认"))
         assertFalse(source.contains("M6 下载管线"))
-        assertTrue(source.contains("当前和等待"))
-        assertTrue(source.contains("当前没有进行中或等待任务"))
-        assertTrue(source.contains("暂无历史记录，完成下载后会显示"))
+        assertTrue(source.contains("ytdl-tasks-summary-card"))
+        assertTrue(source.contains("没有符合条件的任务"))
+        assertTrue(source.contains("暂无下载任务"))
         assertTrue(source.contains("notificationPermissionSubtitle("))
         assertTrue(source.contains("ytdl-settings-notification-permission"))
         assertFalse(source.contains("SettingLineCard(\"隐私与授权说明\", \"查看说明\""))
@@ -443,7 +443,7 @@ class DownloadUiBridgeTest {
         ).readText()
 
         assertTrue(source.contains("state.activeStage !in TerminalDownloadStages"))
-        assertTrue(source.contains(".filter(::shouldShowCurrentTask)"))
+        assertTrue(source.contains("state.isDownloading && state.activeStage !in TerminalDownloadStages"))
         assertTrue(source.contains("历史记录"))
         assertTrue(source.contains("当前阶段"))
     }
@@ -962,7 +962,7 @@ class DownloadUiBridgeTest {
             assertFalse("source still hard-binds UI to reference palette: $forbidden", source.contains(forbidden))
         }
         assertTrue(source.contains("LocalYtdlAppPalette.current"))
-        assertTrue(source.contains("ytdl-settings-color-preset"))
+        assertTrue(source.contains("ytdl-settings-theme-mode"))
     }
     @Test
     fun startDownloadGateRequiresAnalysisWithoutExtraAcknowledgment() {

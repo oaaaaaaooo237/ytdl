@@ -70,6 +70,8 @@ data class HistoryUiItem(
     val retryAvailable: Boolean = false,
     val isAudioOnly: Boolean = false,
     val outputMimeType: String? = null,
+    val taskId: String? = null,
+    val outputType: TaskOutputType = if (isAudioOnly) TaskOutputType.Audio else legacyTaskOutputType(outputUri, meta),
 ) {
     val hasOutput: Boolean
         get() = isHistoryOutputUri(outputUri) &&
@@ -94,6 +96,8 @@ fun historyUiItemsFromRows(
             codecBadge = formatCodecBadgeForSummary(row.formatSummary.orEmpty()),
             isAudioOnly = row.taskOutputType() == TaskOutputType.Audio,
             outputMimeType = row.outputMimeType,
+            taskId = row.taskId?.takeIf { it.isNotBlank() },
+            outputType = row.taskOutputType(),
             retryAvailable = row.status in setOf(
                 HistoryItemEntity.STATUS_FAILED,
                 HistoryItemEntity.STATUS_CANCELED,

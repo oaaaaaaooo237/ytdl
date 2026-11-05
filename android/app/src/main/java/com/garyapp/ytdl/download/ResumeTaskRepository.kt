@@ -184,7 +184,7 @@ internal class ResumeTaskRepository(
         }
     }
 
-    fun cancelStopped(state: DownloadTaskState): Result<Unit> = synchronized(MutationLock) {
+    fun cancelStopped(state: DownloadTaskState): Result<Long?> = synchronized(MutationLock) {
         runCatching {
             val request = requireNotNull(state.request)
             val row = checkNotNull(queue.getByTaskId(request.taskId))
@@ -193,7 +193,6 @@ internal class ResumeTaskRepository(
             queue.update(row)
             workspace.deleteTask(request.taskId).getOrThrow()
             recordTerminal(state.canceled().copy(outputs = emptyList()), DownloadHistoryRecorder(database.historyDao())).getOrThrow()
-            Unit
         }
     }
 

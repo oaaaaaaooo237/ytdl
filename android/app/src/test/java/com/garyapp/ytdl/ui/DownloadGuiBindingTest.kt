@@ -28,6 +28,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
@@ -133,6 +134,9 @@ class DownloadGuiBindingTest {
 
             composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
             composeRule.onNodeWithTag("ytdl-screen-settings")
+                .performScrollToNode(hasTestTag("ytdl-settings-category-storage"))
+            composeRule.onNodeWithTag("ytdl-settings-category-storage").performClick()
+            composeRule.onNodeWithTag("ytdl-screen-settings")
                 .performScrollToNode(hasTestTag("ytdl-settings-storage-target"))
             composeRule.onNodeWithTag("ytdl-settings-storage-target")
                 .assertHasClickAction()
@@ -194,24 +198,7 @@ class DownloadGuiBindingTest {
         assertTrue(source.contains("Intent.FLAG_GRANT_READ_URI_PERMISSION"))
         assertTrue(source.contains("Intent.FLAG_GRANT_WRITE_URI_PERMISSION"))
         assertTrue(source.contains("takePersistableUriPermission"))
-        assertTrue(source.contains("releasePersistableUriPermission"))
-    }
-
-    @Test
-    fun replacingStorageTargetReleasesOnlyThePreviousTreePermission() {
-        val oldTarget = StorageTarget.SafTree(
-            treeUri = "content://com.android.externalstorage.documents/tree/primary%3AOld",
-            displayName = "旧目录",
-        )
-        val newTarget = StorageTarget.SafTree(
-            treeUri = "content://com.android.externalstorage.documents/tree/primary%3ANew",
-            displayName = "新目录",
-        )
-
-        assertEquals(oldTarget.treeUri, storagePermissionUriToReleaseForUiTest(oldTarget, newTarget))
-        assertEquals(oldTarget.treeUri, storagePermissionUriToReleaseForUiTest(oldTarget, StorageTarget.AppPrivate))
-        assertEquals(null, storagePermissionUriToReleaseForUiTest(oldTarget, oldTarget.copy(displayName = "旧目录新名称")))
-        assertEquals(null, storagePermissionUriToReleaseForUiTest(StorageTarget.AppPrivate, newTarget))
+        assertFalse(source.contains("releasePersistableUriPermission"))
     }
 
     @Test
@@ -261,14 +248,13 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun settingsAppearanceSectionKeepsExtraBottomScrollBuffer() {
-        val source = sourceFile(
-            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
-            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
-        ).readText()
-
-        assertTrue(source.contains("SettingsAppearanceBottomBuffer"))
-        assertTrue(source.contains("Spacer(Modifier.height(SettingsAppearanceBottomBuffer))"))
+    fun appearanceCategoryProvidesThemeControls() {
+        composeRule.setContent { YtdlApp() }
+        composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-settings-category-appearance").performClick()
+        composeRule.onNodeWithTag("ytdl-settings-theme-mode-0").assertExists()
+        composeRule.onNodeWithTag("ytdl-settings-theme-mode-1").assertExists()
+        composeRule.onNodeWithTag("ytdl-settings-theme-mode-2").assertExists()
     }
 
     @Test
@@ -379,7 +365,7 @@ class DownloadGuiBindingTest {
                     ),
                 ),
         )
-        val pending = request.copy(
+        val pending = requestFor(progressiveFormat("18", 360)).copy(
             title = "这是另一个长到无法在等待任务卡片一行完整显示并需要循环滚动的标题",
         )
         val history = HistoryUiItem(
@@ -396,8 +382,6 @@ class DownloadGuiBindingTest {
 
         composeRule.onNodeWithTag("ytdl-current-task-title")
             .assertExists()
-        composeRule.onNodeWithTag("ytdl-pending-task-title-0")
-            .assertExists()
         composeRule.onNodeWithTag("ytdl-queue-download-speed-icon", useUnmergedTree = true)
             .assertWidthIsEqualTo(14.dp)
             .assertHeightIsEqualTo(14.dp)
@@ -407,6 +391,9 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithText("400.0 B/s", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("300.0 B/1000.0 B", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("temporary-file.mp4", substring = true).assertDoesNotExist()
+
+        composeRule.onNodeWithTag("test-tasks-list").performScrollToNode(hasTestTag("ytdl-pending-task-title-0"))
+        composeRule.onNodeWithTag("ytdl-pending-task-title-0").assertExists()
 
         composeRule.onNodeWithTag("test-tasks-list")
             .performScrollToNode(hasTestTag("ytdl-history-title-301"))
@@ -421,7 +408,7 @@ class DownloadGuiBindingTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("key(selected.route)"))
+        assertTrue(source.contains("key(selected.route, selectedSettingsCategory"))
     }
 
     @Test
@@ -1091,9 +1078,32 @@ class DownloadGuiBindingTest {
         renderTasksPage(running, listOf(pending), emptyList())
 
         composeRule.onNodeWithTag("ytdl-real-queue-card").assertExists()
+        composeRule.onNodeWithTag("test-tasks-list").performScrollToNode(hasTestTag("ytdl-pending-queue-card-0"))
         composeRule.onNodeWithTag("ytdl-pending-queue-card-0").assertExists()
         composeRule.onNodeWithText("等待中（1）").assertExists()
         composeRule.onNodeWithText("下一条视频").assertExists()
+    }
+
+    @Test
+    fun taskStatusAndTypeFiltersCombineAndClearInTheUnifiedPage() {
+        val items = listOf(
+            HistoryUiItem(51, "视频记录", "", "完成", "app-private://outputs/example.mp4",
+                HistoryItemEntity.STATUS_COMPLETED, 1L, outputType = com.garyapp.ytdl.download.TaskOutputType.Video),
+            HistoryUiItem(52, "文件记录", "", "失败", "",
+                HistoryItemEntity.STATUS_FAILED, 2L, outputType = com.garyapp.ytdl.download.TaskOutputType.Other),
+        )
+        composeRule.setContent { YtdlApp(historyItemsProvider = { items }) }
+        composeRule.onNodeWithTag("ytdl-tab-tasks").performClick()
+        composeRule.onNodeWithText("全部状态 · 全部类型 · 左右滑动筛选").assertExists()
+        composeRule.onNodeWithTag("ytdl-task-filter-Completed").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ytdl-task-filter-Other").performScrollTo().performClick()
+        composeRule.onNodeWithText("已完成 · 其他文件 · 左右滑动筛选").assertExists()
+        composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-tasks-empty"))
+        composeRule.onNodeWithText("清除筛选").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-title-51"))
+        composeRule.onNodeWithTag("ytdl-history-title-51").assertExists()
+        composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-title-52"))
+        composeRule.onNodeWithTag("ytdl-history-title-52").assertExists()
     }
 
     @Test
@@ -1306,11 +1316,9 @@ class DownloadGuiBindingTest {
                         pendingRequests = pendingRequests,
                         historyItems = historyItems,
                         historyQuery = "",
-                        selectedFilterIndex = 0,
                         userMessage = "",
                         onCancelDownload = onCancelDownload,
                         onHistoryQueryChange = {},
-                        onHistoryFilterChange = {},
                         onOpen = {},
                         onShare = {},
                         onRetry = {},
