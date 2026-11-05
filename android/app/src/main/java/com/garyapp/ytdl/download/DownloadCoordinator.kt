@@ -24,6 +24,7 @@ object DownloadCoordinator {
     private val saved = linkedMapOf<String, ResumeTaskItem>()
     private class Worker(val launch: DownloadLaunch) {
         var claimed = true
+        var workFinished = false
         var state = DownloadTaskState.waiting(launch.request)
         var cancellation: MutableDownloadCancellation? = null
         var requestedStop: DownloadStopReason? = null
@@ -78,6 +79,7 @@ object DownloadCoordinator {
             val state = item.state.copy(stage = DownloadStage.Resuming, stopReason = null, statusMessage = null, fileRecoveryAction = null)
             repository?.saveState(state)
             saved.remove(taskId)
+            NotificationController(context).clearPaused(taskId)
             queuedLaunches.addFirst(DownloadLaunch(request, File(context.filesDir, "gui-downloads")))
             val waiting = saved.values.filter { it.wasQueued && it.recoveryError == null }
             waiting.forEach {
@@ -132,7 +134,7 @@ object DownloadCoordinator {
     fun cancelSaved(context: Context, taskId: String): Result<Unit> = runCatching {
         synchronized(lock) {
             val item = checkNotNull(saved[taskId])
-            check(taskId !in workers && queuedLaunches.none { it.request.taskId == taskId })
+            check(workers[taskId]?.workFinished != false && queuedLaunches.none { it.request.taskId == taskId })
             if (item.state.request == null) {
                 requireNotNull(repository).cancelUnavailable(taskId).getOrThrow()
             } else {
@@ -146,7 +148,10 @@ object DownloadCoordinator {
                 }
             }
             saved.remove(taskId)
-            updateStoppedNotification(context, taskId, item.state.canceled().copy(outputs = emptyList()))
+            val canceled = item.state.canceled().copy(outputs = emptyList())
+            workers[taskId]?.let { updateStateLocked(canceled, it) }
+            NotificationController(context).clearPaused(taskId)
+            updateStoppedNotification(context, taskId, canceled)
         }
         notifySavedListeners(); notifyPendingListeners()
     }
@@ -187,12 +192,16 @@ object DownloadCoordinator {
 
     fun publish(state: DownloadTaskState) = synchronized(lock) {
         val worker = workers[state.request?.taskId]
+        // Late pipeline callbacks must not replace a durable cancel intent with an earlier pause.
+        val snapshot = if (worker?.requestedStop == DownloadStopReason.UserCancel && state.stage != DownloadStage.Canceled) {
+            state.copy(stage = DownloadStage.Pausing, stopReason = DownloadStopReason.UserCancel)
+        } else state
         val now = System.currentTimeMillis()
-        if (worker == null || worker.lastSavedStage != state.stage || now - worker.lastSavedAt >= 1_000) {
-            try { repository?.saveState(state) } catch (error: Exception) { throw PipelineCheckpointException(error) }
-            worker?.let { it.lastSavedAt = now; it.lastSavedStage = state.stage }
+        if (worker == null || worker.lastSavedStage != snapshot.stage || now - worker.lastSavedAt >= 1_000) {
+            try { repository?.saveState(snapshot) } catch (error: Exception) { throw PipelineCheckpointException(error) }
+            worker?.let { it.lastSavedAt = now; it.lastSavedStage = snapshot.stage }
         }
-        updateStateLocked(state, worker)
+        updateStateLocked(snapshot, worker)
     }
 
     private fun updateStateLocked(state: DownloadTaskState, worker: Worker?) {
@@ -261,17 +270,42 @@ object DownloadCoordinator {
         return AutoCloseable { synchronized(lock) { workerReleasedListeners -= listener } }
     }
     internal fun hasWorker(): Boolean = synchronized(lock) { workers.isNotEmpty() }
+    /** File ownership ends after persistence and before paused/failed state is exposed. */
+    internal fun finalizeLaunch(
+        launch: DownloadLaunch,
+        complete: (cancelRequested: Boolean) -> DownloadTaskState,
+        onFinalized: (DownloadTaskState) -> Unit,
+    ) {
+        val parked = synchronized(lock) {
+            val worker = workers[launch.request.taskId] ?: return
+            if (worker.launch !== launch || worker.workFinished) return
+            val state = complete(worker.requestedStop == DownloadStopReason.UserCancel ||
+                worker.cancellation?.stopReason == DownloadStopReason.UserCancel)
+            val parked = state.stage == DownloadStage.Paused || state.fileRecoveryAction != null
+            if (parked) rememberParkedLocked(launch, state)
+            worker.workFinished = true
+            onFinalized(state)
+            updateStateLocked(state, worker)
+            parked
+        }
+        if (parked) notifySavedListeners()
+    }
+
     internal fun park(launch: DownloadLaunch, state: DownloadTaskState) {
         synchronized(lock) {
-            repository?.saveState(state)
-            saved[launch.request.taskId] = ResumeTaskItem(launch.request.taskId, launch.request.title,
-                state.copy(request = launch.request.copy(cookiesPath = null)),
-                recoveryError = if (state.stopReason == DownloadStopReason.UserCancel) "取消尚未完成，请重试取消。" else null,
-                outputType = launch.request.outputType())
+            rememberParkedLocked(launch, state)
             val worker = workers[launch.request.taskId]
             if (worker != null || currentState?.request?.taskId == launch.request.taskId) updateStateLocked(state, worker)
         }
         notifySavedListeners()
+    }
+
+    private fun rememberParkedLocked(launch: DownloadLaunch, state: DownloadTaskState) {
+        repository?.saveState(state)
+        saved[launch.request.taskId] = ResumeTaskItem(launch.request.taskId, launch.request.title,
+            state.copy(request = launch.request.copy(cookiesPath = null)),
+            recoveryError = if (state.stopReason == DownloadStopReason.UserCancel) "取消尚未完成，请重试取消。" else null,
+            outputType = launch.request.outputType())
     }
 
     private fun parkPending(taskId: String, message: String) {
@@ -302,13 +336,32 @@ object DownloadCoordinator {
         stopTaskLocked(id, DownloadStopReason.UserCancel)
     }
 
-    fun pauseActive(taskId: String? = null) = synchronized(lock) {
-        val id = taskId ?: firstRunnableIdLocked() ?: return@synchronized
-        if (stopTaskLocked(id, DownloadStopReason.UserPause)) {
-            val worker = workers[id]
-            if (worker != null && !worker.claimed && worker.requestedStop == DownloadStopReason.UserPause) {
-                publish(worker.state.copy(stage = DownloadStage.Pausing, stopReason = DownloadStopReason.UserPause))
+    fun pauseActive(taskId: String? = null, onParked: (DownloadTaskState) -> Unit = {}) {
+        val parked = synchronized(lock) {
+            val id = taskId ?: firstRunnableIdLocked() ?: return
+            val pending = if (taskId != null) queuedLaunches.firstOrNull { it.request.taskId == id } else null
+            if (pending != null) {
+                if (earlyStops[id] == DownloadStopReason.UserCancel) return
+                val state = DownloadTaskState(DownloadStage.Paused, pending.request.copy(cookiesPath = null),
+                    stopReason = DownloadStopReason.UserPause)
+                rememberParkedLocked(pending, state)
+                queuedLaunches.remove(pending)
+                earlyStops.remove(id)
+                onParked(state)
+                if (currentState?.request?.taskId == id) updateStateLocked(state, null)
+                state
+            } else {
+                val worker = workers[id]
+                if (stopTaskLocked(id, DownloadStopReason.UserPause) && worker != null &&
+                    !worker.claimed && worker.requestedStop == DownloadStopReason.UserPause) {
+                    publish(worker.state.copy(stage = DownloadStage.Pausing, stopReason = DownloadStopReason.UserPause))
+                }
+                null
             }
+        }
+        if (parked != null) {
+            notifySavedListeners()
+            notifyPendingListeners()
         }
     }
 
@@ -326,24 +379,31 @@ object DownloadCoordinator {
         }
     }
 
+    internal fun waitForNetwork(launch: DownloadLaunch) {
+        synchronized(lock) {
+            val id = launch.request.taskId
+            if (workers[id]?.launch === launch) stopTaskLocked(id, DownloadStopReason.NetworkUnavailable)
+        }
+    }
+
     private fun firstRunnableIdLocked() = workers.keys.firstOrNull() ?: queuedLaunches.peekFirst()?.request?.taskId
 
     private fun stopTaskLocked(id: String, reason: DownloadStopReason): Boolean {
         val worker = workers[id]
         val launch = worker?.launch ?: queuedLaunches.firstOrNull { it.request.taskId == id } ?: return false
         val existing = worker?.requestedStop ?: earlyStops[id]
-        if (worker?.state?.stage in TerminalStages) return false
+        if (worker?.workFinished == true || worker?.state?.stage in TerminalStages) return false
         if (existing == DownloadStopReason.UserCancel) return true
         if (reason in setOf(DownloadStopReason.NetworkUnavailable, DownloadStopReason.LifecycleEnd) && existing != null) return true
+        if (reason == DownloadStopReason.UserCancel) {
+            val state = worker?.state ?: DownloadTaskState.waiting(launch.request)
+            repository?.saveState(state.copy(stage = DownloadStage.Pausing, stopReason = reason))
+        }
         if (worker == null) {
             earlyStops[id] = reason
         } else {
             worker.requestedStop = reason
             worker.cancellation?.requestStop(reason)
-        }
-        if (reason == DownloadStopReason.UserCancel) {
-            val state = worker?.state ?: DownloadTaskState.waiting(launch.request)
-            repository?.saveState(state.copy(stage = DownloadStage.Pausing, stopReason = reason))
         }
         return true
     }
@@ -366,8 +426,9 @@ object DownloadCoordinator {
         }
     }
 
-    internal fun warnIfStopping(taskId: String) = synchronized(lock) {
-        val worker = workers[taskId] ?: return@synchronized
+    internal fun warnIfStopping(launch: DownloadLaunch) = synchronized(lock) {
+        val worker = workers[launch.request.taskId] ?: return@synchronized
+        if (worker.launch !== launch || worker.workFinished) return@synchronized
         if (worker.cancellation?.stopReason in setOf(DownloadStopReason.UserPause, DownloadStopReason.UserCancel) &&
             worker.state.stage !in TerminalStages && worker.state.stage != DownloadStage.Paused) {
             publish(worker.state.copy(stage = DownloadStage.Pausing,

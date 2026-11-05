@@ -63,7 +63,8 @@ internal class ResumeTaskRepository(
                 val previous = workspace.loadCheckpoint(row.taskId).getOrThrow()
                 val checkpoint = PipelineCheckpoint.open(workspace, request)
                 // A completed private file can still be waiting for export.
-                val reason = previous.stopReason?.let { DownloadStopReason.valueOf(it) }
+                val reason = DownloadStopReason.UserPause.takeIf { row.stopReason == it.name }
+                    ?: previous.stopReason?.let { DownloadStopReason.valueOf(it) }
                     ?: DownloadStopReason.LifecycleEnd.takeIf { checkpoint.fileRecoveryAction == null }
                 ResumeTaskItem(row.taskId, safeTitle(row.title), DownloadTaskState(
                     if (checkpoint.fileRecoveryAction != null) DownloadStage.Failed else DownloadStage.Paused, request, progress = checkpoint.progress(), stopReason = reason,

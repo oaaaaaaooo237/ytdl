@@ -156,6 +156,94 @@ class DownloadServiceResumeTest {
         }
     }
 
+    @Test fun completedNeighborLeavesPausedNotificationWithOriginalResumeAction() {
+        org.robolectric.Shadows.shadowOf(ApplicationProvider.getApplicationContext<android.app.Application>())
+            .grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val paused = enqueue(request().copy(usesCookies = true))
+        val complete = request()
+        repository.create(complete).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(complete, root).getOrThrow()
+        val neighbor = DownloadCoordinator.claimPendingLaunch(2)!!
+        DownloadCoordinator.activateLaunch(neighbor)
+        service.engineFactory = { BlockingEngine(CountDownLatch(1), CountDownLatch(0), succeeds = true) }
+        service.runLaunch(paused)
+        service.runLaunch(neighbor)
+        val manager = service.getSystemService(android.app.NotificationManager::class.java)
+        val resumeCard = manager.activeNotifications.single { it.tag == paused.request.taskId }.notification
+        val resume = resumeCard.actions.single { it.title.toString() == "继续" }.actionIntent
+        assertEquals(paused.request.taskId, org.robolectric.Shadows.shadowOf(resume).savedIntent.getStringExtra(DownloadService.ExtraTaskId))
+        assertEquals(DownloadService.ActionResume, org.robolectric.Shadows.shadowOf(resume).savedIntent.action)
+        assertTrue(manager.activeNotifications.any { it.tag == complete.taskId })
+        assertEquals("completed", database.queueDao().getByTaskId(complete.taskId).status)
+    }
+
+    @Test fun pausingQueuedTaskPersistsImmediatelyAndPreventsAutomaticRestore() {
+        val queued = List(3) { request() }
+        queued.forEach {
+            repository.create(it).getOrThrow()
+            DownloadCoordinator.enqueueForServiceStart(it, root).getOrThrow()
+        }
+        val target = queued[1]
+        DownloadCoordinator.pauseActive(target.taskId)
+        assertEquals("paused", database.queueDao().getByTaskId(target.taskId).status)
+        val restored = repository.recover().single { it.taskId == target.taskId }
+        assertFalse(restored.wasQueued)
+        assertEquals(DownloadStopReason.UserPause, restored.state.stopReason)
+        val first = DownloadCoordinator.claimPendingLaunch()!!
+        assertEquals(queued[0].taskId, first.request.taskId)
+        DownloadCoordinator.finishActiveLaunch(first)
+        assertEquals(queued[2].taskId, DownloadCoordinator.claimPendingLaunch()!!.request.taskId)
+        DownloadCoordinator.resume(service, target.taskId).getOrThrow()
+        assertEquals("queued", database.queueDao().getByTaskId(target.taskId).status)
+    }
+
+    @Test fun cancelAcceptedWhilePipelineEmitsPausedStillCleansWorkspaceAndRecordsCanceled() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val launch = enqueue(request())
+        service.engineFactory = { BlockingEngine(entered, release) }
+        var accepted = false
+        val subscription = DownloadCoordinator.addListener { state ->
+            if (state.stage == DownloadStage.Paused && !accepted) {
+                accepted = DownloadCoordinator.cancelActive(launch.request.taskId)
+            }
+        }
+        val worker = Thread { service.runLaunch(launch) }.apply { start() }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            DownloadCoordinator.pauseActive(launch.request.taskId)
+            release.countDown()
+            worker.join(5_000)
+            assertFalse(worker.isAlive)
+            assertTrue(accepted)
+            assertEquals("canceled", database.queueDao().getByTaskId(launch.request.taskId).status)
+            assertEquals("canceled", database.historyDao().listAll().single().status)
+            assertFalse(repository.workspace.exists(launch.request.taskId))
+        } finally {
+            release.countDown()
+            subscription.close()
+        }
+    }
+
+    @Test fun latePipelinePauseCannotOverwriteDurableCancelIntent() {
+        val launch = enqueue(request())
+        val id = launch.request.taskId
+        assertTrue(DownloadCoordinator.cancelActive(id))
+        DownloadCoordinator.publish(DownloadTaskState(DownloadStage.Paused, launch.request, stopReason = DownloadStopReason.UserPause))
+        assertEquals(DownloadStopReason.UserCancel.name, database.queueDao().getByTaskId(id).stopReason)
+        assertNotNull(repository.recover().single { it.taskId == id }.recoveryError)
+    }
+
+    @Test fun finalizedPausedTaskCanBeCanceledBeforeWorkerReleasesSlot() {
+        val launch = enqueue(request().copy(usesCookies = true))
+        service.runLaunch(launch)
+        assertTrue(DownloadCoordinator.hasWorker())
+        assertFalse(DownloadCoordinator.cancelActive(launch.request.taskId))
+        DownloadCoordinator.cancelSaved(service, launch.request.taskId).getOrThrow()
+        assertEquals("canceled", database.queueDao().getByTaskId(launch.request.taskId).status)
+        assertFalse(repository.workspace.exists(launch.request.taskId))
+    }
+
     @Test fun continuingOneSavedTaskDoesNotChangeOtherPausedOrActiveTasks() {
         val first = enqueue(request())
         DownloadCoordinator.park(first, DownloadTaskState(DownloadStage.Paused, first.request))
@@ -488,13 +576,19 @@ class DownloadServiceResumeTest {
         assertEquals(DownloadStage.Paused, DownloadCoordinator.currentState()!!.stage)
         subscription.close()
     }
-    private class BlockingEngine(val entered: CountDownLatch, val release: CountDownLatch) : DownloadEngine {
+    private class BlockingEngine(
+        val entered: CountDownLatch,
+        val release: CountDownLatch,
+        val succeeds: Boolean = false,
+    ) : DownloadEngine {
         override fun downloadFormat(url: String, outputDirectory: File, formatId: String, role: DownloadFormatRole, cookiesPath: String?, listener: DownloadProgressListener?, analysisKey: String?): Result<DownloadResult> = runCatching {
             File(outputDirectory, "video.part").writeText("partial")
             listener?.onProgress(DownloadProgress("downloading", 50.0, 7, 14, 1.0, null, null))
             entered.countDown(); check(release.await(5, TimeUnit.SECONDS))
             listener?.onProgress(DownloadProgress("downloading", 50.0, 7, 14, 1.0, null, null))
-            error("expected stop")
+            if (!succeeds) error("expected stop")
+            val file = File(outputDirectory, "video.mp4").apply { writeText("completed") }
+            DownloadResult(file.path, file.length(), "测试", formatId, role)
         }
         override fun downloadSubtitle(url: String, outputDirectory: File, language: String, ext: String, source: SubtitleSource, cookiesPath: String?, listener: DownloadProgressListener?): Result<SubtitleDownloadResult> = error("not used")
     }

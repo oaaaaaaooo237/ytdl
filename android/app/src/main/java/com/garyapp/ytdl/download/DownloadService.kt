@@ -49,7 +49,7 @@ class DownloadService : Service() {
         retryDraftStore = FileRetryDraftStore.fromContext(this)
         repository = ResumeTaskRepository.fromContext(this)
         network = NetworkMonitor(this) {
-            running.forEach { DownloadCoordinator.waitForNetwork(it.request.taskId) }
+            running.forEach(DownloadCoordinator::waitForNetwork)
         }
         workerSubscription = DownloadCoordinator.addWorkerReleasedListener { mainHandler.post { drain() } }
         stateSubscription = DownloadCoordinator.addActiveListener {
@@ -71,7 +71,7 @@ class DownloadService : Service() {
                 else if (DownloadCoordinator.cancelPending(this, taskId).getOrNull() == false &&
                     !DownloadCoordinator.cancelActive(taskId)) DownloadCoordinator.cancelSaved(this, taskId)
             }
-            ActionPause -> runControl { DownloadCoordinator.pauseActive(taskId) }
+            ActionPause -> runControl { DownloadCoordinator.pauseActive(taskId, notificationController::notifyPaused) }
             ActionResume -> if (taskId == null) drain() else runControl {
                 DownloadCoordinator.restore(repository)
                 DownloadCoordinator.resume(this, taskId)
@@ -107,7 +107,7 @@ class DownloadService : Service() {
                 } catch (_: Exception) {
                     val state = (DownloadCoordinator.activeStates()[launch.request.taskId] ?: DownloadTaskState.waiting(launch.request))
                         .copy(stage = DownloadStage.Paused, statusMessage = "任务信息保存失败，已保留文件，请重试。")
-                    runCatching { DownloadCoordinator.park(launch, state) }
+                    runCatching { finalizeLaunch(launch, state) }
                 } finally {
                     running -= launch
                     DownloadCoordinator.finishActiveLaunch(launch)
@@ -116,9 +116,8 @@ class DownloadService : Service() {
         }
         refreshForeground()
         if (!DownloadCoordinator.hasWorker() && !DownloadCoordinator.hasPendingLaunch()) {
-            val keepPausedAction = foregroundState().stage == DownloadStage.Paused
             foregroundStarted = false
-            stopForeground(if (keepPausedAction) STOP_FOREGROUND_DETACH else STOP_FOREGROUND_REMOVE)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(latestStartId)
         }
     }
@@ -142,7 +141,7 @@ class DownloadService : Service() {
         val expected = running.firstOrNull { taskId == null || it.request.taskId == taskId } ?: return
         mainHandler.postDelayed({
             if (!destroyed && expected in running) controlExecutor.execute {
-                DownloadCoordinator.warnIfStopping(expected.request.taskId)
+                DownloadCoordinator.warnIfStopping(expected)
             }
         }, 30_000)
     }
@@ -172,8 +171,7 @@ class DownloadService : Service() {
                         ?: run {
                             state = restoredState(launch).copy(stage = DownloadStage.Paused,
                                 statusMessage = "授权文件读取失败，请在设置中重新选择后继续。")
-                            DownloadCoordinator.park(launch, state)
-                            publishForegroundState(state)
+                            finalizeLaunch(launch, state)
                             return
                         }
                 } else null
@@ -188,7 +186,6 @@ class DownloadService : Service() {
                         isNetworkAvailable = network::isAvailable).run(request, launch.outputDirectory, token, onState)
                 }
                 state = exportCompletedOutputs(result, request.storageTarget ?: StorageTarget.AppPrivate, token)
-                if (token.stopReason == DownloadStopReason.UserCancel) state = state.copy(stopReason = DownloadStopReason.UserCancel)
                 if (state.stage == DownloadStage.Failed && state.fileRecoveryAction == null && state.errorMessage?.contains("已保留文件") == true) {
                     state = state.copy(stage = DownloadStage.Paused, statusMessage = state.errorMessage)
                 }
@@ -205,26 +202,38 @@ class DownloadService : Service() {
                     }
                     state = stopRetained(launch, state, token.stopReason?.takeUnless { destroyed && it == DownloadStopReason.NetworkUnavailable } ?: DownloadStopReason.LifecycleEnd)
                 }
-                if (state.stage == DownloadStage.Paused || state.fileRecoveryAction != null) {
-                    DownloadCoordinator.park(launch, state)
-                } else if (state.stage in ResumeTaskRepository.TerminalStages) {
-                    val recorded = repository.recordTerminal(state)
-                    val historyId = recorded.getOrNull()
-                    if (historyId != null) updateRetryDraftForHistory(state, Result.success(historyId), retryDraftStore)
-                    if (recorded.isFailure) {
-                        state = state.copy(stage = DownloadStage.Paused, statusMessage = "历史保存失败，任务文件已保留，请继续重试。")
-                        DownloadCoordinator.park(launch, state)
-                    } else if (state.stage == DownloadStage.Completed && state.outputs.any { it.externalDocumentUri != null }) {
-                        repository.workspace.deleteTask(launch.request.taskId)
-                    }
-                }
-                publishForegroundState(state)
-                if (!destroyed) notificationController.notifyResult(state, SettingsRepository.fromContext(this).getSettings())
+                finalizeLaunch(launch, state)
                 return
             } finally {
                 DownloadCoordinator.clearCancellation(token, taskId)
             }
         }
+    }
+
+    private fun finalizeLaunch(launch: DownloadLaunch, state: DownloadTaskState) {
+        DownloadCoordinator.finalizeLaunch(launch, complete = { cancelRequested ->
+            val finalState = if (cancelRequested && state.stage != DownloadStage.Canceled) {
+                stopRetained(launch, state, DownloadStopReason.UserCancel)
+            } else state
+            if (finalState.stage in ResumeTaskRepository.TerminalStages && finalState.fileRecoveryAction == null) {
+                val recorded = repository.recordTerminal(finalState)
+                val historyId = recorded.getOrNull()
+                if (historyId != null) updateRetryDraftForHistory(finalState, Result.success(historyId), retryDraftStore)
+                if (recorded.isFailure) {
+                    return@finalizeLaunch finalState.copy(stage = DownloadStage.Paused,
+                        statusMessage = "历史保存失败，任务文件已保留，请继续重试。")
+                }
+                if (finalState.stage == DownloadStage.Completed && finalState.outputs.any { it.externalDocumentUri != null }) {
+                    repository.workspace.deleteTask(launch.request.taskId)
+                }
+            }
+            finalState
+        }, onFinalized = { finalState ->
+            if (!destroyed) runCatching {
+                if (finalState.stage == DownloadStage.Paused) notificationController.notifyPaused(finalState)
+                else notificationController.notifyResult(finalState, SettingsRepository.fromContext(this).getSettings())
+            }
+        })
     }
 
     private fun restoredState(launch: DownloadLaunch): DownloadTaskState {

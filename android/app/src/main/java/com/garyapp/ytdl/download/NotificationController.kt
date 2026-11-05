@@ -31,6 +31,7 @@ class NotificationController(
         }
         manager.createNotificationChannel(channel)
         manager.createNotificationChannel(NotificationChannel(ResultChannelId, "下载结果", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(NotificationChannel(PausedChannelId, "已暂停的下载", NotificationManager.IMPORTANCE_LOW))
     }
 
     fun canPostNotifications(): Boolean {
@@ -58,7 +59,7 @@ class NotificationController(
             .setContentText(if (activeCount > 1) "$activeCount 项任务进行中 · $taskStatus" else taskStatus)
             .setContentIntent(contentPendingIntent())
             .setAutoCancel(state.stage in TerminalStages)
-            .setOngoing(state.stage !in TerminalStages)
+            .setOngoing(state.stage !in TerminalStages && (channelId != PausedChannelId || state.stage != DownloadStage.Paused))
             .setOnlyAlertOnce(true)
             .apply {
                 if (state.stage !in TerminalStages) {
@@ -85,6 +86,18 @@ class NotificationController(
     fun notifyForegroundState(state: DownloadTaskState, activeCount: Int = 0) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.notify(NotificationId, buildForegroundNotification(state, activeCount))
+    }
+
+    internal fun notifyPaused(state: DownloadTaskState) {
+        val taskId = state.request?.taskId ?: return
+        if (canPostNotifications()) {
+            context.getSystemService(NotificationManager::class.java)
+                .notify(taskId, PausedNotificationId, buildNotification(state, PausedChannelId))
+        }
+    }
+
+    internal fun clearPaused(taskId: String) {
+        context.getSystemService(NotificationManager::class.java).cancel(taskId, PausedNotificationId)
     }
 
     internal fun notifyResult(state: DownloadTaskState, settings: AppSettings) {
@@ -149,6 +162,8 @@ class NotificationController(
         const val NotificationId = 1001
         private const val ResultChannelId = "download_results"
         private const val ResultNotificationId = 1002
+        private const val PausedChannelId = "download_paused"
+        private const val PausedNotificationId = 1003
 
         private val TerminalStages = setOf(
             DownloadStage.Completed,
