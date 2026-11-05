@@ -58,7 +58,9 @@ internal class ResumeTaskRepository(
             if (it.status in setOf("running", "waiting_network") || it.stopReason == DownloadStopReason.LifecycleEnd.name && it.phase != DownloadStage.Waiting.name) 0 else 1
         }.map { row ->
             val restored = runCatching {
-                check(row.stopReason != DownloadStopReason.UserCancel.name)
+                // A durable export receipt takes precedence over cancellation accepted while the copy finished.
+                check(row.stopReason != DownloadStopReason.UserCancel.name ||
+                    workspace.loadExportedDocuments(row.taskId).getOrThrow() != null)
                 val request = requests.load(row.taskId).getOrThrow()
                 val previous = workspace.loadCheckpoint(row.taskId).getOrThrow()
                 val checkpoint = PipelineCheckpoint.open(workspace, request)

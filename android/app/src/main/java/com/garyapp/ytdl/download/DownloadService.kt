@@ -212,7 +212,8 @@ class DownloadService : Service() {
 
     private fun finalizeLaunch(launch: DownloadLaunch, state: DownloadTaskState) {
         DownloadCoordinator.finalizeLaunch(launch, complete = { cancelRequested ->
-            val finalState = if (cancelRequested && state.stage != DownloadStage.Canceled) {
+            val exported = state.stage == DownloadStage.Completed && state.outputs.any { it.externalDocumentUri != null }
+            val finalState = if (cancelRequested && !exported && state.stage != DownloadStage.Canceled) {
                 stopRetained(launch, state, DownloadStopReason.UserCancel)
             } else state
             if (finalState.stage in ResumeTaskRepository.TerminalStages && finalState.fileRecoveryAction == null) {
@@ -223,7 +224,7 @@ class DownloadService : Service() {
                     return@finalizeLaunch finalState.copy(stage = DownloadStage.Paused,
                         statusMessage = "历史保存失败，任务文件已保留，请继续重试。")
                 }
-                if (finalState.stage == DownloadStage.Completed && finalState.outputs.any { it.externalDocumentUri != null }) {
+                if (exported) {
                     repository.workspace.deleteTask(launch.request.taskId)
                 }
             }

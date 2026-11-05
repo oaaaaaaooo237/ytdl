@@ -3,6 +3,7 @@ package com.garyapp.ytdl.download
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.garyapp.ytdl.cookies.TemporaryCookiesFile
 import com.garyapp.ytdl.core.settings.SettingsRepository
 import java.io.File
 import java.util.ArrayDeque
@@ -122,6 +123,7 @@ object DownloadCoordinator {
         val result = synchronized(lock) {
             val launch = queuedLaunches.firstOrNull { it.request.taskId == taskId }
                 ?: return Result.success(false)
+            if (hasExportReceiptLocked(taskId)) return Result.success(false)
             queuedLaunches.remove(launch)
             earlyStops.remove(taskId)
             saved[taskId] = ResumeTaskItem(taskId, launch.request.title, DownloadTaskState.waiting(launch.request))
@@ -135,6 +137,7 @@ object DownloadCoordinator {
         synchronized(lock) {
             val item = checkNotNull(saved[taskId])
             check(workers[taskId]?.workFinished != false && queuedLaunches.none { it.request.taskId == taskId })
+            check(!hasExportReceiptLocked(taskId)) { "文件已保存，请继续补记下载历史。" }
             if (item.state.request == null) {
                 requireNotNull(repository).cancelUnavailable(taskId).getOrThrow()
             } else {
@@ -342,6 +345,9 @@ object DownloadCoordinator {
             val pending = if (taskId != null) queuedLaunches.firstOrNull { it.request.taskId == id } else null
             if (pending != null) {
                 if (earlyStops[id] == DownloadStopReason.UserCancel) return
+                val cookiesPath = pending.request.cookiesPath
+                if (TemporaryCookiesFile.isManagedTemporaryPath(cookiesPath) &&
+                    !TemporaryCookiesFile.deleteIfManagedPath(cookiesPath)) return
                 val state = DownloadTaskState(DownloadStage.Paused, pending.request.copy(cookiesPath = null),
                     stopReason = DownloadStopReason.UserPause)
                 rememberParkedLocked(pending, state)
@@ -396,6 +402,7 @@ object DownloadCoordinator {
         if (existing == DownloadStopReason.UserCancel) return true
         if (reason in setOf(DownloadStopReason.NetworkUnavailable, DownloadStopReason.LifecycleEnd) && existing != null) return true
         if (reason == DownloadStopReason.UserCancel) {
+            if (hasExportReceiptLocked(id)) return false
             val state = worker?.state ?: DownloadTaskState.waiting(launch.request)
             repository?.saveState(state.copy(stage = DownloadStage.Pausing, stopReason = reason))
         }
@@ -407,6 +414,9 @@ object DownloadCoordinator {
         }
         return true
     }
+
+    private fun hasExportReceiptLocked(taskId: String): Boolean =
+        repository?.workspace?.loadExportedDocuments(taskId)?.getOrNull() != null
 
     private fun MutableDownloadCancellation.requestStop(reason: DownloadStopReason) {
         when (reason) {

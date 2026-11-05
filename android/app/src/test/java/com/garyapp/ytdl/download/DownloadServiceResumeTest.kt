@@ -177,6 +177,83 @@ class DownloadServiceResumeTest {
         assertEquals("completed", database.queueDao().getByTaskId(complete.taskId).status)
     }
 
+    @Test fun queuedPauseRetainsCookiesReferenceUntilManagedFileCanBeDeleted() {
+        val temporary = com.garyapp.ytdl.cookies.TemporaryCookiesFile.materializeFromStream(
+            "test cookie".byteInputStream(), root, "queued-pause",
+        ).getOrThrow()
+        val path = temporary.file
+        assertTrue(path.delete())
+        assertTrue(path.mkdir())
+        val child = File(path, "prevents-delete").apply { writeText("test") }
+        val task = request().copy(cookiesPath = path.absolutePath)
+        repository.create(task).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(task, root).getOrThrow()
+        var pending = emptyList<DownloadRequest>()
+        val subscription = DownloadCoordinator.addPendingListener { pending = it }
+        try {
+            DownloadCoordinator.pauseActive(task.taskId)
+            assertEquals("queued", database.queueDao().getByTaskId(task.taskId).status)
+            assertEquals(path.absolutePath, pending.single().cookiesPath)
+            assertTrue(child.delete())
+            DownloadCoordinator.pauseActive(task.taskId)
+            assertFalse(path.exists())
+            assertTrue(pending.isEmpty())
+            assertEquals("paused", database.queueDao().getByTaskId(task.taskId).status)
+            assertNull(repository.recover().single().state.request!!.cookiesPath)
+        } finally {
+            child.delete()
+            temporary.delete()
+            subscription.close()
+        }
+    }
+
+    @Test fun cancelAfterSafCopyStillRecordsExportedOutput() {
+        val task = request().copy(storageTarget = com.garyapp.ytdl.core.storage.StorageTarget.SafTree("content://docs/tree/save"))
+        val launch = enqueue(task)
+        val documentUri = "content://docs/document/exported"
+        service.engineFactory = { BlockingEngine(CountDownLatch(1), CountDownLatch(0), succeeds = true) }
+        service.exportToTree = { _, _, token ->
+            assertTrue(DownloadCoordinator.cancelActive(task.taskId))
+            assertEquals(DownloadStopReason.UserCancel, token.stopReason)
+            listOf(documentUri)
+        }
+        service.runLaunch(launch)
+        assertEquals("completed", database.queueDao().getByTaskId(task.taskId).status)
+        assertEquals("completed", database.historyDao().listAll().single().status)
+        assertEquals(documentUri, DownloadCoordinator.currentState()!!.outputs.single().externalDocumentUri)
+        assertFalse(repository.workspace.exists(task.taskId))
+    }
+
+    @Test fun durableSafReceiptSurvivesEarlierCancelMarkerAcrossRecovery() {
+        val task = request().copy(storageTarget = com.garyapp.ytdl.core.storage.StorageTarget.SafTree("content://docs/tree/save"))
+        enqueue(task)
+        assertTrue(DownloadCoordinator.cancelActive(task.taskId))
+        repository.workspace.saveExportedDocuments(task.taskId, listOf("content://docs/document/exported")).getOrThrow()
+        val recovered = repository.recover().single()
+        assertNull(recovered.recoveryError)
+        assertEquals(task.taskId, recovered.state.request!!.taskId)
+        DownloadCoordinator.resetForTests()
+        DownloadCoordinator.restore(repository)
+        assertTrue(DownloadCoordinator.cancelSaved(service, task.taskId).isFailure)
+        assertEquals(listOf("content://docs/document/exported"),
+            repository.workspace.loadExportedDocuments(task.taskId).getOrThrow())
+    }
+
+    @Test fun cancelDuringSafCopyStillHonorsExporterRollback() {
+        val task = request().copy(storageTarget = com.garyapp.ytdl.core.storage.StorageTarget.SafTree("content://docs/tree/save"))
+        val launch = enqueue(task)
+        service.engineFactory = { BlockingEngine(CountDownLatch(1), CountDownLatch(0), succeeds = true) }
+        service.exportToTree = { _, _, token ->
+            assertTrue(DownloadCoordinator.cancelActive(task.taskId))
+            assertEquals(DownloadStopReason.UserCancel, token.stopReason)
+            throw java.util.concurrent.CancellationException()
+        }
+        service.runLaunch(launch)
+        assertEquals("canceled", database.queueDao().getByTaskId(task.taskId).status)
+        assertEquals("canceled", database.historyDao().listAll().single().status)
+        assertFalse(repository.workspace.exists(task.taskId))
+    }
+
     @Test fun pausingQueuedTaskPersistsImmediatelyAndPreventsAutomaticRestore() {
         val queued = List(3) { request() }
         queued.forEach {
