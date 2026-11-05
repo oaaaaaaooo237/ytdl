@@ -73,7 +73,6 @@ class ResumableFileDownloader {
                 if (downloaded == 0L && count > 0 && isWebPage(mime, buffer.copyOf(count))) return restart("链接返回网页或登录页面")
                 if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
                 if (!existing && !partialFile.createNewFile()) return restart("目标文件已存在")
-                if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
                 FileOutputStream(partialFile, true).use { output ->
                     if (!existing) writeCheckpoint(checkpointFile, binding, downloaded)
                     while (count >= 0) {

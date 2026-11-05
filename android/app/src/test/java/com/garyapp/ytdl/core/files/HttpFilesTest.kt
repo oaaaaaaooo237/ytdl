@@ -61,7 +61,7 @@ class HttpFilesTest {
                 e.responseHeaders.add("Content-Range", "bytes ${if (behavior == "bad-range") offset + 1 else offset}-${if (behavior == "short-range") offset + 99 else bytes.lastIndex}/${bytes.size}")
             }
             val length = if (behavior == "empty") 0 else if (behavior == "short-range" && offset > 0) 100 else bytes.size - offset
-            e.sendResponseHeaders(if (offset > 0) 206 else 200, if (behavior == "unknown") 0 else if (length == 0) -1 else length.toLong())
+            e.sendResponseHeaders(if (start != null && behavior != "ignore") 206 else 200, if (behavior == "unknown") 0 else if (length == 0) -1 else length.toLong())
             if (length > 0) {
                 if (behavior == "html-body" || behavior == "fragmented-html") {
                     val body = "<!doctype html><html>login</html>".toByteArray()
@@ -242,5 +242,14 @@ class HttpFilesTest {
                 client.join(4000); worker.join(1000)
             }
         }
+    }
+    @Test fun stopImmediatelyAfterPartialCreationLeavesResumableCheckpoint() {
+        val m = metadata()
+        val partial = File(dir, "body.part")
+        val result = download(m, { partial.exists() })
+        assertEquals(FileDownloadResult.Stopped(0), result)
+        assertTrue(File(dir, "checkpoint").exists())
+        assertTrue(download(m) is FileDownloadResult.Completed)
+        assertArrayEquals(bytes, partial.readBytes())
     }
 }
