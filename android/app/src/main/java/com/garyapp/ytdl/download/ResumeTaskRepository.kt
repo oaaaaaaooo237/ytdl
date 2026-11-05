@@ -100,6 +100,7 @@ internal class ResumeTaskRepository(
             row.phase = state.stage.name
         }
         row.stopReason = state.stopReason?.name
+        row.outputType = request.outputType().name
         state.progress?.let {
             row.downloadedBytes = it.downloadedBytes ?: row.downloadedBytes
             row.totalBytes = it.totalBytes ?: row.totalBytes

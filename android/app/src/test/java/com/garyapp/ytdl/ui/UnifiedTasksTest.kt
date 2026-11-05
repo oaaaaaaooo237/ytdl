@@ -28,6 +28,19 @@ class UnifiedTasksTest {
         assertEquals(7L, unifiedTasks(emptyList(), listOf(restored), listOf(recent)).single().history!!.id)
     }
 
+    @Test fun corruptedQueueEntryIsFailedAndKeepsItsRecoveryIdentity() {
+        val recovered = ResumeTaskItem(
+            request.taskId, "损坏任务", DownloadTaskState(DownloadStage.Paused),
+            recoveryError = "恢复信息不可用", wasQueued = true, outputType = TaskOutputType.Audio,
+        )
+        val row = unifiedTasks(emptyList(), listOf(recovered), emptyList()).single()
+        assertEquals(TaskStatus.Failed, row.status)
+        assertEquals(request.taskId, row.id)
+        assertEquals(TaskOutputType.Audio, row.type)
+        assertEquals(recovered, row.recovery)
+        assertNull(row.state?.request)
+    }
+
     @Test fun filterUsesOrWithinGroupsAndAndAcrossGroups() {
         val task = unifiedTasks(listOf(DownloadTaskState(DownloadStage.Paused, request)), emptyList(), emptyList()).single()
         assertTrue(matchesTaskFilter(task, setOf(TaskStatus.Paused, TaskStatus.Completed), setOf(TaskOutputType.Video, TaskOutputType.Audio)))

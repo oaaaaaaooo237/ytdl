@@ -93,7 +93,9 @@ class ResumeTaskRepositoryTest {
         File(task, "http").mkdirs()
         File(task, "http/body.part").writeText("old")
         PipelineCheckpoint.open(workspace, request).save(DownloadStage.Failed, null, null, FileRecoveryAction.ConfirmRestart)
-        val metadata = (request.route as DownloadRoute.HttpFile).metadata.copy(etag = "\"two\"")
+        val metadata = (request.route as DownloadRoute.HttpFile).metadata.copy(
+            etag = "\"two\"", mimeType = "audio/mpeg", kind = TaskOutputType.Audio,
+        )
         val updated = repository.confirmFileRestart(request, metadata).getOrThrow()
         assertEquals(request.taskId, updated.taskId)
         assertEquals("用户.pdf", (updated.route as DownloadRoute.HttpFile).fileName)
@@ -101,6 +103,14 @@ class ResumeTaskRepositoryTest {
         assertEquals(updated, store.load(request.taskId).getOrThrow())
         assertFalse(File(workspace.directory(request.taskId), "http/body.part").exists())
         assertNull(workspace.loadCheckpoint(request.taskId).getOrThrow().fileRecoveryAction)
+        assertEquals("Audio", database.queueDao().getByTaskId(request.taskId).outputType)
+        store.delete(request.taskId).getOrThrow()
+        val unavailable = repository.recover().single()
+        assertNull(unavailable.state.request)
+        assertNotNull(unavailable.recoveryError)
+        assertEquals(TaskOutputType.Audio, unavailable.outputType)
+        repository.cancelUnavailable(unavailable.taskId).getOrThrow()
+        assertTrue(repository.recover().isEmpty())
     }
 
     @Test fun pendingCancellationCleanupFailureCannotReturnTheTaskToTheRunnableQueue() {

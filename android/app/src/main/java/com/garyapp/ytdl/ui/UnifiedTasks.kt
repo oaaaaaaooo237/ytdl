@@ -39,8 +39,11 @@ fun unifiedTasks(
         rows[request.taskId] = UnifiedTask(request.taskId, request.title, status, state.outputType(), state = state)
     }
     for (row in recovered) {
-        val status = if (row.wasQueued && row.state.stage == DownloadStage.Paused) TaskStatus.Waiting
-        else row.state.stage.taskStatus() ?: continue
+        val status = when {
+            row.recoveryError != null || row.state.request == null -> TaskStatus.Failed
+            row.wasQueued && row.state.stage == DownloadStage.Paused -> TaskStatus.Waiting
+            else -> row.state.stage.taskStatus() ?: continue
+        }
         rows.putIfAbsent(row.taskId, UnifiedTask(
             row.taskId, row.title, status, row.state.request?.let { row.state.outputType() } ?: row.outputType,
             state = row.state, recovery = row,
