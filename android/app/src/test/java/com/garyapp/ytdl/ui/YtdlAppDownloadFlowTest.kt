@@ -1,6 +1,8 @@
 package com.garyapp.ytdl.ui
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.widget.EditText
@@ -17,9 +19,16 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ApplicationProvider
 import com.garyapp.ytdl.R
+import com.garyapp.ytdl.core.files.FileKind
+import com.garyapp.ytdl.core.files.FileMetadata
+import com.garyapp.ytdl.core.files.FileProbeResult
+import com.garyapp.ytdl.core.files.ResumeSupport
 import com.garyapp.ytdl.core.settings.SettingsRepository
+import com.garyapp.ytdl.core.storage.StorageTarget
+import com.garyapp.ytdl.download.HttpFileConflictPolicy
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateChecker
 import com.garyapp.ytdl.core.ytdlp.ParserUpdateCoordinator
 import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
@@ -157,7 +166,7 @@ class YtdlAppDownloadFlowTest {
         assertEquals(originalRequest.url, analyzedUrl.get())
         assertEquals(null, unexpectedDownloadRequest.get())
         composeRule.onNodeWithText("实际下载：1080p MP4 AV1 单文件").assertExists()
-        composeRule.onAllNodesWithTag("ytdl-format-subtitle-toggle").assertCountEquals(0)
+        composeRule.onNodeWithTag("ytdl-download-filename").assertDoesNotExist()
     }
 
     @Test
@@ -218,6 +227,110 @@ class YtdlAppDownloadFlowTest {
         composeRule.onAllNodesWithText("第一条结果", substring = true).assertCountEquals(0)
     }
 
+    @Test
+    fun freshDownloadShowsThreeDestinationsAndNoTypeSpecificControls() {
+        composeRule.setContent {
+            YtdlApp(parserUpdateCoordinator = offlineParserCoordinator())
+        }
+        listOf("download", "tasks", "settings").forEach { route ->
+            composeRule.onNodeWithTag("ytdl-tab-$route").performClick()
+            composeRule.onNodeWithTag("ytdl-screen-$route").assertExists()
+        }
+        composeRule.onNodeWithTag("ytdl-tab-download").performClick()
+        composeRule.onNodeWithTag("ytdl-download-paste").assertExists()
+        composeRule.onNodeWithTag("ytdl-download-mode-av").assertDoesNotExist()
+        composeRule.onNodeWithTag("ytdl-download-filename").assertDoesNotExist()
+    }
+
+    @Test
+    fun fileIdentificationKeepsMediaOptionsHiddenAndSubmitsEditedNameAfterConfirmation() {
+        val capturedRequest = AtomicReference<DownloadRequest>()
+        val target = StorageTarget.AppPrivate
+        val metadata = FileMetadata(FirstUrl, FirstUrl, "原始.zip", "application/zip", 1_024L,
+            null, null, FileKind.Other, ResumeSupport.Unavailable)
+        lateinit var hostContext: Context
+        composeRule.setContent {
+            hostContext = LocalContext.current
+            YtdlApp(
+                parserUpdateCoordinator = offlineParserCoordinator(),
+                analysisProvider = { _, _ -> Result.success(analysisNamed("媒体识别结果")) },
+                fileProbeProvider = { url ->
+                    if (url == FirstUrl) FileProbeResult.FileFound(metadata) else FileProbeResult.NotFile("网页")
+                },
+                downloadStarter = { _, request, _ ->
+                    capturedRequest.set(request)
+                    Result.success(DownloadTaskState.waiting(request))
+                },
+            )
+        }
+        fun identify(url: String) {
+            composeRule.runOnIdle {
+                hostContext.requireActivity().findViewById<EditText>(R.id.ytdl_url_input).setText(url)
+            }
+            composeRule.onNodeWithTag("ytdl-analyze-button").performClick()
+        }
+
+        identify(FirstUrl)
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("ytdl-download-filename").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("ytdl-download-mode").assertDoesNotExist()
+        composeRule.onNodeWithTag("ytdl-download-filename").performTextReplacement("备份.bin")
+        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-download-extension-warning"))
+        composeRule.onNodeWithTag("ytdl-download-extension-warning").assertExists()
+        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-download-conflict"))
+        composeRule.onNodeWithTag("ytdl-download-conflict").performClick()
+        composeRule.onNodeWithTag("ytdl-file-conflict-Ask").performClick()
+        composeRule.onNodeWithTag("ytdl-download-start").performClick()
+        assertEquals(null, capturedRequest.get())
+        composeRule.onNodeWithTag("ytdl-download-extension-confirm").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { capturedRequest.get() != null }
+        val request = capturedRequest.get()
+        assertEquals(DownloadRoute.HttpFile(metadata, "备份.bin", HttpFileConflictPolicy.Ask), request.route)
+        assertEquals(target, request.storageTarget)
+    }
+
+    @Test
+    fun onlyActiveClipboardPasteRunsRecognitionAndStreamManifestUsesMediaSubtitles() {
+        val capturedRequest = AtomicReference<DownloadRequest>()
+        val subtitle = SubtitleInfo("zh-Hans", "vtt")
+        val manifest = FileMetadata(FirstUrl, FirstUrl, "playlist.m3u8", "application/vnd.apple.mpegurl",
+            null, null, null, FileKind.Other, ResumeSupport.Unknown)
+        lateinit var hostContext: Context
+        composeRule.setContent {
+            hostContext = LocalContext.current
+            YtdlApp(
+                parserUpdateCoordinator = offlineParserCoordinator(),
+                analysisProvider = { _, _ -> Result.success(analysisNamed("媒体结果").copy(subtitles = listOf(subtitle))) },
+                fileProbeProvider = { FileProbeResult.FileFound(manifest) },
+                downloadStarter = { _, request, _ ->
+                    capturedRequest.set(request)
+                    Result.success(DownloadTaskState.waiting(request))
+                },
+            )
+        }
+        composeRule.runOnIdle {
+            val context = hostContext.requireActivity()
+            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("地址", FirstUrl))
+            assertEquals("", context.findViewById<EditText>(R.id.ytdl_url_input).text.toString())
+        }
+        composeRule.onNodeWithTag("ytdl-download-paste").performClick()
+        composeRule.runOnIdle {
+            assertEquals(FirstUrl, hostContext.requireActivity().findViewById<EditText>(R.id.ytdl_url_input).text.toString())
+        }
+        composeRule.onNodeWithTag("ytdl-analyze-button").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("ytdl-download-mode").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("ytdl-download-filename").assertDoesNotExist()
+        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-format-subtitle-toggle"))
+        composeRule.onNodeWithTag("ytdl-format-subtitle-toggle").performClick()
+        composeRule.onNodeWithTag("ytdl-subtitle-zh-Hans-manual").performClick()
+        composeRule.onNodeWithTag("ytdl-download-start").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { capturedRequest.get() != null }
+        assertEquals(listOf(subtitle), capturedRequest.get().selectedSubtitles)
+    }
+
     private fun runDownloadFlow(
         analysis: VideoAnalysis,
         formatRowTag: String,
@@ -249,12 +362,14 @@ class YtdlAppDownloadFlowTest {
         }
 
         composeRule.onNodeWithTag("ytdl-screen-download")
+            .performScrollToNode(hasTestTag("ytdl-download-format-toggle"))
+        composeRule.onNodeWithTag("ytdl-download-format-toggle").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-download")
             .performScrollToNode(hasTestTag(formatRowTag))
         composeRule.onNodeWithTag(formatRowTag).performClick()
 
-        composeRule.onNodeWithText(expectedSummary).assertExists()
-        composeRule.onNodeWithTag("ytdl-screen-download")
-            .performScrollToNode(hasTestTag("ytdl-download-start"))
+        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-format-summary"))
+        composeRule.onNodeWithText("实际下载：$expectedSummary").assertExists()
         composeRule.onNodeWithTag("ytdl-download-start")
             .assertIsEnabled()
             .performClick()

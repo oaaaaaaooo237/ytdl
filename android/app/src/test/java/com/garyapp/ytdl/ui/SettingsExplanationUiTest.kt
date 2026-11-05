@@ -40,7 +40,7 @@ class SettingsExplanationUiTest {
     @Test
     fun openSourceEntryShowsLicensesInsteadOfDefensiveStatements() {
         setQuietContent()
-        composeRule.onNodeWithText("CaptainFlash").assertExists()
+        composeRule.onNodeWithText("新建下载").assertExists()
         composeRule.onNodeWithText("v${com.garyapp.ytdl.BuildConfig.VERSION_NAME}").assertExists()
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")

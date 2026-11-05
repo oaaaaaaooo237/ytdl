@@ -443,7 +443,7 @@ class DownloadUiBridgeTest {
         ).readText()
 
         assertTrue(source.contains("state.activeStage !in TerminalDownloadStages"))
-        assertTrue(source.contains("if (hasCurrentTask)"))
+        assertTrue(source.contains(".filter(::shouldShowCurrentTask)"))
         assertTrue(source.contains("历史记录"))
         assertTrue(source.contains("当前阶段"))
     }

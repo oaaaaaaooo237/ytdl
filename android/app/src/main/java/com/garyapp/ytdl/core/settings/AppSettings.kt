@@ -7,7 +7,7 @@ data class AppSettings(
     val defaultStorageTarget: StorageTarget = StorageTarget.AppPrivate,
     val cookiesReference: CookiesReference? = null,
     val themeModeId: String = AppearanceSettings.ThemeModeSystem,
-    val colorPresetId: String = AppearanceSettings.ColorPresetReferenceV3,
+    val colorPresetId: String = AppearanceSettings.ColorPresetMorandi,
     val siteCookies: Map<String, SiteCookies> = emptyMap(),
     val maxConcurrentDownloads: Int = DefaultMaxConcurrentDownloads,
     val fileConflictPolicy: HttpFileConflictPolicy = HttpFileConflictPolicy.AutoRename,
@@ -24,6 +24,7 @@ object AppearanceSettings {
     const val ThemeModeLight = "light"
     const val ThemeModeDark = "dark"
 
+    const val ColorPresetMorandi = "morandi"
     const val ColorPresetReferenceV3 = "reference_v3"
     const val ColorPresetCodex = "codex"
 
@@ -34,7 +35,7 @@ object AppearanceSettings {
     )
 
     val colorPresetIds: Set<String> = setOf(
-        ColorPresetReferenceV3,
+        ColorPresetMorandi,
         ColorPresetCodex,
     )
 
@@ -45,7 +46,7 @@ object AppearanceSettings {
 
     fun normalizeColorPresetId(presetId: String?): String {
         val normalized = presetId?.trim()?.lowercase()
-        return if (normalized in colorPresetIds) normalized.orEmpty() else ColorPresetReferenceV3
+        return if (normalized in colorPresetIds) normalized.orEmpty() else ColorPresetMorandi
     }
 }
 

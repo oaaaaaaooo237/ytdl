@@ -1,7 +1,15 @@
 package com.garyapp.ytdl.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -52,13 +60,16 @@ data class YtdlAppPalette(
     val titleText: Color,
     val segmentedBackground: Color,
     val neutralText: Color,
+    val primaryActionText: Color = Color.White,
+    val controlActionText: Color = Color.White,
+    val actionContainer: Color = segmentedBackground,
 )
 
 fun ytdlColorPresets(): List<YtdlColorPreset> = listOf(
     YtdlColorPreset(
-        id = "reference_v3",
-        label = "基准图配色",
-        source = "docs/android-gui-reference-v3.png",
+        id = AppearanceSettings.ColorPresetMorandi,
+        label = "莫兰迪",
+        source = "docs/design/2026-11-05-download-revision/approved-a-tokens.json",
     ),
     YtdlColorPreset(
         id = "codex",
@@ -69,7 +80,7 @@ fun ytdlColorPresets(): List<YtdlColorPreset> = listOf(
 
 fun defaultYtdlThemeConfig(): YtdlThemeConfig = YtdlThemeConfig(
     mode = YtdlThemeMode.System,
-    colorPreset = ytdlColorPresets().first { it.id == "reference_v3" },
+    colorPreset = ytdlColorPresets().first { it.id == AppearanceSettings.ColorPresetMorandi },
 )
 
 fun themeConfigForSettings(settings: AppSettings): YtdlThemeConfig {
@@ -80,7 +91,7 @@ fun themeConfigForSettings(settings: AppSettings): YtdlThemeConfig {
     }
     val presetId = AppearanceSettings.normalizeColorPresetId(settings.colorPresetId)
     val preset = ytdlColorPresets().firstOrNull { it.id == presetId }
-        ?: ytdlColorPresets().first { it.id == AppearanceSettings.ColorPresetReferenceV3 }
+        ?: ytdlColorPresets().first { it.id == AppearanceSettings.ColorPresetMorandi }
     return YtdlThemeConfig(mode = mode, colorPreset = preset)
 }
 
@@ -90,12 +101,12 @@ fun ytdlAppPaletteForPreset(
 ): YtdlAppPalette {
     return when (AppearanceSettings.normalizeColorPresetId(presetId)) {
         AppearanceSettings.ColorPresetCodex -> if (darkTheme) YtdlCodexDarkPalette else YtdlCodexLightPalette
-        else -> if (darkTheme) YtdlReferenceV3DarkPalette else YtdlReferenceV3LightPalette
+        else -> if (darkTheme) MorandiDarkPalette else MorandiLightPalette
     }
 }
 
 val LocalYtdlAppPalette = staticCompositionLocalOf {
-    ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
+    ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetMorandi)
 }
 
 private val YtdlCompactTypography = Typography(
@@ -150,43 +161,89 @@ private val YtdlCompactTypography = Typography(
 
 internal fun ytdlCompactTypographyForUiTest(): Typography = YtdlCompactTypography
 
-private val YtdlReferenceV3LightColors = lightColorScheme(
-    primary = Color(0xFF2F5D50),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFCBE8D9),
-    onPrimaryContainer = Color(0xFF11382E),
-    secondary = Color(0xFF66577D),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE9DDF8),
-    onSecondaryContainer = Color(0xFF281A3A),
-    tertiary = Color(0xFF8A4D40),
-    onTertiary = Color.White,
-    background = Color(0xFFF8FAF6),
-    onBackground = Color(0xFF191D1A),
-    surface = Color(0xFFF8FAF6),
-    onSurface = Color(0xFF191D1A),
-    surfaceContainerHighest = Color(0xFFE4EAE2),
-    onSurfaceVariant = Color(0xFF424940),
+private val MorandiLightPalette = YtdlAppPalette(
+    appBackground = Color(0xFFF3F0EB),
+    bottomBarBackground = Color(0xFFFCFAF6),
+    cardBackground = Color(0xFFFCFAF6),
+    mutedCardBackground = Color(0xFFE0E7E4),
+    borderColor = Color(0xFFD8D9D1),
+    downloadAccent = Color(0xFF8B5860),
+    formatAccent = Color(0xFF536F73),
+    queueAccent = Color(0xFF8B5860),
+    historyAccent = Color(0xFF536F73),
+    settingsAccent = Color(0xFF8B5860),
+    successGreen = Color(0xFF536F73),
+    softText = Color(0xFF637071),
+    titleText = Color(0xFF323F40),
+    segmentedBackground = Color(0xFFE0E7E4),
+    neutralText = Color(0xFF323F40),
+    primaryActionText = Color(0xFFFFFDF7),
+    actionContainer = Color(0xFFF0E2E2),
+    controlActionText = Color(0xFFFFFDF7),
 )
 
-private val YtdlReferenceV3DarkColors = darkColorScheme(
-    primary = Color(0xFF9FD4BF),
-    onPrimary = Color(0xFF08372A),
-    primaryContainer = Color(0xFF1B4B3D),
-    onPrimaryContainer = Color(0xFFCBE8D9),
-    secondary = Color(0xFFD5C0ED),
-    onSecondary = Color(0xFF37264E),
-    secondaryContainer = Color(0xFF4E3E65),
-    onSecondaryContainer = Color(0xFFE9DDF8),
-    tertiary = Color(0xFFFFB4A4),
-    onTertiary = Color(0xFF522016),
-    background = Color(0xFF111411),
-    onBackground = Color(0xFFE1E4DE),
-    surface = Color(0xFF111411),
-    onSurface = Color(0xFFE1E4DE),
-    surfaceContainerHighest = Color(0xFF333A34),
-    onSurfaceVariant = Color(0xFFC3CBC0),
+private val MorandiLightColors = with(MorandiLightPalette) {
+    lightColorScheme(
+        primary = downloadAccent,
+        onPrimary = primaryActionText,
+        primaryContainer = actionContainer,
+        onPrimaryContainer = titleText,
+        secondary = formatAccent,
+        onSecondary = controlActionText,
+        secondaryContainer = segmentedBackground,
+        onSecondaryContainer = titleText,
+        background = appBackground,
+        onBackground = titleText,
+        surface = cardBackground,
+        onSurface = titleText,
+        surfaceVariant = mutedCardBackground,
+        onSurfaceVariant = softText,
+        outline = borderColor,
+        error = Color(0xFF9B4D4A),
+    )
+}
+
+private val MorandiDarkPalette = YtdlAppPalette(
+    appBackground = Color(0xFF232C30),
+    bottomBarBackground = Color(0xFF2B373B),
+    cardBackground = Color(0xFF2B373B),
+    mutedCardBackground = Color(0xFF3A4E50),
+    borderColor = Color(0xFF465458),
+    downloadAccent = Color(0xFFD7B2B7),
+    formatAccent = Color(0xFFB0C8C5),
+    queueAccent = Color(0xFFD7B2B7),
+    historyAccent = Color(0xFFB0C8C5),
+    settingsAccent = Color(0xFFD7B2B7),
+    successGreen = Color(0xFFB0C8C5),
+    softText = Color(0xFFB3BFBC),
+    titleText = Color(0xFFE4E6DF),
+    segmentedBackground = Color(0xFF3A4E50),
+    neutralText = Color(0xFFE4E6DF),
+    primaryActionText = Color(0xFF30292D),
+    actionContainer = Color(0xFF493B42),
+    controlActionText = Color(0xFF232C30),
 )
+
+private val MorandiDarkColors = with(MorandiDarkPalette) {
+    darkColorScheme(
+        primary = downloadAccent,
+        onPrimary = primaryActionText,
+        primaryContainer = actionContainer,
+        onPrimaryContainer = titleText,
+        secondary = formatAccent,
+        onSecondary = controlActionText,
+        secondaryContainer = segmentedBackground,
+        onSecondaryContainer = titleText,
+        background = appBackground,
+        onBackground = titleText,
+        surface = cardBackground,
+        onSurface = titleText,
+        surfaceVariant = mutedCardBackground,
+        onSurfaceVariant = softText,
+        outline = borderColor,
+        error = Color(0xFFE5ADA4),
+    )
+}
 
 private val YtdlCodexLightColors = lightColorScheme(
     primary = Color(0xFF315C6B),
@@ -226,42 +283,6 @@ private val YtdlCodexDarkColors = darkColorScheme(
     onSurfaceVariant = Color(0xFFCBC5BA),
 )
 
-private val YtdlReferenceV3LightPalette = YtdlAppPalette(
-    appBackground = Color(0xFFFFFCF7),
-    bottomBarBackground = Color(0xFFF8F0FB),
-    cardBackground = Color(0xFFFFFFFF),
-    mutedCardBackground = Color(0xFFF6F5F0),
-    borderColor = Color(0xFFE8E2DA),
-    downloadAccent = Color(0xFFFF5B55),
-    formatAccent = Color(0xFF138F88),
-    queueAccent = Color(0xFFFF7A1A),
-    historyAccent = Color(0xFF7357C8),
-    settingsAccent = Color(0xFF2E86DE),
-    successGreen = Color(0xFF18A15F),
-    softText = Color(0xFF5E625C),
-    titleText = Color(0xFF181B17),
-    segmentedBackground = Color(0xFFF1EEE8),
-    neutralText = Color(0xFF263447),
-)
-
-private val YtdlReferenceV3DarkPalette = YtdlAppPalette(
-    appBackground = Color(0xFF111411),
-    bottomBarBackground = Color(0xFF211B25),
-    cardBackground = Color(0xFF191D1A),
-    mutedCardBackground = Color(0xFF252B26),
-    borderColor = Color(0xFF333A34),
-    downloadAccent = Color(0xFFFFB4A4),
-    formatAccent = Color(0xFF9FD4BF),
-    queueAccent = Color(0xFFFFB77A),
-    historyAccent = Color(0xFFD5C0ED),
-    settingsAccent = Color(0xFFA9C7FF),
-    successGreen = Color(0xFF7DDCA5),
-    softText = Color(0xFFC3CBC0),
-    titleText = Color(0xFFE1E4DE),
-    segmentedBackground = Color(0xFF2C312C),
-    neutralText = Color(0xFFE1E4DE),
-)
-
 private val YtdlCodexLightPalette = YtdlAppPalette(
     appBackground = Color(0xFFFAF8F2),
     bottomBarBackground = Color(0xFFEFEDE7),
@@ -296,6 +317,8 @@ private val YtdlCodexDarkPalette = YtdlAppPalette(
     titleText = Color(0xFFE8E2D7),
     segmentedBackground = Color(0xFF383229),
     neutralText = Color(0xFFE8E2D7),
+    primaryActionText = Color(0xFF15130E),
+    controlActionText = Color(0xFF15130E),
 )
 
 @Composable
@@ -311,16 +334,34 @@ fun YtdlTheme(
 
     val colorScheme = when (config.colorPreset.id) {
         "codex" -> if (darkTheme) YtdlCodexDarkColors else YtdlCodexLightColors
-        else -> if (darkTheme) YtdlReferenceV3DarkColors else YtdlReferenceV3LightColors
+        else -> if (darkTheme) MorandiDarkColors else MorandiLightColors
     }
 
+    val view = LocalView.current
+    val window = view.context.findActivity()?.window
+    SideEffect {
+        if (window != null) {
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
+    val square = RoundedCornerShape(0)
     CompositionLocalProvider(
         LocalYtdlAppPalette provides ytdlAppPaletteForPreset(config.colorPreset.id, darkTheme),
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = YtdlCompactTypography,
+            shapes = Shapes(square, square, square, square, square),
             content = content,
         )
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

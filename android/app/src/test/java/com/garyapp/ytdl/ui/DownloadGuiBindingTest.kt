@@ -69,15 +69,15 @@ class DownloadGuiBindingTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun appRootSemanticsExposeReferencePaletteAccent() {
+    fun appRootMigratesReferencePaletteToApprovedMorandiAccent() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         SettingsRepository.fromContext(context).setColorPreset(AppearanceSettings.ColorPresetReferenceV3)
 
         composeRule.setContent { YtdlApp() }
 
         composeRule.onNodeWithTag("ytdl-screen-download")
-            .assert(SemanticsMatcher.expectValue(YtdlColorPresetIdKey, AppearanceSettings.ColorPresetReferenceV3))
-            .assert(SemanticsMatcher.expectValue(YtdlSettingsAccentArgbKey, "#FF2E86DE"))
+            .assert(SemanticsMatcher.expectValue(YtdlColorPresetIdKey, AppearanceSettings.ColorPresetMorandi))
+            .assert(SemanticsMatcher.expectValue(YtdlSettingsAccentArgbKey, "#FF8B5860"))
     }
 
     @Test
@@ -112,9 +112,19 @@ class DownloadGuiBindingTest {
             lateinit var hostContext: Context
             composeRule.setContent {
                 hostContext = LocalContext.current
-                YtdlApp()
+                YtdlApp(analysisProvider = { _, _ ->
+                    Result.success(analysisWith(progressiveFormat(id = "18", height = 360)))
+                })
             }
 
+            composeRule.runOnIdle {
+                hostContext.requireActivity().findViewById<EditText>(com.garyapp.ytdl.R.id.ytdl_url_input)
+                    .setText("https://example.com/watch")
+            }
+            composeRule.onNodeWithTag("ytdl-analyze-button").performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag("ytdl-download-identification").fetchSemanticsNodes().isNotEmpty()
+            }
             composeRule.onNodeWithTag("ytdl-screen-download")
                 .performScrollToNode(hasTestTag("ytdl-download-storage-target"))
             composeRule.onNodeWithTag("ytdl-download-storage-target")
@@ -166,7 +176,6 @@ class DownloadGuiBindingTest {
                     .findAll(source)
                     .count(),
             )
-            assertEquals(2, Regex("""subtitleMaxLines = 1""").findAll(source).count())
             assertFalse(source.contains("showStorageTargetDialog"))
             assertFalse(source.contains("ytdl-storage-target-dialog"))
         } finally {
@@ -209,9 +218,9 @@ class DownloadGuiBindingTest {
     fun navigationAccentsMatchReferenceAndCodexPalettes() {
         assertEquals(
             mapOf(
-                "下载" to "#FFFF5B55",
-                "任务" to "#FFFF7A1A",
-                "设置" to "#FF2E86DE",
+                "下载" to "#FF8B5860",
+                "任务" to "#FF8B5860",
+                "设置" to "#FF8B5860",
             ),
             ytdlNavigationAccentHexesForUiTest(AppearanceSettings.ColorPresetReferenceV3),
         )
@@ -288,10 +297,8 @@ class DownloadGuiBindingTest {
 
         assertTrue(source.contains("contentWindowInsets = WindowInsets.safeDrawing,"))
         assertTrue(source.contains("WindowInsets.navigationBars"))
-        assertTrue(source.contains("private val TopContentSpacing = 16.dp"))
-        val topContentSpacer = "item { Spacer(Modifier.height(TopContentSpacing)) }"
-        assertTrue(source.contains(topContentSpacer))
-        assertTrue(source.indexOf(topContentSpacer) < source.indexOf("item { PageHeader(selected) }"))
+        assertTrue(source.contains("contentPadding = PaddingValues(start = 18.dp, top = 14.dp"))
+        assertTrue(source.contains("item { PageHeader(selected) }"))
         assertFalse(source.contains("TopPunchHoleSafeArea"))
         assertFalse(source.contains("TopSafeAreaHeight"))
         assertFalse(source.contains("TopPunchHoleSize"))
@@ -313,8 +320,9 @@ class DownloadGuiBindingTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("YtdlQueueProgressBar("))
-        assertFalse(source.contains("LinearProgressIndicator("))
+        val queueCard = source.substringAfter("private fun QueueCard(").substringBefore("private fun TaskCardTitle(")
+        assertTrue(queueCard.contains("YtdlQueueProgressBar("))
+        assertFalse(queueCard.contains("LinearProgressIndicator("))
     }
 
     @Test
@@ -418,7 +426,7 @@ class DownloadGuiBindingTest {
 
     @Test
     fun passiveRuntimeMessagesDoNotOccupyDownloadLayout() {
-        assertFalse(shouldShowRuntimeMessageForUiTest("等待输入视频页面地址。"))
+        assertFalse(shouldShowRuntimeMessageForUiTest("等待输入下载链接。"))
         assertFalse(shouldShowRuntimeMessageForUiTest("分析完成，可以开始下载。"))
         assertTrue(shouldShowRuntimeMessageForUiTest("请先输入公开视频页面地址。"))
         assertTrue(shouldShowRuntimeMessageForUiTest("下载已加入队列，当前阶段：等待中。"))
@@ -476,7 +484,7 @@ class DownloadGuiBindingTest {
         val fieldSource = source
             .substringAfter("private fun UrlInputField(")
             .substringBefore("private fun DownloadPreviewCard(")
-        assertTrue(fieldSource.contains(".defaultMinSize(minHeight = 54.dp)"))
+        assertTrue(fieldSource.contains(".defaultMinSize(minHeight = 48.dp)"))
         assertTrue(fieldSource.contains("setSingleLine(false)"))
         assertTrue(fieldSource.contains("minLines = 1"))
         assertTrue(fieldSource.contains("maxLines = 5"))
@@ -484,7 +492,7 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun urlInputKeepsDarkTextOnItsLightSurfaceInDarkTheme() {
+    fun urlInputUsesApprovedDarkThemeForegroundAndHint() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         SettingsRepository.fromContext(context)
             .setThemeMode(AppearanceSettings.ThemeModeDark)
@@ -500,8 +508,8 @@ class DownloadGuiBindingTest {
             editText = hostContext.requireActivity().findViewById(com.garyapp.ytdl.R.id.ytdl_url_input)
         }
 
-        assertEquals(0xFF181B17.toInt(), editText.currentTextColor)
-        assertEquals(0xFF5E625C.toInt(), editText.hintTextColors.defaultColor)
+        assertEquals(0xFFE4E6DF.toInt(), editText.currentTextColor)
+        assertEquals(0xFFB3BFBC.toInt(), editText.hintTextColors.defaultColor)
     }
 
     @Test
@@ -582,9 +590,11 @@ class DownloadGuiBindingTest {
 
         renderDownloadPage(state)
 
+        composeRule.onNodeWithTag("test-download-list").performScrollToNode(hasTestTag("ytdl-download-mode"))
+        composeRule.onNodeWithTag("ytdl-download-mode").performClick()
         composeRule.onNodeWithTag("ytdl-download-mode-av").assertIsNotEnabled()
         composeRule.onNodeWithTag("ytdl-download-mode-video").assertIsEnabled()
-        composeRule.onNodeWithText("视频").assertExists()
+        composeRule.onNodeWithTag("ytdl-download-mode-video").assertExists()
     }
 
     @Test
@@ -603,9 +613,11 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithTag("test-download-list")
             .performScrollToNode(hasTestTag("ytdl-format-audio-card"))
         composeRule.onNodeWithText("音频格式").assertExists()
-        composeRule.onNodeWithTag("ytdl-format-video-resolution-line").assertIsNotEnabled()
-        composeRule.onNodeWithTag("ytdl-format-frame-rate-line").assertIsNotEnabled()
-        composeRule.onNodeWithTag("ytdl-format-video-codec-line").assertIsNotEnabled()
+        listOf("video-resolution", "frame-rate", "video-codec").forEach { option ->
+            val tag = "ytdl-format-$option-line"
+            composeRule.onNodeWithTag("test-download-list").performScrollToNode(hasTestTag(tag))
+            composeRule.onNodeWithTag(tag).assertIsNotEnabled()
+        }
         composeRule.onNodeWithTag("test-download-list")
             .performScrollToNode(hasTestTag("ytdl-format-summary"))
         composeRule.onNodeWithText("音频 M4A 单文件", substring = true).assertExists()

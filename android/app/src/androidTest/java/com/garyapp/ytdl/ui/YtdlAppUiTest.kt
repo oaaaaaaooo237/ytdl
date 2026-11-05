@@ -82,13 +82,13 @@ class YtdlAppUiTest {
     fun settingsAppearanceColorPresetsAreVisibleAndSummaryUpdates() {
         tapTag("ytdl-tab-settings")
         scrollUntilTag("ytdl-settings-color-preset-1")
-        assertTextContains("基准图配色", timeoutMs = 1_000)
+        assertTextContains("莫兰迪", timeoutMs = 1_000)
         assertTextContains("Codex 风格", timeoutMs = 1_000)
 
         try {
             tapTag("ytdl-settings-color-preset-0")
             scrollUntilTag("ytdl-settings-appearance-summary")
-            assertAppearanceSummaryContains("基准图配色")
+            assertAppearanceSummaryContains("莫兰迪")
             scrollUntilTag("ytdl-settings-color-preset-1")
             tapTag("ytdl-settings-color-preset-1")
             scrollUntilTag("ytdl-settings-appearance-summary")
@@ -618,9 +618,11 @@ class YtdlAppUiTest {
     ) {
         setTextTag("ytdl-url-input", url)
         tapTag("ytdl-analyze-button")
-        assertTextContains("分析完成", timeoutMs = 45_000)
+        assertTextContains("已识别", timeoutMs = 45_000)
         expectedTitleText?.let { assertTextContains(it, timeoutMs = 1_000) }
 
+        scrollUntilTag("ytdl-download-format-toggle")
+        tapTag("ytdl-download-format-toggle")
         scrollUntilTag("ytdl-format-row-1080")
         tapTag("ytdl-format-row-1080")
         scrollUntilTag("ytdl-download-start")
@@ -637,11 +639,13 @@ class YtdlAppUiTest {
         saveScreen("${screenshotPrefix}02-url.png")
 
         tapTag("ytdl-analyze-button")
-        assertTextContains("分析完成", timeoutMs = 45_000)
+        assertTextContains("已识别", timeoutMs = 45_000)
         expectedTitleText?.let { assertTextContains(it, timeoutMs = 1_000) }
         assertTagVisible("ytdl-thumbnail-image", timeoutMs = 15_000)
         saveScreen("${screenshotPrefix}03-analysis.png")
 
+        scrollUntilTag("ytdl-download-format-toggle")
+        tapTag("ytdl-download-format-toggle")
         scrollUntilTag("ytdl-format-row-1080")
         assertTextContains("1080p", timeoutMs = 1_000)
         assertTextContains("需原生合并", timeoutMs = 1_000)

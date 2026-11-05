@@ -2,6 +2,7 @@ package com.garyapp.ytdl.ui
 
 import android.Manifest
 import com.garyapp.ytdl.core.settings.cookiesForUrl
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -33,6 +34,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +75,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -92,6 +96,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -122,6 +127,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.garyapp.ytdl.BuildConfig
 import com.garyapp.ytdl.R
+import com.garyapp.ytdl.core.files.FileKind
+import com.garyapp.ytdl.core.files.FileProbeResult
+import com.garyapp.ytdl.core.files.HttpFileProbe
+import com.garyapp.ytdl.core.policy.UrlPolicy
 import com.garyapp.ytdl.core.settings.AppSettings
 import com.garyapp.ytdl.core.settings.AppearanceSettings
 import com.garyapp.ytdl.core.settings.CookiesReference as SettingsCookiesReference
@@ -129,6 +138,8 @@ import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.storage.StorageTargets
 import com.garyapp.ytdl.core.ytdlp.AnalysisErrorCategory
+import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
 import com.garyapp.ytdl.core.ytdlp.VideoAnalysis
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
 import com.garyapp.ytdl.core.ytdlp.YtdlpAnalysisException
@@ -184,10 +195,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetReferenceV3)
+private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetMorandi)
+private val BottomBarGestureBuffer = 4.dp
 private val HistoryFailureRed = Color(0xFFFF5B63)
 
-private const val DefaultRuntimeMessage = "等待输入视频页面地址。"
+private const val DefaultRuntimeMessage = "等待输入下载链接。"
 private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始下载。"
 private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
 private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
@@ -196,10 +208,8 @@ private const val HistoryThumbnailPlaceholderTag = "ytdl-history-thumbnail-place
 private const val HistoryThumbnailTargetPx = 160
 private const val HistoryThumbnailCacheMaxItems = 64
 private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
-private val TopContentSpacing = 16.dp
 private val CardPillBadgeMinWidth = 60.dp
 private val CardPillBadgeMinHeight = 28.dp
-private val BottomBarGestureBuffer = 32.dp
 private val SettingsAppearanceBottomBuffer = 96.dp
 private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
     checker = ParserUpdateChecker.forCurrentVersion(
@@ -260,6 +270,43 @@ private fun tabIcon(name: String, draw: PathBuilder.() -> Unit): ImageVector =
     ).apply {
         path(fill = SolidColor(Color.Black)) { draw() }
     }.build()
+
+private val ClipboardIcon = tabIcon("Clipboard") {
+    moveTo(7f, 4f)
+    lineTo(9f, 4f)
+    lineTo(9f, 2f)
+    lineTo(15f, 2f)
+    lineTo(15f, 4f)
+    lineTo(19f, 4f)
+    lineTo(19f, 22f)
+    lineTo(5f, 22f)
+    lineTo(5f, 4f)
+    close()
+    moveTo(7f, 6f)
+    lineTo(7f, 20f)
+    lineTo(17f, 20f)
+    lineTo(17f, 6f)
+    lineTo(15f, 6f)
+    lineTo(15f, 8f)
+    lineTo(9f, 8f)
+    lineTo(9f, 6f)
+    close()
+    moveTo(10f, 4f)
+    lineTo(10f, 6f)
+    lineTo(14f, 6f)
+    lineTo(14f, 4f)
+    close()
+    moveTo(9f, 11f)
+    lineTo(15f, 11f)
+    lineTo(15f, 13f)
+    lineTo(9f, 13f)
+    close()
+    moveTo(9f, 15f)
+    lineTo(15f, 15f)
+    lineTo(15f, 17f)
+    lineTo(9f, 17f)
+    close()
+}
 
 private val DownloadTabIcon = tabIcon("DownloadTab") {
     moveTo(11f, 4f)
@@ -609,6 +656,9 @@ data class YtdlDestination(
 internal data class RuntimeDownloadState(
     val url: String = "",
     val analysis: VideoAnalysis? = null,
+    val fileSelection: FileDownloadSelection? = null,
+    val selectedSubtitles: List<SubtitleInfo> = emptyList(),
+    val isStarting: Boolean = false,
     val activeRequest: DownloadRequest? = null,
     val activeStage: DownloadStage = DownloadStage.Idle,
     val formatSelection: FormatSelection = FormatSelection(),
@@ -698,15 +748,15 @@ private fun ytdlNavigationDestinations(palette: YtdlAppPalette): List<YtdlDestin
     YtdlDestination(
         route = "download",
         label = "下载",
-        title = "CaptainFlash",
-        summary = "粘贴视频页面地址，分析后再开始保存。",
+        title = "新建下载",
+        summary = "识别链接后，显示对应的下载选项",
         icon = DownloadTabIcon,
         accent = palette.downloadAccent,
     ),
     YtdlDestination(
         route = "tasks",
         label = "任务",
-        title = "任务",
+        title = "全部任务",
         summary = "查看当前、等待和历史任务。",
         icon = QueueTabIcon,
         accent = palette.queueAccent,
@@ -730,7 +780,7 @@ internal fun ytdlNavigationAccentHexesForUiTest(
         .associate { destination -> destination.label to colorArgbHexForUiTest(destination.accent) }
 }
 fun ytdlVisibleContentLabels(): Map<String, List<String>> = mapOf(
-    "download" to listOf("粘贴视频页面地址", "分析", "等待分析", "下载模式", "视频+音频", "视频", "音频", "分辨率", "视频编码", "容器格式", "保存位置", "开始下载"),
+    "download" to listOf("粘贴媒体链接或文件直链", "识别", "下载内容", "视频+音频", "视频", "音频", "分辨率", "视频编码", "容器格式", "字幕", "保存文件名", "重名处理", "保存位置", "开始下载"),
     "tasks" to listOf("当前任务", "等待中", "搜索历史", "全部", "视频", "音频", "暂无历史记录", "完成下载后会显示"),
     "settings" to listOf("保存位置", "恢复默认路径", "Cookies 文件", "解析器版本", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "App 私有目录", "外观与颜色", "Codex 风格", "开源声明"),
 )
@@ -746,6 +796,7 @@ internal fun YtdlApp(
     downloadCacheFactory: (Context) -> DownloadCacheControl = ::createDownloadCacheControl,
     downloadCacheExecutor: Executor = ProcessDownloadCacheExecutor,
     analysisProvider: ((String, String?) -> Result<VideoAnalysis>)? = null,
+    fileProbeProvider: ((String) -> FileProbeResult)? = null,
     downloadStarter: (Context, DownloadRequest, File) -> Result<DownloadTaskState> =
         DownloadCoordinator::startForegroundDownload,
     retryDraftStoreOverride: RetryDraftStore? = null,
@@ -761,6 +812,9 @@ internal fun YtdlApp(
     val currentSelectedRoute by rememberUpdatedState(selectedRoute)
     var runtimeState by remember { mutableStateOf(RuntimeDownloadState()) }
     val analysisRequestRevision = remember { AtomicLong(0L) }
+    var showAdvancedFormats by rememberSaveable { mutableStateOf(false) }
+    var confirmExtensionChange by remember { mutableStateOf(false) }
+    var activeDownloadStates by remember { mutableStateOf(emptyMap<String, DownloadTaskState>()) }
     var historyQuery by rememberSaveable { mutableStateOf("") }
     var historyFilterIndex by rememberSaveable { mutableStateOf(0) }
     val settingsRepository = remember { SettingsRepository.fromContext(context.applicationContext) }
@@ -1009,7 +1063,6 @@ internal fun YtdlApp(
                     parserOperationRunning = state.isRunning
                     parserOperationMessage = state.message
                     if (state.explanationTitle != null && state.message != null) {
-                        runtimeState = runtimeState.copy(userMessage = state.message)
                         settingsExplanation = SettingsExplanation(state.explanationTitle, state.message)
                     }
                 }
@@ -1037,6 +1090,9 @@ internal fun YtdlApp(
                 }
             }
         }
+        val activeSubscription = DownloadCoordinator.addActiveListener { states ->
+            mainHandler.post { if (!disposed) activeDownloadStates = states }
+        }
         val pendingSubscription = DownloadCoordinator.addPendingListener { requests ->
             mainHandler.post {
                 pendingDownloadRequests = requests
@@ -1051,7 +1107,9 @@ internal fun YtdlApp(
             versionOperationSubscription.close()
             parserSubscription.close()
             subscription.close()
+            activeSubscription.close()
             pendingSubscription.close()
+            analysisRequestRevision.incrementAndGet()
             savedSubscription.close()
         }
     }
@@ -1070,11 +1128,11 @@ internal fun YtdlApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    fun loadThumbnail(thumbnailUrl: String) {
+    fun loadThumbnail(thumbnailUrl: String, requestRevision: Long) {
         Thread {
             val bitmap = loadThumbnailBitmap(thumbnailUrl)
             mainHandler.post {
-                if (runtimeState.analysis?.thumbnailUrl == thumbnailUrl) {
+                if (analysisRequestRevision.get() == requestRevision && runtimeState.analysis?.thumbnailUrl == thumbnailUrl) {
                     runtimeState = runtimeState.copy(
                         thumbnailBitmap = bitmap,
                         thumbnailStatus = if (bitmap != null) "预览图已加载" else "预览图加载失败",
@@ -1084,44 +1142,94 @@ internal fun YtdlApp(
         }.start()
     }
 
+    fun replaceUrl(updatedUrl: String) {
+        if (updatedUrl == runtimeState.url) return
+        analysisRequestRevision.incrementAndGet()
+        confirmExtensionChange = false
+        showAdvancedFormats = false
+        runtimeState = runtimeState.withNewUrl(updatedUrl)
+    }
+
+    fun pasteDownloadUrl() {
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+        val pasted = runCatching { clipboard?.primaryClip?.getItemAt(0)?.text?.toString()?.trim() }.getOrNull()
+        if (pasted.isNullOrBlank()) {
+            runtimeState = runtimeState.copy(userMessage = "剪贴板中没有链接文本。")
+        } else {
+            replaceUrl(pasted)
+        }
+    }
+
     fun analyzeUrl(
         requestedUrl: String,
         retryDraft: RetryDownloadDraft? = null,
     ) {
         val url = requestedUrl.trim()
-        if (url.isBlank()) {
-            runtimeState = runtimeState.copy(userMessage = "请先输入视频页面地址。")
+        val policy = UrlPolicy.evaluate(url)
+        if (!policy.isAllowed) {
+            val error = if (url.isBlank()) "请先输入下载链接。" else "请输入有效的 HTTP 或 HTTPS 下载链接。"
+            runtimeState = runtimeState.copy(userMessage = error)
             return
         }
         val requestRevision = analysisRequestRevision.incrementAndGet()
-        runtimeState = runtimeState.copy(
-            url = url,
+        val settings = appSettings
+        confirmExtensionChange = false
+        showAdvancedFormats = false
+        runtimeState = runtimeState.withNewUrl(url).copy(
             isAnalyzing = true,
-            userMessage = if (retryDraft == null) "正在分析地址..." else "正在重新分析原地址...",
-            analysis = null,
-            formatSelection = FormatSelection(),
-            appliedFormatSelection = FormatSelection(),
-            thumbnailBitmap = null,
-            thumbnailStatus = "",
+            userMessage = DefaultRuntimeMessage,
         )
         Thread {
-            val temporaryCookiesResult = prepareTemporaryCookiesForDownload(
-                settingsReference = settingsRepository.getSettings().cookiesForUrl(url),
-                context = context.applicationContext,
-                taskId = "analyze-${System.currentTimeMillis()}",
-            )
-            if (temporaryCookiesResult.isFailure) {
+            val retryFileRoute = retryDraft?.route as? DownloadRoute.HttpFile
+            val probe = if (retryDraft == null || retryFileRoute != null) {
+                when {
+                    fileProbeProvider != null -> fileProbeProvider(url)
+                    analysisProvider == null -> HttpFileProbe().probe(url)
+                    else -> null
+                }
+            } else null
+            if (probe is FileProbeResult.FileFound && (retryFileRoute != null || !probe.metadata.isStreamManifest())) {
+                val metadata = probe.metadata
+                val selection = FileDownloadSelection(
+                    metadata = metadata,
+                    fileName = retryFileRoute?.fileName ?: metadata.fileName,
+                    conflictPolicy = retryFileRoute?.conflictPolicy ?: settings.fileConflictPolicy,
+                )
                 mainHandler.post {
                     if (analysisRequestRevision.get() == requestRevision) {
                         runtimeState = runtimeState.copy(
+                            fileSelection = selection,
                             isAnalyzing = false,
-                            userMessage = "cookies 文件读取失败，请重新选择 cookies 文件。",
+                            userMessage = DefaultRuntimeMessage,
                         )
                     }
                 }
                 return@Thread
             }
-            val temporaryCookies = temporaryCookiesResult.getOrNull()
+            if (analysisRequestRevision.get() != requestRevision) return@Thread
+            if (retryFileRoute != null) {
+                mainHandler.post {
+                    if (analysisRequestRevision.get() == requestRevision) {
+                        runtimeState = runtimeState.copy(isAnalyzing = false, userMessage = "无法重新识别原文件，请检查链接。")
+                    }
+                }
+                return@Thread
+            }
+            val temporaryCookies = prepareTemporaryCookiesForDownload(
+                settingsReference = settings.cookiesForUrl(url),
+                context = context.applicationContext,
+                taskId = "analyze-$requestRevision-${System.nanoTime()}",
+            ).getOrElse {
+                mainHandler.post {
+                    if (analysisRequestRevision.get() == requestRevision) {
+                        runtimeState = runtimeState.copy(
+                            isAnalyzing = false,
+                            userMessage = "Cookies 文件读取失败，请重新选择文件。",
+                        )
+                    }
+                }
+                return@Thread
+            }
             val result = try {
                 analysisProvider?.invoke(url, temporaryCookies?.file?.absolutePath)
                     ?: bridge.analyze(url, temporaryCookies?.file?.absolutePath)
@@ -1129,9 +1237,7 @@ internal fun YtdlApp(
                 temporaryCookies?.delete()
             }
             mainHandler.post {
-                if (analysisRequestRevision.get() != requestRevision) {
-                    return@post
-                }
+                if (analysisRequestRevision.get() != requestRevision) return@post
                 runtimeState = result.fold(
                     onSuccess = { analysis ->
                         val analyzed = runtimeState.withAnalysisResult(analysis)
@@ -1140,101 +1246,84 @@ internal fun YtdlApp(
                         } else {
                             val restoredSelection = retryFormatSelection(analysis, retryDraft)
                             selectedRoute = "download"
+                            showAdvancedFormats = true
                             analyzed.copy(
                                 formatSelection = restoredSelection,
                                 appliedFormatSelection = restoredSelection,
-                                userMessage = "原地址已重新分析，请确认或调整下载格式。",
+                                userMessage = "原地址已重新识别，请确认下载格式。",
                             )
                         }
                     },
                     onFailure = { error ->
-                        runtimeState.copy(
-                            isAnalyzing = false,
-                            userMessage = analysisFailureMessage(error),
-                        )
+                        runtimeState.copy(isAnalyzing = false, userMessage = analysisFailureMessage(error))
                     },
                 )
-                runtimeState.analysis?.thumbnailUrl
-                    ?.takeIf { it.isNotBlank() && runtimeState.thumbnailBitmap == null }
-                    ?.let(::loadThumbnail)
+                runtimeState.analysis?.thumbnailUrl?.takeIf { it.isNotBlank() }?.let { loadThumbnail(it, requestRevision) }
             }
         }.start()
     }
 
-    fun analyzeCurrentUrl() {
-        analyzeUrl(runtimeState.url)
-    }
-
-    fun startRealDownload() {
-        if (!canStartDownload(runtimeState)) {
-            runtimeState = runtimeState.copy(
-                userMessage = "请先分析视频页面地址。",
-            )
+    fun startRealDownload(extensionConfirmed: Boolean = false) {
+        if (!canStartDownload(runtimeState)) return
+        val captured = runtimeState
+        val fileSelection = captured.fileSelection
+        if (fileSelection?.extensionChanged == true && !extensionConfirmed) {
+            confirmExtensionChange = true
             return
         }
-        val url = runtimeState.url.trim()
-        val selectedCookies = settingsRepository.getSettings().cookiesForUrl(url)
-        val temporaryCookies = prepareTemporaryCookiesForDownload(
-            settingsReference = selectedCookies,
-            context = context.applicationContext,
-            taskId = "download-${System.currentTimeMillis()}",
-        ).getOrElse {
-            runtimeState = runtimeState.copy(
-                isDownloading = false,
-                userMessage = "cookies 文件读取失败，请重新选择 cookies 文件。",
-            )
-            return
-        }
-        val requestResult = buildAppliedDownloadRequest(
-            url = url,
-            analysis = runtimeState.analysis,
-            appliedSelection = runtimeState.appliedFormatSelection,
-            selectedSubtitles = emptyList(),
-            cookiesPath = temporaryCookies?.file?.absolutePath,
-        )
-        if (requestResult.isFailure) {
-            temporaryCookies?.delete()
-            runtimeState = runtimeState.copy(
-                isDownloading = false,
-                userMessage = downloadRequestFailureMessage(requestResult.exceptionOrNull()),
-            )
-            return
-        }
-        val request = requestResult.getOrThrow().copy(
-            storageTarget = settingsRepository.getSettings().defaultStorageTarget,
-            pinnedCookiesReference = selectedCookies,
-            cookiesSelectionPinned = true,
-        )
-        val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
+        val settings = appSettings
+        val target = settings.defaultStorageTarget
+        val revision = analysisRequestRevision.get()
+        runtimeState = runtimeState.copy(isStarting = true, userMessage = DefaultRuntimeMessage)
         Thread {
-        val startResult = downloadStarter(context.applicationContext, request, outputDir)
-        mainHandler.post {
-        runtimeState = startResult.fold(
-            onSuccess = { waiting ->
-                runtimeState.withAcceptedDownload(waiting)
-            },
-            onFailure = { _ ->
-                temporaryCookies?.delete()
-                if (runtimeState.isDownloading) {
-                    runtimeState.copy(userMessage = "加入等待队列失败，请稍后重试。")
-                } else {
-                    runtimeState.withPipelineState(DownloadTaskState.idle()).copy(
-                        isDownloading = false,
-                        userMessage = "启动前台下载失败，请检查系统权限。",
+            val url = captured.url.trim()
+            val selectedCookies = if (fileSelection == null) settings.cookiesForUrl(url) else null
+            val cookiesResult = prepareTemporaryCookiesForDownload(
+                settingsReference = selectedCookies,
+                context = context.applicationContext,
+                taskId = "download-${System.nanoTime()}",
+            )
+            val temporaryCookies = cookiesResult.getOrNull()
+            val requestResult = if (fileSelection != null) {
+                runCatching { requireNotNull(fileSelection.request(target)) }
+            } else {
+                cookiesResult.mapCatching {
+                    buildAppliedDownloadRequest(
+                        url = url,
+                        analysis = captured.analysis,
+                        appliedSelection = captured.appliedFormatSelection,
+                        selectedSubtitles = captured.selectedSubtitles,
+                        cookiesPath = temporaryCookies?.file?.absolutePath,
+                    ).getOrThrow().copy(
+                        storageTarget = target,
+                        pinnedCookiesReference = selectedCookies,
+                        cookiesSelectionPinned = true,
                     )
                 }
-            },
-        )
-        }
+            }
+            val startResult = requestResult.getOrNull()?.let {
+                val outputDir = File(context.filesDir, "gui-downloads").apply { mkdirs() }
+                downloadStarter(context.applicationContext, it, outputDir)
+            }
+            if (startResult?.isSuccess != true) temporaryCookies?.delete()
+            mainHandler.post {
+                runtimeState = runtimeState.copy(isStarting = false)
+                if (analysisRequestRevision.get() != revision) return@post
+                runtimeState = when {
+                    startResult?.isSuccess == true -> runtimeState.withAcceptedDownload(startResult.getOrThrow())
+                    cookiesResult.isFailure -> runtimeState.copy(userMessage = "Cookies 文件读取失败，请重新选择文件。")
+                    requestResult.isFailure -> runtimeState.copy(
+                        userMessage = if (fileSelection != null) "文件名不可用。" else
+                            downloadRequestFailureMessage(requestResult.exceptionOrNull()),
+                    )
+                    else -> runtimeState.copy(userMessage = "无法启动下载，请检查系统权限后重试。")
+                }
+            }
         }.start()
     }
 
     fun reanalyzeRetryDraft(draft: RetryDownloadDraft) {
-        if (draft.route is DownloadRoute.HttpFile) {
-            selectedRoute = "download"
-            runtimeState = runtimeState.copy(url = draft.url, userMessage = "文件下载需要重新确认文件信息。")
-            return
-        }
+        if (draft.route is DownloadRoute.HttpFile) selectedRoute = "download"
         analyzeUrl(requestedUrl = draft.url, retryDraft = draft)
     }
 
@@ -1385,11 +1474,8 @@ internal fun YtdlApp(
         runtimeState = runtimeState.copy(
             formatSelection = selection,
             appliedFormatSelection = selection,
-            userMessage = if (runtimeState.analysis == null) {
-                "已切换下载模式：${mode.label}，请先分析地址以获取可用格式。"
-            } else {
-                "已切换下载模式：${formatSelectionSummary(runtimeState.analysis, selection)}。"
-            },
+            selectedSubtitles = if (mode == FormatMode.AudioOnly) emptyList() else runtimeState.selectedSubtitles,
+            userMessage = DefaultRuntimeMessage,
         )
     }
 
@@ -1403,11 +1489,16 @@ internal fun YtdlApp(
             containerColor = palette.appBackground,
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
-                YtdlBottomBar(
-                    destinations = destinations,
-                    selectedRoute = selected.route,
-                    onSelected = ::selectRoute,
-                )
+                Column(Modifier.background(palette.appBackground)) {
+                    if (selected.route == "download") {
+                        DownloadStartButton(runtimeState, onClick = { startRealDownload() })
+                    }
+                    YtdlBottomBar(
+                        destinations = destinations,
+                        selectedRoute = selected.route,
+                        onSelected = ::selectRoute,
+                    )
+                }
             },
         ) { innerPadding ->
             Box(
@@ -1428,32 +1519,23 @@ internal fun YtdlApp(
                             ytdlSettingsAccentArgb = colorArgbHexForUiTest(palette.settingsAccent)
                         }
                         .testTag("ytdl-screen-${selected.route}"),
-                    contentPadding = PaddingValues(start = 16.dp, top = 22.dp, end = 16.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(start = 18.dp, top = 14.dp, end = 18.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    item { Spacer(Modifier.height(TopContentSpacing)) }
                     item { PageHeader(selected) }
                     when (selected.route) {
                         "download" -> downloadPageItems(
                             state = runtimeState,
                             storageTarget = appSettings.defaultStorageTarget,
-                            onUrlChange = { updatedUrl ->
-                                if (updatedUrl != runtimeState.url) {
-                                    analysisRequestRevision.incrementAndGet()
-                                    runtimeState = runtimeState.copy(
-                                        url = updatedUrl,
-                                        isAnalyzing = false,
-                                        userMessage = DefaultRuntimeMessage,
-                                        analysis = null,
-                                        formatSelection = FormatSelection(),
-                                        appliedFormatSelection = FormatSelection(),
-                                        thumbnailBitmap = null,
-                                        thumbnailStatus = "",
-                                    )
-                                }
-                            },
-                            onAnalyze = ::analyzeCurrentUrl,
-                            onStartDownload = ::startRealDownload,
+                            onUrlChange = ::replaceUrl,
+                            onAnalyze = { analyzeUrl(runtimeState.url) },
+                            onStartDownload = { startRealDownload() },
+                            onPaste = ::pasteDownloadUrl,
+                            showAdvancedFormats = showAdvancedFormats,
+                            onToggleAdvancedFormats = { showAdvancedFormats = !showAdvancedFormats },
+                            onFileSelectionChange = { runtimeState = runtimeState.copy(fileSelection = it) },
+                            onSubtitlesChange = { runtimeState = runtimeState.copy(selectedSubtitles = it) },
+                            includeInlineStart = false,
                             onModeSelected = ::selectDownloadMode,
                             onSelectStorageTarget = { storageTreePicker.launch(null) },
                             onFormatSelectionChange = { selection ->
@@ -1463,6 +1545,7 @@ internal fun YtdlApp(
                         "tasks" -> tasksPageItems(
                             state = runtimeState,
                             pendingRequests = pendingDownloadRequests,
+                            activeStates = activeDownloadStates,
                             historyItems = historyItems,
                             historyQuery = historyQuery,
                             selectedFilterIndex = historyFilterIndex,
@@ -1547,6 +1630,24 @@ internal fun YtdlApp(
                     }
                 }
             }
+        }
+        if (confirmExtensionChange) {
+            AlertDialog(
+                modifier = Modifier.semantics { testTagsAsResourceId = true },
+                onDismissRequest = { confirmExtensionChange = false },
+                title = { Text("确认更改扩展名") },
+                text = { Text("将保存为 ${runtimeState.fileSelection?.fileName.orEmpty()}。更改扩展名可能影响打开方式。") },
+                confirmButton = {
+                    TextButton(
+                        modifier = Modifier.testTag("ytdl-download-extension-confirm"),
+                        onClick = {
+                            confirmExtensionChange = false
+                            startRealDownload(extensionConfirmed = true)
+                        },
+                    ) { Text("确认下载") }
+                },
+                dismissButton = { TextButton(onClick = { confirmExtensionChange = false }) { Text("返回修改") } },
+            )
         }
         if (showDownloadCacheConfirmation) {
             AlertDialog(
@@ -1831,10 +1932,25 @@ internal fun HistoryDeleteDialog(
 
 internal fun RuntimeDownloadState.withAnalysisForUiTest(analysis: VideoAnalysis): RuntimeDownloadState = withAnalysisResult(analysis)
 
+private fun RuntimeDownloadState.withNewUrl(url: String): RuntimeDownloadState = copy(
+    url = url,
+    analysis = null,
+    fileSelection = null,
+    selectedSubtitles = emptyList(),
+    formatSelection = FormatSelection(),
+    appliedFormatSelection = FormatSelection(),
+    thumbnailBitmap = null,
+    thumbnailStatus = "",
+    isAnalyzing = false,
+    userMessage = DefaultRuntimeMessage,
+)
+
 private fun RuntimeDownloadState.withAnalysisResult(analysis: VideoAnalysis): RuntimeDownloadState {
     val freshSelection = defaultFormatSelection(analysis)
     return copy(
         analysis = analysis,
+        fileSelection = null,
+        selectedSubtitles = emptyList(),
         formatSelection = freshSelection,
         appliedFormatSelection = freshSelection,
         thumbnailBitmap = null,
@@ -1866,14 +1982,9 @@ private fun RuntimeDownloadState.withAcceptedDownload(state: DownloadTaskState):
     } else {
         withForegroundStartState(state)
     }
-    return accepted.copy(
-        url = "",
-        analysis = null,
-        formatSelection = FormatSelection(),
-        appliedFormatSelection = FormatSelection(),
+    return accepted.withNewUrl("").copy(
+        userMessage = accepted.userMessage,
         thumbnailBitmap = if (isDownloading) null else accepted.thumbnailBitmap,
-        thumbnailStatus = "",
-        isAnalyzing = false,
     )
 }
 
@@ -2104,7 +2215,7 @@ private fun YtdlBottomBar(
         .calculateBottomPadding()
     Surface(
         color = palette.bottomBarBackground,
-        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, palette.borderColor),
     ) {
         Row(
             modifier = Modifier
@@ -2115,7 +2226,7 @@ private fun YtdlBottomBar(
                     top = 7.dp,
                     end = 10.dp,
                     bottom = 7.dp + navigationBottomPadding + BottomBarGestureBuffer,
-                ),
+                ).selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2125,22 +2236,21 @@ private fun YtdlBottomBar(
                     modifier = Modifier
                         .weight(1f)
                         .defaultMinSize(minHeight = 48.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(if (selected) destination.accent.copy(alpha = 0.14f) else Color.Transparent)
                         .testTag("ytdl-tab-${destination.route}")
-                        .clickable { onSelected(destination.route) }
+                        .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.Tab) { onSelected(destination.route) }
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(1.dp),
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(width = 32.dp, height = 22.dp),
+                            .size(width = 60.dp, height = 26.dp)
+                            .background(if (selected) palette.actionContainer else Color.Transparent),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = destination.icon,
-                            contentDescription = destination.label,
+                            contentDescription = null,
                             tint = if (selected) destination.accent else palette.neutralText,
                             modifier = Modifier.size(20.dp),
                         )
@@ -2181,20 +2291,6 @@ private fun PageHeader(destination: YtdlDestination) {
                     Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
                         color = palette.softText, modifier = Modifier.testTag("captainflash-version"))
                 }
-            }
-            if (destination.route == "download") {
-                Text(
-                    text = "?",
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .border(1.dp, palette.borderColor, CircleShape)
-                        .padding(top = 2.dp),
-                    textAlign = TextAlign.Center,
-                    color = palette.softText,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
             }
         }
         Text(
@@ -2283,125 +2379,195 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     onModeSelected: (FormatMode) -> Unit,
     onSelectStorageTarget: () -> Unit,
     onFormatSelectionChange: (FormatSelection) -> Unit = {},
+    onPaste: () -> Unit = {},
+    showAdvancedFormats: Boolean = true,
+    onToggleAdvancedFormats: () -> Unit = {},
+    onFileSelectionChange: (FileDownloadSelection) -> Unit = {},
+    onSubtitlesChange: (List<SubtitleInfo>) -> Unit = {},
+    includeInlineStart: Boolean = true,
 ) {
-    val modeSelections = downloadModeSelections(state)
-    val modeAvailability = FormatMode.entries.associateWith { mode ->
-        state.analysis == null || isFormatModeAvailable(state.analysis, mode)
-    }
     item {
         val palette = LocalYtdlAppPalette.current
         val showKeyboardOnFocus = shouldShowUrlInputKeyboardOnFocus(LocalConfiguration.current.keyboard)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             UrlInputField(
                 value = state.url,
                 onValueChange = onUrlChange,
                 showKeyboardOnFocus = showKeyboardOnFocus,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("ytdl-url-input"),
+                modifier = Modifier.weight(1f).testTag("ytdl-url-input"),
             )
+            Button(
+                onClick = onPaste,
+                modifier = Modifier.size(48.dp).testTag("ytdl-download-paste"),
+                shape = RectangleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.segmentedBackground, contentColor = palette.formatAccent),
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                Icon(ClipboardIcon, contentDescription = "从剪贴板获取")
+            }
             Button(
                 onClick = onAnalyze,
-                enabled = !state.isAnalyzing,
-                modifier = Modifier.testTag("ytdl-analyze-button"),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = palette.downloadAccent),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                enabled = state.url.isNotBlank() && !state.isAnalyzing,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("ytdl-analyze-button"),
+                shape = RectangleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.formatAccent, contentColor = palette.controlActionText),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                Text(if (state.isAnalyzing) "分析中" else "分析", fontWeight = FontWeight.Bold)
+                Text(if (state.isAnalyzing) "识别中" else "识别", fontWeight = FontWeight.Bold)
             }
         }
     }
-    item { DownloadPreviewCard(state) }
     if (shouldShowRuntimeMessage(state.userMessage)) {
-        item {
-            RuntimeMessageCard(state.userMessage)
-        }
+        item { RuntimeMessageCard(state.userMessage) }
     }
-    item {
-        SectionTitle("下载模式")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ModeCard(
-                "▣",
-                FormatMode.VideoAndAudio.label,
-                selected = modeSelections[FormatMode.VideoAndAudio] == true,
-                enabled = modeAvailability[FormatMode.VideoAndAudio] == true,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable(enabled = modeAvailability[FormatMode.VideoAndAudio] == true) { onModeSelected(FormatMode.VideoAndAudio) }
-                    .testTag("ytdl-download-mode-av"),
-            )
-            ModeCard(
-                "▤",
-                FormatMode.VideoOnly.label,
-                selected = modeSelections[FormatMode.VideoOnly] == true,
-                enabled = modeAvailability[FormatMode.VideoOnly] == true,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable(enabled = modeAvailability[FormatMode.VideoOnly] == true) { onModeSelected(FormatMode.VideoOnly) }
-                    .testTag("ytdl-download-mode-video"),
-            )
-            ModeCard(
-                "♫",
-                FormatMode.AudioOnly.label,
-                selected = modeSelections[FormatMode.AudioOnly] == true,
-                enabled = modeAvailability[FormatMode.AudioOnly] == true,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable(enabled = modeAvailability[FormatMode.AudioOnly] == true) { onModeSelected(FormatMode.AudioOnly) }
-                    .testTag("ytdl-download-mode-audio"),
-            )
-        }
-    }
-    state.analysis?.let { analysis ->
-        formatSelectionItems(
-            analysis = analysis,
-            selection = state.formatSelection,
-            onSelectionChange = onFormatSelectionChange,
-        )
-    }
-    item {
-        SettingLineCard(
-            title = "保存位置",
-            subtitle = storageTargetSummary(storageTarget),
-            leading = "□",
-            trailing = "›",
-            subtitleMaxLines = 1,
-            modifier = Modifier
-                .clickable(onClick = onSelectStorageTarget)
-                .testTag("ytdl-download-storage-target"),
-        )
-    }
-    item {
-        val palette = LocalYtdlAppPalette.current
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = onStartDownload,
-                enabled = canStartDownload(state),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("ytdl-download-start"),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = palette.downloadAccent),
-                contentPadding = PaddingValues(vertical = 13.dp),
-            ) {
-                Text(
-                    if (state.isDownloading) "↓  加入等待队列" else "↓  开始下载",
-                    fontWeight = FontWeight.Bold,
-                )
+
+    val analysis = state.analysis
+    val file = state.fileSelection
+    when {
+        analysis != null -> {
+            item {
+                IdentificationLabel("媒体")
+                DownloadPreviewCard(state)
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DownloadChoice(
+                        "下载内容", state.formatSelection.mode.label, "ytdl-download-mode", Modifier.weight(1f),
+                    ) { dismiss ->
+                        FormatMode.entries.forEach { mode ->
+                            val suffix = when (mode) {
+                                FormatMode.VideoAndAudio -> "av"
+                                FormatMode.VideoOnly -> "video"
+                                FormatMode.AudioOnly -> "audio"
+                            }
+                            ChoiceItem(mode.label, "ytdl-download-mode-$suffix", isFormatModeAvailable(analysis, mode)) {
+                                dismiss()
+                                onModeSelected(mode)
+                            }
+                        }
+                    }
+                    DownloadControl(
+                        "下载格式", formatSelectionSummary(analysis, state.appliedFormatSelection),
+                        "ytdl-download-format-toggle", Modifier.weight(1f),
+                        actionLabel = if (showAdvancedFormats) "收起" else "展开",
+                        onClick = onToggleAdvancedFormats,
+                    )
+                }
+            }
+            if (showAdvancedFormats) {
+                formatSelectionItems(analysis, state.formatSelection, onFormatSelectionChange)
+            }
+            if (state.formatSelection.mode != FormatMode.AudioOnly) {
+                item { SubtitleChoices(analysis, state.selectedSubtitles, onSubtitlesChange) }
             }
         }
+        file != null -> item {
+            val label = listOf(file.metadata.kind.identificationLabel(), file.formatLabel)
+                .filter { it.isNotBlank() }.joinToString(" · ")
+            IdentificationLabel(label)
+            FileDownloadSection(file, onFileSelectionChange)
+        }
+        state.isAnalyzing -> item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text("正在识别链接")
+            }
+        }
+        else -> item {
+            val palette = LocalYtdlAppPalette.current
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 24.dp)) {
+                Icon(DownloadTabIcon, contentDescription = null, tint = palette.formatAccent)
+                Text("先识别，再选择", style = MaterialTheme.typography.titleMedium, color = palette.titleText)
+                Text("识别后可选择媒体格式，或设置普通文件的保存方式。", color = palette.softText)
+            }
+        }
+    }
+    if (analysis != null || file != null) {
+        item {
+            DownloadControl("保存位置", storageTargetSummary(storageTarget), "ytdl-download-storage-target",
+                actionLabel = "更改", onClick = onSelectStorageTarget)
+        }
+    }
+    if (file?.metadata?.kind == FileKind.Other) {
+        item { FileConflictChoice(file, onFileSelectionChange) }
+    }
+    if (includeInlineStart) item { DownloadStartButton(state, onStartDownload) }
+}
+
+@Composable
+private fun IdentificationLabel(type: String) {
+    Text(
+        "已识别 · $type",
+        modifier = Modifier.padding(vertical = 10.dp).testTag("ytdl-download-identification"),
+        color = LocalYtdlAppPalette.current.formatAccent,
+        style = MaterialTheme.typography.labelMedium,
+    )
+}
+
+@Composable
+private fun SubtitleChoices(
+    analysis: VideoAnalysis,
+    selected: List<SubtitleInfo>,
+    onSelectionChange: (List<SubtitleInfo>) -> Unit,
+) {
+    val subtitles = analysis.subtitles.distinctBy { it.language to it.source }
+    if (subtitles.isEmpty()) return
+    val summary = when (selected.size) {
+        0 -> "不下载字幕"
+        1 -> "${selected.single().language} · 独立字幕"
+        else -> "${selected.size} 种独立字幕"
+    }
+    DownloadChoice("字幕", summary, "ytdl-format-subtitle-toggle") { dismiss ->
+        subtitles.forEach { subtitle ->
+            val source = if (subtitle.source == SubtitleSource.Manual) "人工" else "自动生成"
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text("${subtitle.language} · $source · ${subtitle.ext}") },
+                leadingIcon = { Checkbox(checked = subtitle in selected, onCheckedChange = null) },
+                onClick = {
+                    dismiss()
+                    onSelectionChange(
+                        if (subtitle in selected) selected - subtitle
+                        else selected.filterNot { it.language == subtitle.language } + subtitle,
+                    )
+                },
+                modifier = Modifier.testTag("ytdl-subtitle-${subtitle.language}-${subtitle.source.pythonValue}"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadStartButton(state: RuntimeDownloadState, onClick: () -> Unit) {
+    val palette = LocalYtdlAppPalette.current
+    val canStart = canStartDownload(state)
+    val size = state.fileSelection?.metadata?.totalBytes
+    val label = when {
+        state.isStarting -> "正在提交任务"
+        state.isAnalyzing -> "正在识别链接"
+        state.fileSelection != null && !canStart -> "请检查文件名"
+        !canStart -> "识别后可下载"
+        size != null -> "开始下载 · ${formatBytes(size)}"
+        else -> "开始下载"
+    }
+    Button(
+        onClick = onClick,
+        enabled = canStart,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)
+            .heightIn(min = 48.dp).semantics { testTagsAsResourceId = true }.testTag("ytdl-download-start"),
+        shape = RectangleShape,
+        colors = ButtonDefaults.buttonColors(containerColor = palette.downloadAccent, contentColor = palette.primaryActionText),
+    ) {
+        Icon(DownloadTabIcon, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(label, fontWeight = FontWeight.Bold)
     }
 }
 
 internal fun canStartDownloadForUiTest(state: RuntimeDownloadState): Boolean = canStartDownload(state)
 
-private fun canStartDownload(state: RuntimeDownloadState): Boolean {
-    return !state.isAnalyzing && state.analysis != null
-}
+private fun canStartDownload(state: RuntimeDownloadState): Boolean =
+    !state.isAnalyzing && !state.isStarting &&
+        (state.fileSelection?.route != null || state.analysis != null)
 
 internal fun shouldShowRuntimeMessageForUiTest(message: String): Boolean = shouldShowRuntimeMessage(message)
 
@@ -2435,22 +2601,18 @@ private fun UrlInputField(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalYtdlAppPalette.current
-    val inputTextColor = Color(0xFF181B17)
-    val inputHintColor = Color(0xFF5E625C)
+    val inputTextColor = palette.titleText
+    val inputHintColor = palette.softText
     val currentOnValueChange = rememberUpdatedState(onValueChange)
     val textChangeGuard = remember { UrlInputTextChangeGuard() }
-    val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = modifier
-            .defaultMinSize(minHeight = 54.dp)
-            .clip(shape)
-            .border(1.dp, palette.borderColor, shape)
-            .background(Color.White.copy(alpha = 0.92f))
-            .padding(horizontal = 14.dp),
+            .defaultMinSize(minHeight = 48.dp)
+            .border(1.dp, palette.borderColor)
+            .background(palette.cardBackground)
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("🔗", color = inputHintColor)
-        Spacer(Modifier.size(8.dp))
         AndroidView(
             factory = { context ->
                 EditText(context).apply {
@@ -2463,7 +2625,7 @@ private fun UrlInputField(
                     background = null
                     includeFontPadding = false
                     textSize = 16f
-                    hint = "粘贴视频页面地址"
+                    hint = "粘贴媒体链接或文件直链"
                     inputType = InputType.TYPE_CLASS_TEXT or
                         InputType.TYPE_TEXT_VARIATION_URI or
                         InputType.TYPE_TEXT_FLAG_MULTI_LINE or
@@ -2499,7 +2661,7 @@ private fun UrlInputField(
                 }
             },
             update = { editText ->
-                editText.hint = "粘贴视频页面地址"
+                editText.hint = "粘贴媒体链接或文件直链"
                 editText.setTextColor(inputTextColor.toArgb())
                 editText.setHintTextColor(inputHintColor.toArgb())
                 editText.setShowSoftInputOnFocus(showKeyboardOnFocus)
@@ -2522,69 +2684,44 @@ private fun UrlInputField(
 
 @Composable
 private fun DownloadPreviewCard(state: RuntimeDownloadState) {
-    val analysis = state.analysis
-    val duration = analysis?.durationSeconds?.let(::formatDuration) ?: "未分析"
-    val title = analysis?.title?.ifBlank { "未命名视频" } ?: "等待分析"
-    val formatSummary = downloadPreviewFormatSummary(state)
-
-    AppCard {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp)
-                .clip(RoundedCornerShape(14.dp)),
-        ) {
-            if (state.thumbnailBitmap != null) {
-                Image(
-                    bitmap = state.thumbnailBitmap.asImageBitmap(),
-                    contentDescription = "视频预览图",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("ytdl-thumbnail-image"),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("ytdl-thumbnail-placeholder")
-                        .background(
-                            Brush.linearGradient(
-                                listOf(Color(0xFF78B6E8), Color(0xFF7CBF7D), Color(0xFFE7D5A7)),
-                            ),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
+    val analysis = requireNotNull(state.analysis)
+    val duration = analysis.durationSeconds.takeIf { it > 0 }?.let(::formatDuration)
+    val palette = LocalYtdlAppPalette.current
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (!analysis.thumbnailUrl.isNullOrBlank()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(145.dp).clip(RoundedCornerShape(7.dp))
+                    .background(palette.segmentedBackground),
+                contentAlignment = Alignment.Center,
+            ) {
+                val bitmap = state.thumbnailBitmap
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "视频预览图",
+                        modifier = Modifier.fillMaxSize().testTag("ytdl-thumbnail-image"),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(state.thumbnailStatus, color = palette.titleText,
+                        modifier = Modifier.testTag("ytdl-thumbnail-placeholder"))
+                }
+                if (duration != null) {
                     Text(
-                        text = state.thumbnailStatus.ifBlank { "预览图" },
+                        duration,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
+                            .background(Color.Black.copy(alpha = 0.64f)).padding(horizontal = 6.dp, vertical = 3.dp),
                         color = Color.White,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }
-            Text(
-                text = duration,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(10.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 7.dp, vertical = 3.dp),
-                color = Color.White,
-                style = MaterialTheme.typography.labelMedium,
-            )
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(
-            if (analysis == null) "请输入地址并分析" else "分析完成",
-            color = LocalYtdlAppPalette.current.successGreen,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
-            InfoPill("时长", duration)
-            InfoPill("格式", formatSummary)
+        Text(analysis.title.ifBlank { "未命名媒体" }, style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold, color = palette.titleText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val details = listOfNotNull(duration, if (analysis.subtitles.isNotEmpty()) "可下载独立字幕" else null)
+        if (details.isNotEmpty()) {
+            Text(details.joinToString(" · "), color = palette.softText, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -2737,8 +2874,8 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems
             SettingLineCard(
                 "帧率",
                 summaries.frameRate,
-                "▾",
-                "›",
+                "",
+                "",
                 modifier = Modifier.testTag("ytdl-format-frame-rate-line"),
             )
         }
@@ -2746,8 +2883,8 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems
             SettingLineCard(
                 "视频编码",
                 summaries.videoCodec,
-                "▾",
-                "›",
+                "",
+                "",
                 modifier = Modifier.testTag("ytdl-format-video-codec-line"),
             )
         }
@@ -2755,8 +2892,8 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems
             SettingLineCard(
                 "容器格式",
                 summaries.container,
-                "▾",
-                "›",
+                "",
+                "",
                 modifier = Modifier.testTag("ytdl-format-container-line"),
             )
         }
@@ -3001,7 +3138,7 @@ internal fun queueCardAccentForUiTest(
     palette: YtdlAppPalette = DefaultPalette,
 ): Color = queueCardAccent(state, palette)
 
-private fun formatBytes(bytes: Long): String {
+internal fun formatBytes(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
     val kib = bytes / 1024.0
     if (kib < 1024) return "%.1f KB".format(kib)
@@ -3194,11 +3331,16 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     onRetry: (HistoryUiItem) -> Unit,
     onDelete: (HistoryUiItem) -> Unit,
     savedTasks: List<ResumeTaskItem> = emptyList(),
+    activeStates: Map<String, DownloadTaskState>? = null,
     onPauseDownload: (String?) -> Unit = {},
     onResumeTask: (String) -> Unit = {},
     onCancelSavedTask: (String) -> Unit = {},
 ) {
-    val hasCurrentTask = shouldShowCurrentTask(state)
+    val currentTasks = if (activeStates == null) {
+        listOf(state).filter(::shouldShowCurrentTask)
+    } else {
+        activeStates.values.map { RuntimeDownloadState().withPipelineState(it) }.filter(::shouldShowCurrentTask)
+    }
     item {
         val palette = LocalYtdlAppPalette.current
         Surface(
@@ -3209,8 +3351,8 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
             Column(Modifier.padding(16.dp)) {
                 Text("当前和等待", color = palette.queueAccent, fontWeight = FontWeight.Bold)
                 Text(
-                    if (hasCurrentTask || pendingRequests.isNotEmpty()) {
-                        "正在下载 ${if (hasCurrentTask) 1 else 0} · 等待 ${pendingRequests.size}"
+                    if (currentTasks.isNotEmpty() || pendingRequests.isNotEmpty()) {
+                        "正在下载 ${currentTasks.size} · 等待 ${pendingRequests.size}"
                     } else {
                         "当前没有进行中或等待任务"
                     },
@@ -3220,11 +3362,21 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
             }
         }
     }
-    if (hasCurrentTask) {
+    if (currentTasks.isNotEmpty()) {
         item { SectionTitle("当前任务") }
-        item {
+    }
+    currentTasks.forEach { state ->
+        item(key = "active-${state.activeRequest?.taskId}") {
             val palette = LocalYtdlAppPalette.current
             val title = state.activeRequest?.title?.takeIf { it.isNotBlank() } ?: "下载任务"
+            val thumbnailUrl = state.activeRequest?.thumbnailUrl
+            var taskThumbnail by remember(thumbnailUrl) { mutableStateOf(state.thumbnailBitmap) }
+            DisposableEffect(thumbnailUrl) {
+                val loader = thumbnailUrl?.takeIf { taskThumbnail == null }?.let { url ->
+                    HistoryThumbnailLoader.load(url) { taskThumbnail = it }
+                }
+                onDispose { loader?.close() }
+            }
             Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
                 QueueCard(
                     title = title,
@@ -3237,7 +3389,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                     codecBadge = queueCardCodecBadge(state),
                     stageItems = queueStageItems(state),
                     accent = queueCardAccent(state, palette),
-                    thumbnailBitmap = state.thumbnailBitmap,
+                    thumbnailBitmap = taskThumbnail,
                     onCancel = { onCancelDownload(state.activeRequest?.taskId) },
                     onPause = if (state.activeStage in setOf(DownloadStage.Pausing, DownloadStage.WaitingForNetwork)) null else { { onPauseDownload(state.activeRequest?.taskId) } },
                 )
@@ -3260,7 +3412,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                     subtitle = "已加入队列 · 按顺序等待",
                     progress = QueueProgressPresentation(fraction = 0f, isIndeterminate = false),
                     status = "等待中",
-                    supportingText = "前方 ${index + if (hasCurrentTask) 1 else 0} 个任务",
+                    supportingText = "前方 ${index + currentTasks.size} 个任务",
                     formatBadge = formatResolutionBadgeForRequest(request),
                     codecBadge = formatCodecBadgeForRequest(request),
                     stageItems = queueStageItems(waitingState),
@@ -3539,52 +3691,6 @@ private fun AppCard(modifier: Modifier = Modifier, content: @Composable ColumnSc
 }
 
 @Composable
-private fun InfoPill(label: String, value: String) {
-    val palette = LocalYtdlAppPalette.current
-    Surface(color = palette.mutedCardBackground, shape = RoundedCornerShape(12.dp)) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
-            Text(label, color = palette.softText, style = MaterialTheme.typography.labelSmall)
-            Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun ModeCard(
-    icon: String,
-    label: String,
-    selected: Boolean,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val palette = LocalYtdlAppPalette.current
-    Surface(
-        modifier = modifier.height(64.dp),
-        color = when {
-            !enabled -> palette.mutedCardBackground
-            selected -> palette.downloadAccent
-            else -> palette.cardBackground
-        },
-        contentColor = when {
-            !enabled -> palette.softText.copy(alpha = 0.55f)
-            selected -> Color.White
-            else -> palette.neutralText
-        },
-        shape = RoundedCornerShape(14.dp),
-        border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, palette.borderColor),
-    ) {
-        Column(
-            modifier = Modifier.padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(icon, style = MaterialTheme.typography.titleLarge)
-            Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        }
-    }
-}
-
-@Composable
 private fun SegmentedRow(
     options: List<String>,
     selectedIndex: Int,
@@ -3597,7 +3703,6 @@ private fun SegmentedRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
             .background(palette.segmentedBackground)
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -3629,10 +3734,10 @@ private fun SegmentedRow(
                 },
                 contentColor = when {
                     !enabled -> palette.softText.copy(alpha = 0.55f)
-                    selected -> Color.White
+                    selected -> palette.primaryActionText
                     else -> palette.neutralText
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RectangleShape,
             ) {
                 Text(
                     text = label,
@@ -3664,7 +3769,7 @@ private fun ResolutionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .heightIn(min = 48.dp)
             .background(if (row.selected) palette.formatAccent.copy(alpha = 0.11f) else Color.Transparent)
             .clickable(enabled = row.selectable, onClick = onSelect)
             .testTag("ytdl-format-row-$tagSuffix")
@@ -3699,8 +3804,8 @@ private fun ResolutionRow(
                             .testTag("ytdl-format-codec-$tagSuffix-$codecTagSuffix")
                             .clickable(enabled = row.selectable) { onCodecSelect(option) },
                         color = if (option.selected) palette.formatAccent else palette.mutedCardBackground,
-                        contentColor = if (option.selected) Color.White else palette.softText,
-                        shape = RoundedCornerShape(8.dp),
+                        contentColor = if (option.selected) palette.controlActionText else palette.softText,
+                        shape = RectangleShape,
                     ) {
                         Text(
                             option.label,

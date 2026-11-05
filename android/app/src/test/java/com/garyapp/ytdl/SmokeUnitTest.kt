@@ -43,8 +43,8 @@ class SmokeUnitTest {
         val labels = ytdlVisibleContentLabels()
 
         assertEquals(setOf("download", "tasks", "settings"), labels.keys)
-        assertTrue(labels.getValue("download").containsAll(listOf("粘贴视频页面地址", "分析", "视频+音频", "视频", "音频", "分辨率", "开始下载")))
-        assertTrue(labels.getValue("download").none { it.contains("字幕") })
+        assertTrue(labels.getValue("download").containsAll(listOf("粘贴媒体链接或文件直链", "识别", "视频+音频", "视频", "音频", "分辨率", "开始下载")))
+        assertTrue(labels.getValue("download").containsAll(listOf("字幕", "保存文件名", "重名处理")))
         assertTrue(labels.getValue("tasks").containsAll(listOf("当前任务", "等待中", "搜索历史", "暂无历史记录", "完成下载后会显示")))
         assertTrue(labels.getValue("settings").containsAll(listOf("Cookies 文件", "媒体处理能力", "通知权限", "下载仍在应用内显示进度", "App 私有目录", "外观与颜色", "Codex 风格")))
     }
@@ -55,8 +55,8 @@ class SmokeUnitTest {
         val presets = ytdlColorPresets()
 
         assertEquals(YtdlThemeMode.System, defaultConfig.mode)
-        assertEquals("reference_v3", defaultConfig.colorPreset.id)
-        assertTrue(presets.any { it.id == "reference_v3" && it.label == "基准图配色" })
+        assertEquals("morandi", defaultConfig.colorPreset.id)
+        assertTrue(presets.any { it.id == "morandi" && it.label == "莫兰迪" })
         assertTrue(presets.any { it.id == "codex" && it.label == "Codex 风格" })
     }
 
