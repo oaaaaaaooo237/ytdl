@@ -8,7 +8,11 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 class HttpFilesTest {
     private lateinit var server: HttpServer
@@ -114,4 +118,62 @@ class HttpFilesTest {
     @Test fun malformedEtagIsNotReliable() { tag = "\"bad\"quote\""; assertNull(metadata().etag) }
     @Test fun recentDateIsNotReliable() { tag = ""; modified = java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("GMT") }.format(java.util.Date()); assertNull(metadata().lastModified) }
     @Test fun htmlBytesInsideResumedBinaryArePreserved() { "<html>".toByteArray().copyInto(bytes, 512); val m = metadata(); paused(m); assertTrue(download(m) is FileDownloadResult.Completed); assertArrayEquals(bytes, File(dir, "body.part").readBytes()) }
+    @Test fun filenameRemovesC1ControlsWithoutDamagingChinese() {
+        assertEquals("中_文_.zip", HttpFileProbe.fileName("attachment; filename=\"中\u0085文\u009f.zip\"", url))
+    }
+    @Test fun connectionsHaveFiniteConnectAndReadTimeouts() {
+        val connection = openFileConnection(url)
+        try { assertEquals(10000, connection.connectTimeout); assertEquals(3000, connection.readTimeout) }
+        finally { connection.disconnect() }
+    }
+    @Test fun stalledResponseTimesOutAndReleasesConnection() {
+        val released = CountDownLatch(1)
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { listener ->
+            val worker = thread(isDaemon = true) {
+                listener.accept().use { socket ->
+                    socket.soTimeout = 7000
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (!reader.readLine().isNullOrEmpty()) { /* Consume HTTP request. */ }
+                    if (reader.read() == -1) released.countDown()
+                }
+            }
+            val started = System.nanoTime()
+            val result = HttpFileProbe().probe("http://127.0.0.1:${listener.localPort}/stall")
+            val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+            assertTrue(result is FileProbeResult.Rejected)
+            assertTrue("Expected the existing 3s read timeout, took ${elapsed}ms", elapsed in 2500..6500)
+            assertTrue("Timed-out connection was not closed", released.await(2, TimeUnit.SECONDS))
+            worker.join(1000)
+        }
+        assertTrue(HttpFileProbe().probe(url) is FileProbeResult.FileFound)
+    }
+    @Test fun pausedDownloadClosesResponseBeforeAnotherRequest() {
+        assertDownloadReleasesConnection(pause = true)
+    }
+    @Test fun failedDownloadClosesResponseBeforeAnotherRequest() {
+        assertDownloadReleasesConnection(pause = false)
+    }
+    private fun assertDownloadReleasesConnection(pause: Boolean) {
+        val released = CountDownLatch(1)
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { listener ->
+            val worker = thread(isDaemon = true) {
+                listener.accept().use { socket ->
+                    socket.soTimeout = 7000
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (!reader.readLine().isNullOrEmpty()) { /* Consume HTTP request. */ }
+                    val header = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 100000\r\nETag: \"one\"\r\nConnection: close\r\n\r\n"
+                    socket.getOutputStream().apply { write(header.toByteArray()); write(bytes, 0, 512); flush() }
+                    if (reader.read() == -1) released.countDown()
+                }
+            }
+            val endpoint = "http://127.0.0.1:${listener.localPort}/file.bin"
+            val m = metadata().copy(sourceUrl = endpoint, finalUrl = endpoint)
+            var stop = false
+            val result = download(m, { stop }) { _, _ -> if (pause) stop = true }
+            if (pause) assertTrue(result is FileDownloadResult.Stopped) else assertTrue(result is FileDownloadResult.Failed)
+            assertTrue("Download response was not closed", released.await(2, TimeUnit.SECONDS))
+            worker.join(1000)
+        }
+        assertTrue(HttpFileProbe().probe(url) is FileProbeResult.FileFound)
+    }
 }

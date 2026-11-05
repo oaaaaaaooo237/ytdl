@@ -43,7 +43,7 @@ class HttpFileProbe {
                 ?.let { it.groups[1]?.value ?: it.groups[2]?.value }?.trim()
             val path = runCatching { URL(finalUrl).path.substringAfterLast('/').let { URLDecoder.decode(it.replace("+", "%2B"), "UTF-8") } }.getOrNull()
             val raw = (decoded ?: plain ?: path ?: "下载文件").replace('\\', '/').substringAfterLast('/')
-            var safe = raw.map { if (it.code < 32 || it.code == 127 || it in "<>:\"|?*") '_' else it }.joinToString("").trim().trimEnd('.', ' ')
+            var safe = raw.map { if (it.isISOControl() || it in "<>:\"|?*") '_' else it }.joinToString("").trim().trimEnd('.', ' ')
             if (safe.isBlank() || safe == "." || safe == "..") safe = "下载文件"
             if (Regex("(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?$").matches(safe)) safe = "_$safe"
             return safe.take(180)
