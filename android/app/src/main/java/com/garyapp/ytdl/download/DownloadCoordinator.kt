@@ -65,9 +65,10 @@ object DownloadCoordinator {
         synchronized(lock) {
             val item = checkNotNull(saved[taskId])
             check(item.recoveryError == null)
+            check(item.state.fileRecoveryAction !in setOf(FileRecoveryAction.ConfirmRestart, FileRecoveryAction.ChooseFileName)) { "请先确认重新下载。" }
             val request = checkNotNull(item.state.request).copy(cookiesPath = null)
             repository?.prioritize(taskId)
-            val state = item.state.copy(stage = DownloadStage.Resuming, stopReason = null, statusMessage = null)
+            val state = item.state.copy(stage = DownloadStage.Resuming, stopReason = null, statusMessage = null, fileRecoveryAction = null)
             repository?.saveState(state)
             saved.remove(taskId)
             queuedLaunches.addFirst(DownloadLaunch(request, File(context.filesDir, "gui-downloads")))
@@ -82,6 +83,30 @@ object DownloadCoordinator {
             parkPending(taskId, "启动下载失败，点击继续重试。")
             throw error
         }
+    }
+
+    /** Called on a background executor after explicit user confirmation and a fresh file probe. */
+    fun confirmFileRestart(context: Context, taskId: String, metadata: com.garyapp.ytdl.core.files.FileMetadata): Result<Unit> = runCatching {
+        synchronized(lock) {
+            val item = checkNotNull(saved[taskId])
+            check(item.state.fileRecoveryAction == FileRecoveryAction.ConfirmRestart)
+            check(activeLaunch?.request?.taskId != taskId && claimedLaunch?.request?.taskId != taskId && queuedLaunches.none { it.request.taskId == taskId })
+            val request = requireNotNull(repository).confirmFileRestart(requireNotNull(item.state.request), metadata).getOrThrow()
+            saved[taskId] = item.copy(state = DownloadTaskState(DownloadStage.Paused, request))
+        }
+        resume(context, taskId).getOrThrow()
+    }
+
+    /** Resolves an Ask conflict without changing source metadata or deleting its partial. */
+    fun chooseFileName(context: Context, taskId: String, fileName: String): Result<Unit> = runCatching {
+        synchronized(lock) {
+            val item = checkNotNull(saved[taskId])
+            check(item.state.fileRecoveryAction == FileRecoveryAction.ChooseFileName)
+            check(activeLaunch?.request?.taskId != taskId && claimedLaunch?.request?.taskId != taskId && queuedLaunches.none { it.request.taskId == taskId })
+            val request = requireNotNull(repository).chooseFileName(requireNotNull(item.state.request), fileName).getOrThrow()
+            saved[taskId] = item.copy(state = DownloadTaskState(DownloadStage.Paused, request))
+        }
+        resume(context, taskId).getOrThrow()
     }
 
     internal fun cancelPending(context: Context, taskId: String): Result<Boolean> {

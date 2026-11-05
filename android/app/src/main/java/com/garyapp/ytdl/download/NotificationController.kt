@@ -47,7 +47,7 @@ class NotificationController(
             .addExtras(android.os.Bundle().apply { putString(DownloadService.ExtraTaskId, state.request?.taskId) })
             .setSmallIcon(R.drawable.ic_stat_ytdl_download)
             .setContentTitle("CaptainFlash 下载任务")
-            .setContentText(state.stage.notificationText())
+            .setContentText(if (state.fileRecoveryAction == FileRecoveryAction.ConfirmRestart) "需要确认重新下载" else state.stage.notificationText())
             .setContentIntent(contentPendingIntent())
             .setAutoCancel(state.stage in TerminalStages)
             .setOngoing(state.stage !in TerminalStages)
@@ -93,6 +93,7 @@ class NotificationController(
             DownloadStage.WaitingForNetwork -> "等待网络"
             DownloadStage.Resuming -> "正在继续"
             DownloadStage.Waiting -> "等待下载"
+            DownloadStage.DownloadingFile -> "正在下载文件"
             DownloadStage.DownloadingVideo -> "正在下载视频"
             DownloadStage.DownloadingAudio -> "正在下载音频"
             DownloadStage.DownloadingSubtitles -> "正在处理附加文件"

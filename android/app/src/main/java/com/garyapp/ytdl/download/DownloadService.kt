@@ -145,7 +145,7 @@ class DownloadService : Service() {
             if (destroyed) token.stopForLifecycle()
             try {
                 if (!network.isAvailable() && token.stopReason == null) token.waitForNetwork()
-                val temporaryCookies = if (launch.request.usesCookies && token.stopReason == null) {
+                val temporaryCookies = if (launch.request.usesCookies && launch.request.route !is DownloadRoute.HttpFile && token.stopReason == null) {
                     prepareTemporaryCookiesForDownload(launch.request.cookiesReferenceFor(SettingsRepository.fromContext(this).getSettings()),
                         this, "resume-${launch.request.taskId}").getOrNull()
                         ?: run {
@@ -157,14 +157,18 @@ class DownloadService : Service() {
                         }
                 } else null
                 val request = launch.request.copy(cookiesPath = temporaryCookies?.file?.absolutePath)
-                val pipeline = DownloadPipeline(engineFactory(),
-                    NativeMuxerMediaProcessor(launch.outputDirectory), isNetworkAvailable = network::isAvailable)
-                val result = pipeline.run(request, launch.outputDirectory, token) { next ->
+                val onState: (DownloadTaskState) -> Unit = { next ->
                     if (next.stage != DownloadStage.Completed) publishForegroundState(next)
+                }
+                val result = if (request.route is DownloadRoute.HttpFile) {
+                    HttpFilePipeline().run(request, launch.outputDirectory, token, onState)
+                } else {
+                    DownloadPipeline(engineFactory(), NativeMuxerMediaProcessor(launch.outputDirectory),
+                        isNetworkAvailable = network::isAvailable).run(request, launch.outputDirectory, token, onState)
                 }
                 state = exportCompletedOutputs(result, request.storageTarget ?: StorageTarget.AppPrivate, token)
                 if (token.stopReason == DownloadStopReason.UserCancel) state = state.copy(stopReason = DownloadStopReason.UserCancel)
-                if (state.stage == DownloadStage.Failed && state.errorMessage?.contains("已保留文件") == true) {
+                if (state.stage == DownloadStage.Failed && state.fileRecoveryAction == null && state.errorMessage?.contains("已保留文件") == true) {
                     state = state.copy(stage = DownloadStage.Paused, statusMessage = state.errorMessage)
                 }
                 if (state.stage == DownloadStage.WaitingForNetwork) {
@@ -180,7 +184,7 @@ class DownloadService : Service() {
                     }
                     state = stopRetained(launch, state, if (destroyed) DownloadStopReason.LifecycleEnd else token.stopReason ?: DownloadStopReason.LifecycleEnd)
                 }
-                if (state.stage == DownloadStage.Paused) {
+                if (state.stage == DownloadStage.Paused || state.fileRecoveryAction != null) {
                     DownloadCoordinator.park(launch, state)
                 } else if (state.stage in ResumeTaskRepository.TerminalStages) {
                     val recorded = repository.recordTerminal(state)
@@ -204,7 +208,7 @@ class DownloadService : Service() {
 
     private fun restoredState(launch: DownloadLaunch): DownloadTaskState {
         val checkpoint = PipelineCheckpoint.open(repository.workspace, launch.request)
-        return DownloadTaskState(DownloadStage.Paused, launch.request.copy(cookiesPath = null), progress = checkpoint.progress())
+        return DownloadTaskState(DownloadStage.Paused, launch.request.copy(cookiesPath = null), progress = checkpoint.progress(), fileRecoveryAction = checkpoint.fileRecoveryAction)
     }
 
     private fun stopRetained(launch: DownloadLaunch, state: DownloadTaskState, reason: DownloadStopReason): DownloadTaskState {
@@ -223,7 +227,11 @@ class DownloadService : Service() {
         val request = requireNotNull(result.state.request)
         val outputRoot = requireNotNull(repository.workspace.directory(request.taskId).parentFile)
         val outputs = result.outputs.map { output ->
-            ExportController.discoverAppPrivateOutput(File(output.path), outputRoot).getOrThrow()
+            ExportController.discoverAppPrivateOutput(File(output.path), outputRoot,
+                allowEmptyFile = output.kind == DownloadOutputKind.File,
+                mimeType = output.mimeType ?: (request.route as? DownloadRoute.HttpFile)?.metadata?.mimeType,
+                askOnConflict = (request.route as? DownloadRoute.HttpFile)?.conflictPolicy == HttpFileConflictPolicy.Ask,
+                displayName = (request.route as? DownloadRoute.HttpFile)?.fileName).getOrThrow()
         }
         if (token.stopReason != null) return stopRetained(requireNotNull(running), result.state, requireNotNull(token.stopReason))
         if (target !is StorageTarget.SafTree) {
@@ -246,6 +254,10 @@ class DownloadService : Service() {
         }.getOrElse { error ->
             if (error is CancellationException && token.stopReason != null) {
                 stopRetained(requireNotNull(running), result.state, requireNotNull(token.stopReason))
+            } else if (error is ExportController.NameConflictException && request.route is DownloadRoute.HttpFile) {
+                val conflict = result.state.failed("文件名已存在，请选择其他名称。").copy(fileRecoveryAction = FileRecoveryAction.ChooseFileName)
+                PipelineCheckpoint.open(repository.workspace, request).save(conflict.stage, conflict.progress, conflict.stopReason, conflict.fileRecoveryAction)
+                conflict
             } else result.state.copy(stage = DownloadStage.Paused,
                 statusMessage = "保存失败，成品已保留；检查原保存目录权限后继续。")
         }

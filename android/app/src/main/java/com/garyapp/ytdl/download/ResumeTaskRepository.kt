@@ -60,10 +60,17 @@ internal class ResumeTaskRepository(
                 val previous = workspace.loadCheckpoint(row.taskId).getOrThrow()
                 val checkpoint = PipelineCheckpoint.open(workspace, request)
                 // A completed private file can still be waiting for export.
-                val reason = previous.stopReason?.let { DownloadStopReason.valueOf(it) } ?: DownloadStopReason.LifecycleEnd
+                val reason = previous.stopReason?.let { DownloadStopReason.valueOf(it) }
+                    ?: DownloadStopReason.LifecycleEnd.takeIf { checkpoint.fileRecoveryAction == null }
                 ResumeTaskItem(row.taskId, safeTitle(row.title), DownloadTaskState(
-                    DownloadStage.Paused, request, progress = checkpoint.progress(), stopReason = reason,
-                    statusMessage = if (reason == DownloadStopReason.UserPause) "点击继续下载。" else "应用曾退出，点击继续。",
+                    if (checkpoint.fileRecoveryAction != null) DownloadStage.Failed else DownloadStage.Paused, request, progress = checkpoint.progress(), stopReason = reason,
+                    fileRecoveryAction = checkpoint.fileRecoveryAction,
+                    statusMessage = when (checkpoint.fileRecoveryAction) {
+                        FileRecoveryAction.Retry -> "下载中断，点击重试。"
+                        FileRecoveryAction.ConfirmRestart -> "无法安全续传，请确认重新下载。"
+                        FileRecoveryAction.ChooseFileName -> "文件名已存在，请选择其他名称。"
+                        null -> if (reason == DownloadStopReason.UserPause) "点击继续下载。" else "应用曾退出，点击继续。"
+                    },
                 ), wasQueued = row.status == QueueItemEntity.STATUS_QUEUED)
             }.getOrElse {
                 ResumeTaskItem(row.taskId, safeTitle(row.title), DownloadTaskState(
@@ -79,7 +86,7 @@ internal class ResumeTaskRepository(
         val request = state.request ?: return@synchronized
         val row = queue.getByTaskId(request.taskId) ?: return@synchronized
         if (row.status in TerminalStatuses) return@synchronized
-        row.status = when (state.stage) {
+        row.status = if (state.fileRecoveryAction != null) "paused" else when (state.stage) {
             DownloadStage.Waiting, DownloadStage.Resuming -> "queued"
             DownloadStage.Paused -> "paused"
             DownloadStage.WaitingForNetwork -> "waiting_network"
@@ -99,6 +106,36 @@ internal class ResumeTaskRepository(
         queue.update(row)
     }
 
+    fun confirmFileRestart(request: DownloadRequest, metadata: com.garyapp.ytdl.core.files.FileMetadata): Result<DownloadRequest> = synchronized(MutationLock) {
+        runCatching {
+            val current = requests.load(request.taskId).getOrThrow()
+            require(current == request.copy(cookiesPath = null))
+            val route = requireNotNull(request.route as? DownloadRoute.HttpFile)
+            require(metadata.sourceUrl == request.url)
+            require(workspace.loadCheckpoint(request.taskId).getOrThrow().fileRecoveryAction == FileRecoveryAction.ConfirmRestart.name)
+            val updated = current.copy(route = route.copy(metadata = metadata))
+            requests.save(updated).getOrThrow()
+            HttpFilePipeline.confirmRestart(workspace, updated).getOrThrow()
+            saveState(DownloadTaskState(DownloadStage.Paused, updated))
+            updated
+        }
+    }
+
+    fun chooseFileName(request: DownloadRequest, fileName: String): Result<DownloadRequest> = synchronized(MutationLock) {
+        runCatching {
+            val current = requests.load(request.taskId).getOrThrow()
+            require(current == request.copy(cookiesPath = null))
+            val route = requireNotNull(current.route as? DownloadRoute.HttpFile)
+            val checkpoint = workspace.loadCheckpoint(request.taskId).getOrThrow()
+            require(checkpoint.fileRecoveryAction == FileRecoveryAction.ChooseFileName.name)
+            val updated = current.copy(route = route.copy(fileName = fileName))
+            requests.save(updated).getOrThrow()
+            workspace.saveCheckpoint(request.taskId, checkpoint.copy(fileRecoveryAction = null)).getOrThrow()
+            saveState(DownloadTaskState(DownloadStage.Paused, updated))
+            updated
+        }
+    }
+
     fun prioritize(taskId: String) = synchronized(MutationLock) {
         val row = checkNotNull(queue.getByTaskId(taskId))
         row.queueOrder = (queue.listNonTerminal().minOfOrNull { it.queueOrder } ?: 0) - 1
@@ -110,6 +147,10 @@ internal class ResumeTaskRepository(
         runCatching {
             require(state.stage in TerminalStages)
             val request = requireNotNull(state.request)
+            if (state.stage == DownloadStage.Failed && state.fileRecoveryAction != null && request.route is DownloadRoute.HttpFile) {
+                saveState(state)
+                return@runCatching null
+            }
             var historyId: Long? = null
             database.runInTransaction {
                 val row = checkNotNull(queue.getByTaskId(request.taskId))

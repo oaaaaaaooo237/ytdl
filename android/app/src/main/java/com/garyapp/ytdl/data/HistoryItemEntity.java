@@ -421,7 +421,7 @@ public class HistoryItemEntity {
 
     private static String safeOutputUri(List<DownloadOutputFile> outputs) {
         for (DownloadOutputFile output : outputs) {
-            if (output.getKind() == DownloadOutputKind.Media) {
+            if ((output.getKind() == DownloadOutputKind.Media || output.getKind() == DownloadOutputKind.File)) {
                 return preferredOutputUri(output);
             }
         }
@@ -449,7 +449,7 @@ public class HistoryItemEntity {
         if (externalUri != null) {
             return externalUri;
         }
-        return ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath());
+        return ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath(), output.getKind() == DownloadOutputKind.File);
     }
 
     private static String safeExternalDocumentUri(String rawUri) {
@@ -470,11 +470,11 @@ public class HistoryItemEntity {
         for (DownloadOutputFile output : outputs) {
             File file = new File(output.getPath());
             if (
-                    output.getKind() == DownloadOutputKind.Media
-                            && output.getBytesWritten() > 0L
+                    (output.getKind() == DownloadOutputKind.Media || output.getKind() == DownloadOutputKind.File)
+                            && (output.getBytesWritten() > 0L || output.getKind() == DownloadOutputKind.File && output.getBytesWritten() == 0L)
                             && (
                             safeExternalDocumentUri(output.getExternalDocumentUri()) != null
-                                    || (file.isFile() && file.length() > 0L)
+                                    || (file.isFile() && (file.length() > 0L || output.getKind() == DownloadOutputKind.File && file.length() == 0L))
                     )
             ) {
                 return true;

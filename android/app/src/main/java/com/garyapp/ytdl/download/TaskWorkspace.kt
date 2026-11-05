@@ -103,6 +103,7 @@ data class TaskCheckpoint(
     val totalBytes: Long? = null,
     val checkpointAt: Long = System.currentTimeMillis(),
     val completedFiles: List<CompletedTaskFile> = emptyList(),
+    val fileRecoveryAction: String? = null,
 )
 
 internal class TaskWorkspace(
@@ -137,7 +138,7 @@ internal class TaskWorkspace(
         val bytes = ByteArrayOutputStream().also { buffer ->
             DataOutputStream(buffer).use { output ->
                 output.writeInt(CheckpointMagic)
-                output.writeInt(1)
+                output.writeInt(2)
                 output.writeUTF(taskId)
                 output.writeUTF(checkpoint.phase)
                 output.writeUTF(checkpoint.stopReason.orEmpty())
@@ -145,6 +146,7 @@ internal class TaskWorkspace(
                 output.writeLong(checkpoint.totalBytes ?: -1)
                 output.writeLong(checkpoint.checkpointAt)
                 output.writeInt(checkpoint.completedFiles.size)
+                output.writeUTF(checkpoint.fileRecoveryAction.orEmpty())
                 checkpoint.completedFiles.forEach {
                     output.writeUTF(it.role)
                     output.writeUTF(it.formatId)
@@ -163,7 +165,9 @@ internal class TaskWorkspace(
         val source = guard.child(task, "checkpoint.bin")
         check(source.isFile && source.length() in 1..MaxSnapshotBytes.toLong()) { "任务检查点不可用。" }
         val checkpoint = DataInputStream(ByteArrayInputStream(source.readBytes())).use { input ->
-            check(input.readInt() == CheckpointMagic && input.readInt() == 1) { "任务检查点不可用。" }
+            check(input.readInt() == CheckpointMagic) { "任务检查点不可用。" }
+            val version = input.readInt()
+            check(version in 1..2) { "任务检查点不可用。" }
             val storedId = input.readUTF()
             val phase = input.readUTF()
             val reason = input.readUTF().ifEmpty { null }
@@ -172,11 +176,12 @@ internal class TaskWorkspace(
             val timestamp = input.readLong()
             val count = input.readInt()
             check(count in 0..256) { "任务检查点不可用。" }
+            val recoveryAction = if (version >= 2) input.readUTF().ifEmpty { null } else null
             val files = List(count) {
                 CompletedTaskFile(input.readUTF(), input.readUTF(), input.readUTF(), input.readLong())
             }
             check(input.available() == 0) { "任务检查点不可用。" }
-            TaskCheckpoint(storedId, phase, reason, downloaded, total, timestamp, files)
+            TaskCheckpoint(storedId, phase, reason, downloaded, total, timestamp, files, recoveryAction)
         }
         validate(taskId, task, checkpoint)
         checkpoint
@@ -241,6 +246,7 @@ internal class TaskWorkspace(
             (checkpoint.stopReason == null || checkpoint.stopReason.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,63}")))) {
             "任务检查点不可用。"
         }
+        require(checkpoint.fileRecoveryAction == null || FileRecoveryAction.entries.any { it.name == checkpoint.fileRecoveryAction })
         require(checkpoint.downloadedBytes >= 0 && (checkpoint.totalBytes == null || checkpoint.totalBytes >= 0)) {
             "任务进度不可用。"
         }
@@ -259,7 +265,7 @@ internal class TaskWorkspace(
                 !it.contains('\\') && !it.contains(':') && !it.contains('\u0000') }) { "任务文件路径不可用。" }
             var file = task
             parts.forEach { file = guard.child(file, it) }
-            check(file.isFile && completed.sizeBytes > 0 && file.length() == completed.sizeBytes) { "任务文件校验失败。" }
+            check(file.isFile && (completed.sizeBytes > 0 || completed.role == "file" && completed.sizeBytes == 0L) && file.length() == completed.sizeBytes) { "任务文件校验失败。" }
         }
     }
 

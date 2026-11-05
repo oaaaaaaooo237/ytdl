@@ -34,6 +34,52 @@ class ResumeTaskRepositoryTest {
         repository = ResumeTaskRepository(database, store, workspace)
     }
     @After fun cleanup() { DownloadCoordinator.resetForTests(); database.close(); root.deleteRecursively() }
+    private fun fileRequest(): DownloadRequest {
+        val metadata = com.garyapp.ytdl.core.files.FileMetadata("http://example/report", "https://cdn/report", "report.pdf",
+            "application/pdf", 10L, "\"one\"", null, com.garyapp.ytdl.core.files.FileKind.Other,
+            com.garyapp.ytdl.core.files.ResumeSupport.Supported)
+        return DownloadRequest(metadata.sourceUrl, "文件", DownloadRoute.HttpFile(metadata, "用户.pdf"))
+    }
+    @Test fun fileFailureRetainsEncryptedRequestAndRestoresDistinctRecoveryAction() {
+        val request = fileRequest(); repository.create(request).getOrThrow()
+        for (action in listOf(FileRecoveryAction.Retry, FileRecoveryAction.ConfirmRestart)) {
+            val state = DownloadTaskState(DownloadStage.Failed, request, fileRecoveryAction = action)
+            PipelineCheckpoint.open(workspace, request).save(DownloadStage.Failed, null, null, action)
+            assertNull(repository.recordTerminal(state).getOrThrow())
+            assertEquals(request, store.load(request.taskId).getOrThrow())
+            val recovered = repository.recover().single().state
+            assertEquals(DownloadStage.Failed, recovered.stage); assertEquals(action, recovered.fileRecoveryAction)
+            assertTrue(database.historyDao().listAll().isEmpty())
+        }
+        repository.cancelStopped(repository.recover().single().state).getOrThrow()
+        assertTrue(store.load(request.taskId).isFailure)
+        assertEquals("canceled", database.historyDao().listAll().single().status)
+    }
+    @Test fun retryableFileResumeClearsFailureActionBeforeQueueing() {
+        val request = fileRequest(); repository.create(request).getOrThrow()
+        PipelineCheckpoint.open(workspace, request).save(DownloadStage.Failed, null, null, FileRecoveryAction.Retry)
+        repository.saveState(DownloadTaskState(DownloadStage.Failed, request, fileRecoveryAction = FileRecoveryAction.Retry))
+        DownloadCoordinator.restore(repository)
+        DownloadCoordinator.resume(ApplicationProvider.getApplicationContext<Context>(), request.taskId).getOrThrow()
+        assertEquals("queued", database.queueDao().getByTaskId(request.taskId).status)
+        assertEquals(request.taskId, DownloadCoordinator.claimPendingLaunch()!!.request.taskId)
+    }
+
+    @Test fun explicitFileRestartUpdatesEncryptedMetadataAndClearsOnlyConfirmedWorkspace() {
+        val request = fileRequest(); repository.create(request).getOrThrow()
+        val task = workspace.directory(request.taskId)
+        File(task, "partial").writeText("old")
+        PipelineCheckpoint.open(workspace, request).save(DownloadStage.Failed, null, null, FileRecoveryAction.ConfirmRestart)
+        val metadata = (request.route as DownloadRoute.HttpFile).metadata.copy(etag = "\"two\"")
+        val updated = repository.confirmFileRestart(request, metadata).getOrThrow()
+        assertEquals(request.taskId, updated.taskId)
+        assertEquals("用户.pdf", (updated.route as DownloadRoute.HttpFile).fileName)
+        assertEquals(metadata, updated.route.metadata)
+        assertEquals(updated, store.load(request.taskId).getOrThrow())
+        assertFalse(File(workspace.directory(request.taskId), "partial").exists())
+        assertNull(workspace.loadCheckpoint(request.taskId).getOrThrow().fileRecoveryAction)
+    }
+
     @Test fun pendingCancellationCleanupFailureCannotReturnTheTaskToTheRunnableQueue() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         DownloadCoordinator.restore(repository)

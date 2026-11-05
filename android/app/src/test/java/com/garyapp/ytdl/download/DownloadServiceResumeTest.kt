@@ -51,6 +51,66 @@ class DownloadServiceResumeTest {
         DownloadCoordinator.enqueueForServiceStart(request, root).getOrThrow()
         return DownloadCoordinator.claimPendingLaunch()!!.also { DownloadCoordinator.activateLaunch(it) }
     }
+    @Test fun httpFileUsesForegroundTaskWithoutCreatingMediaEngineAndExportsEmptyWithMetadataMime() {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/download") { e ->
+            e.responseHeaders.add("Content-Length", "0"); e.responseHeaders.add("Content-Type", "application/pdf")
+            e.responseHeaders.add("ETag", "\"one\""); e.sendResponseHeaders(200, -1); e.close()
+        }
+        server.start()
+        try {
+            val url = "http://127.0.0.1:${server.address.port}/download"
+            val metadata = com.garyapp.ytdl.core.files.FileMetadata(url, url, "download", "application/pdf", 0L, "\"one\"", null,
+                com.garyapp.ytdl.core.files.FileKind.Other, com.garyapp.ytdl.core.files.ResumeSupport.Supported)
+            val launch = enqueue(DownloadRequest(url, "文件", DownloadRoute.HttpFile(metadata),
+                storageTarget = com.garyapp.ytdl.core.storage.StorageTarget.SafTree("content://docs/tree/save")))
+            service.engineFactory = { error("文件任务不得创建媒体下载器") }
+            var copies = 0
+            service.exportToTree = { _, outputs, _ ->
+                assertEquals(0L, outputs.single().bytesWritten)
+                assertEquals("application/pdf", outputs.single().mimeType)
+                copies++; listOf("content://docs/document/report")
+            }
+            service.runLaunch(launch)
+            assertEquals(1, copies)
+            assertEquals(DownloadStage.Completed, DownloadCoordinator.currentState()!!.stage)
+            assertEquals("completed", database.historyDao().listAll().single().status)
+            assertFalse(repository.workspace.exists(launch.request.taskId))
+        } finally { server.stop(0) }
+    }
+
+    @Test fun safFileFailureAndNameConflictKeepCompletedEmptyOutputForRecovery() {
+        val url = "https://example.test/download"
+        val metadata = com.garyapp.ytdl.core.files.FileMetadata(url, url, "download", "application/pdf", 0L, "\"one\"", null,
+            com.garyapp.ytdl.core.files.FileKind.Other, com.garyapp.ytdl.core.files.ResumeSupport.Supported)
+        val request = DownloadRequest(url, "文件", DownloadRoute.HttpFile(metadata, conflictPolicy = HttpFileConflictPolicy.Ask))
+        repository.create(request).getOrThrow()
+        val checkpoint = PipelineCheckpoint.open(repository.workspace, request)
+        val directory = File(checkpoint.directory, "outputs").apply { mkdirs() }
+        val file = File(directory, "download").apply { writeBytes(byteArrayOf()) }
+        checkpoint.record("file", file); checkpoint.save(DownloadStage.Completed, null, null)
+        val output = DownloadOutputFile(DownloadOutputKind.File, file.path, 0L, root.path, mimeType = metadata.mimeType)
+        val result = DownloadPipelineResult(DownloadTaskState(DownloadStage.Completed, request, listOf(output)), listOf(output))
+        val target = com.garyapp.ytdl.core.storage.StorageTarget.SafTree("content://docs/tree/save")
+        service.exportToTree = { _, _, _ -> error("permission lost") }
+        assertEquals(DownloadStage.Paused, service.exportCompletedOutputs(result, target, NeverDownloadCancellation).stage)
+        assertTrue(file.isFile)
+        service.exportToTree = { _, _, _ -> throw com.garyapp.ytdl.storage.ExportController.NameConflictException() }
+        val conflict = service.exportCompletedOutputs(result, target, NeverDownloadCancellation)
+        assertEquals(FileRecoveryAction.ChooseFileName, conflict.fileRecoveryAction)
+        assertEquals(DownloadStage.Failed, conflict.stage)
+        val renamed = repository.chooseFileName(request, "other").getOrThrow()
+        assertEquals(metadata, (renamed.route as DownloadRoute.HttpFile).metadata)
+        val resumed = HttpFilePipeline().run(renamed, root)
+        assertEquals(DownloadStage.Completed, resumed.state.stage)
+        assertTrue(file.isFile)
+        service.exportToTree = { _, outputs, _ ->
+            assertEquals("other", outputs.single().displayName); assertEquals("application/pdf", outputs.single().mimeType)
+            listOf("content://docs/document/other")
+        }
+        assertEquals("content://docs/document/other", service.exportCompletedOutputs(resumed, target, NeverDownloadCancellation).outputs.single().externalDocumentUri)
+    }
+
     @Test fun cancelCommandRemovesOnlyQueuedTaskAndKeepsActiveDownloadAndRemainingOrder() {
         val active = enqueue(request())
         val token = MutableDownloadCancellation()

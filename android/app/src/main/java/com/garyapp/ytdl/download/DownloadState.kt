@@ -12,6 +12,7 @@ enum class DownloadStage {
     Paused,
     WaitingForNetwork,
     Resuming,
+    DownloadingFile,
     DownloadingVideo,
     DownloadingAudio,
     DownloadingSubtitles,
@@ -22,7 +23,10 @@ enum class DownloadStage {
     Canceled,
 }
 
+enum class FileRecoveryAction { Retry, ConfirmRestart, ChooseFileName }
+
 enum class DownloadOutputKind {
+    File,
     Media,
     Subtitle,
 }
@@ -33,6 +37,7 @@ data class DownloadOutputFile(
     val bytesWritten: Long,
     val appPrivateRootPath: String? = null,
     val externalDocumentUri: String? = null,
+    val mimeType: String? = null,
 )
 
 data class DownloadTaskState(
@@ -43,9 +48,10 @@ data class DownloadTaskState(
     val errorMessage: String? = null,
     val stopReason: DownloadStopReason? = null,
     val statusMessage: String? = null,
+    val fileRecoveryAction: FileRecoveryAction? = null,
 ) {
     fun atStage(nextStage: DownloadStage): DownloadTaskState {
-        return copy(stage = nextStage, progress = null, errorMessage = null)
+        return copy(stage = nextStage, progress = null, errorMessage = null, fileRecoveryAction = null)
     }
 
     fun withProgress(progress: DownloadProgress): DownloadTaskState {
@@ -60,7 +66,7 @@ data class DownloadTaskState(
     }
 
     fun canceled(): DownloadTaskState {
-        return copy(stage = DownloadStage.Canceled, progress = null, errorMessage = null, stopReason = DownloadStopReason.UserCancel)
+        return copy(stage = DownloadStage.Canceled, progress = null, errorMessage = null, stopReason = DownloadStopReason.UserCancel, fileRecoveryAction = null)
     }
 
     fun completeWith(outputs: List<DownloadOutputFile>): Result<DownloadTaskState> {
@@ -70,6 +76,7 @@ data class DownloadTaskState(
             validateFinalOutputs(currentRequest, outputs)
             copy(
                 stage = DownloadStage.Completed,
+                fileRecoveryAction = null,
                 outputs = outputs,
                 progress = null,
                 errorMessage = null,
@@ -99,6 +106,21 @@ data class DownloadTaskState(
         request: DownloadRequest,
         outputs: List<DownloadOutputFile>,
     ) {
+        if (request.route is DownloadRoute.HttpFile) {
+            val expectedKind = if (request.route.metadata.kind == com.garyapp.ytdl.core.files.FileKind.Other)
+                DownloadOutputKind.File else DownloadOutputKind.Media
+            require(request.selectedSubtitles.isEmpty() && outputs.size == 1 && outputs.single().kind == expectedKind) {
+                "文件输出尚未生成。"
+            }
+            val output = outputs.single()
+            val file = File(output.path)
+            require(file.isFile && file.length() == output.bytesWritten &&
+                (output.bytesWritten > 0 || expectedKind == DownloadOutputKind.File && output.bytesWritten == 0L)) {
+                "文件输出不存在或长度不正确。"
+            }
+            return
+        }
+        require(outputs.none { it.kind == DownloadOutputKind.File }) { "媒体任务输出类型不可用。" }
         val mediaOutputs = outputs.filter { it.kind == DownloadOutputKind.Media }
         if (mediaOutputs.size != 1) {
             throw DownloadStateException("媒体输出尚未生成，不能标记完成。")

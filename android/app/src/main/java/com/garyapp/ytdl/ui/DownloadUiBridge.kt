@@ -239,6 +239,7 @@ fun userVisibleDownloadStatus(stage: DownloadStage): String {
         DownloadStage.WaitingForNetwork -> "等待网络"
         DownloadStage.Resuming -> "正在继续"
         DownloadStage.Waiting -> "等待中"
+        DownloadStage.DownloadingFile -> "下载文件"
         DownloadStage.DownloadingVideo -> "下载视频"
         DownloadStage.DownloadingAudio -> "下载音频"
         DownloadStage.DownloadingSubtitles -> "处理附加文件"

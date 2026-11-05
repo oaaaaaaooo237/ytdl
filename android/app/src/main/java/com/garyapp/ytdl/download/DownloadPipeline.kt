@@ -111,6 +111,9 @@ class DownloadPipeline(
         cancellation: DownloadCancellation = NeverDownloadCancellation,
         onStateChanged: (DownloadTaskState) -> Unit = {},
     ): DownloadPipelineResult {
+        if (request.route is DownloadRoute.HttpFile) {
+            return HttpFilePipeline().run(request, outputDirectory, cancellation, onStateChanged)
+        }
         var state = DownloadTaskState.waiting(request)
         val finalOutputs = mutableListOf<DownloadOutputFile>()
         var taskDirectory: File? = null
@@ -201,6 +204,7 @@ class DownloadPipeline(
             }
 
             when (val route = request.route) {
+                is DownloadRoute.HttpFile -> error("文件请求应由文件管线处理。")
                 is DownloadRoute.DirectSingleFile -> finalOutputs += output(stream(route.formatId, DownloadFormatRole.Media, false))
                 is DownloadRoute.VideoOnly -> finalOutputs += output(stream(route.videoFormatId, DownloadFormatRole.Video, false))
                 is DownloadRoute.AudioOnly -> finalOutputs += output(stream(route.audioFormatId, DownloadFormatRole.Audio, false))

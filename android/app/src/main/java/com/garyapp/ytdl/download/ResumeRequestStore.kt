@@ -68,7 +68,7 @@ internal class FileResumeRequestStore(
         return ByteArrayOutputStream().also { buffer ->
             DataOutputStream(buffer).use { output ->
                 output.writeInt(PayloadMagic)
-                output.writeInt(2)
+                output.writeInt(3)
                 output.writeSafeString(request.taskId)
                 output.writeSafeString(request.url)
                 output.writeSafeString(request.title)
@@ -85,6 +85,7 @@ internal class FileResumeRequestStore(
                     }
                 }
                 when (val route = request.route) {
+                    is DownloadRoute.HttpFile -> { output.writeInt(5); output.writeHttpFileRoute(route) }
                     is DownloadRoute.DirectSingleFile -> { output.writeInt(1); output.writeSafeString(route.formatId) }
                     is DownloadRoute.VideoOnly -> { output.writeInt(2); output.writeSafeString(route.videoFormatId) }
                     is DownloadRoute.AudioOnly -> { output.writeInt(3); output.writeSafeString(route.audioFormatId) }
@@ -115,7 +116,7 @@ internal class FileResumeRequestStore(
         return DataInputStream(ByteArrayInputStream(payload)).use { input ->
             require(input.readInt() == PayloadMagic) { "恢复信息不可用。" }
             val version = input.readInt()
-            require(version in 1..2) { "恢复信息不可用。" }
+            require(version in 1..3) { "恢复信息不可用。" }
             val id = input.readUTF()
             val url = input.readUTF()
             val title = input.readUTF()
@@ -132,6 +133,7 @@ internal class FileResumeRequestStore(
                 2 -> DownloadRoute.VideoOnly(input.readUTF())
                 3 -> DownloadRoute.AudioOnly(input.readUTF())
                 4 -> DownloadRoute.MergeRequired(input.readUTF(), input.readUTF())
+                5 -> { require(version >= 3); input.readHttpFileRoute() }
                 else -> error("恢复格式不可用。")
             }
             val count = input.readInt()

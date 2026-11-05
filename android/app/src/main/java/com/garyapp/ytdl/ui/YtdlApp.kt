@@ -1230,6 +1230,11 @@ internal fun YtdlApp(
     }
 
     fun reanalyzeRetryDraft(draft: RetryDownloadDraft) {
+        if (draft.route is DownloadRoute.HttpFile) {
+            selectedRoute = "download"
+            runtimeState = runtimeState.copy(url = draft.url, userMessage = "文件下载需要重新确认文件信息。")
+            return
+        }
         analyzeUrl(requestedUrl = draft.url, retryDraft = draft)
     }
 
@@ -1877,7 +1882,7 @@ internal fun RuntimeDownloadState.withPipelineStateForUiTest(state: DownloadTask
 private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): RuntimeDownloadState {
     val statusText = userVisibleDownloadStatus(state.stage)
     val progress = state.progress
-    val mediaOutput = state.outputs.firstOrNull { it.kind == DownloadOutputKind.Media }
+    val mediaOutput = state.outputs.firstOrNull { it.kind == DownloadOutputKind.Media || it.kind == DownloadOutputKind.File }
     if (state.stage == DownloadStage.Completed && mediaOutput == null) {
         return copy(
             isDownloading = false,
@@ -2885,6 +2890,7 @@ private data class QueueStageSpec(
 private fun queueStageSpecs(request: DownloadRequest?): List<QueueStageSpec> {
     if (request == null) return emptyList()
     val mediaStages = when (request.route) {
+        is DownloadRoute.HttpFile -> listOf(QueueStageSpec("下载文件", DownloadStage.DownloadingFile))
         is DownloadRoute.DirectSingleFile -> listOf(QueueStageSpec("下载视频", DownloadStage.DownloadingVideo))
         is DownloadRoute.VideoOnly -> listOf(QueueStageSpec("下载视频", DownloadStage.DownloadingVideo))
         is DownloadRoute.AudioOnly -> listOf(QueueStageSpec("下载音频", DownloadStage.DownloadingAudio))

@@ -177,6 +177,7 @@ internal class FileRetryDraftStore(
             output.writeInt(PayloadVersion)
             output.writeString(draft.url)
             when (val route = draft.route) {
+                is DownloadRoute.HttpFile -> { output.writeInt(5); output.writeHttpFileRoute(route) }
                 is DownloadRoute.DirectSingleFile -> {
                     output.writeInt(RouteDirect)
                     output.writeString(route.formatId)
@@ -204,7 +205,9 @@ internal class FileRetryDraftStore(
     private fun decode(payload: ByteArray): RetryDownloadDraft {
         require(payload.size in 1..MaxPayloadBytes) { "重试信息不可用。" }
         return DataInputStream(ByteArrayInputStream(payload)).use { input ->
-            require(input.readInt() == PayloadMagic && input.readInt() == PayloadVersion) {
+            require(input.readInt() == PayloadMagic) { "重试信息不可用。" }
+            val version = input.readInt()
+            require(version in 2..PayloadVersion) {
                 "重试信息不可用。"
             }
             val url = input.readString()
@@ -213,6 +216,7 @@ internal class FileRetryDraftStore(
                 RouteVideoOnly -> DownloadRoute.VideoOnly(input.readString())
                 RouteAudioOnly -> DownloadRoute.AudioOnly(input.readString())
                 RouteMerge -> DownloadRoute.MergeRequired(input.readString(), input.readString())
+                5 -> { require(version >= 3); input.readHttpFileRoute() }
                 else -> throw IllegalArgumentException("重试信息不可用。")
             }
             require(input.available() == 0) { "重试信息不可用。" }
@@ -243,7 +247,7 @@ internal class FileRetryDraftStore(
 
         private const val RetryDirectoryName = "retry-requests"
         private const val PayloadMagic = 0x5954444C
-        private const val PayloadVersion = 2
+        private const val PayloadVersion = 3
         private const val RouteDirect = 1
         private const val RouteVideoOnly = 2
         private const val RouteAudioOnly = 3
