@@ -28,6 +28,19 @@ class UnifiedTasksTest {
         assertEquals(7L, unifiedTasks(emptyList(), listOf(restored), listOf(recent)).single().history!!.id)
     }
 
+    @Test fun recoveryActionWinsOverSameIdHistoryAndDeduplicatesLegacyDuplicates() {
+        val state = DownloadTaskState(DownloadStage.Failed, request,
+            fileRecoveryAction = com.garyapp.ytdl.download.FileRecoveryAction.ConfirmRestart)
+        val recovered = ResumeTaskItem(request.taskId, "待确认", state)
+        val history = listOf(7L, 8L).map { historyId ->
+            HistoryItemEntity().apply { id = historyId; taskId = request.taskId; status = "failed" }
+        }
+        val task = unifiedTasks(listOf(state), listOf(recovered), history).single()
+        assertEquals(recovered, task.recovery)
+        assertEquals(8L, task.history?.id)
+        assertEquals(8L, unifiedTasks(emptyList(), emptyList(), history).single().history?.id)
+    }
+
     @Test fun corruptedQueueEntryIsFailedAndKeepsItsRecoveryIdentity() {
         val recovered = ResumeTaskItem(
             request.taskId, "损坏任务", DownloadTaskState(DownloadStage.Paused),

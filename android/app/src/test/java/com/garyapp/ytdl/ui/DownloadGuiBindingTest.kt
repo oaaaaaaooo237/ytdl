@@ -1085,6 +1085,57 @@ class DownloadGuiBindingTest {
     }
 
     @Test
+    fun unreadableHistoryOutputHidesFileActionsAndKeepsDelete() {
+        val missing = HistoryUiItem(50, "已移动的文件", "", "完成", "app-private://outputs/missing-history.pdf",
+            HistoryItemEntity.STATUS_COMPLETED, 1L)
+        val inaccessible = missing.copy(id = 51, title = "无授权文件", outputUri = "content://missing.provider/document/report.pdf")
+        composeRule.setContent { YtdlApp(historyItemsProvider = { listOf(missing, inaccessible) }) }
+        composeRule.onNodeWithTag("ytdl-tab-tasks").performClick()
+        for (id in listOf(50L, 51L)) {
+            composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-title-$id"))
+            val card = androidx.compose.ui.test.hasAnyAncestor(hasTestTag("ytdl-history-real-card")) and
+                androidx.compose.ui.test.hasText("保存的文件不存在或无法读取，请检查存储权限。")
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodes(card).fetchSemanticsNodes().isNotEmpty()
+            }
+            listOf("打开", "分享", "导出").forEach { action ->
+                composeRule.onNodeWithTag("ytdl-history-action-$id-$action").assertDoesNotExist()
+            }
+            composeRule.onNodeWithTag("ytdl-history-action-$id-删除").assertExists()
+        }
+    }
+
+    @Test
+    fun readablePrivateHistoryShowsSubtitleInAllThreeFileChoosers() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val folder = File(context.filesDir, "gui-downloads/history-output-fixture").apply { mkdirs() }
+        val main = File(folder, "main.mp4").apply { writeText("test media") }
+        val subtitle = File(folder, "captions.vtt").apply { writeText("WEBVTT") }
+        try {
+            val history = HistoryUiItem(50, "带字幕的文件", "", "完成", "app-private://outputs/history-output-fixture/main.mp4",
+                HistoryItemEntity.STATUS_COMPLETED, 1L, outputMimeType = "video/mp4",
+                subtitleOutputUris = listOf("app-private://outputs/history-output-fixture/captions.vtt"))
+            composeRule.setContent { YtdlApp(historyItemsProvider = { listOf(history) }) }
+            composeRule.onNodeWithTag("ytdl-tab-tasks").performClick()
+            composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-title-50"))
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithTag("ytdl-history-action-50-打开").fetchSemanticsNodes().isNotEmpty()
+            }
+            listOf("打开", "分享", "导出").forEach { action ->
+                composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-action-50-$action"))
+                composeRule.onNodeWithTag("ytdl-history-action-50-$action").performClick()
+                composeRule.onNodeWithText("主文件 · main.mp4").assertExists()
+                composeRule.onNodeWithText("字幕 1 · captions.vtt").assertExists()
+                composeRule.onNodeWithText("取消").performClick()
+            }
+        } finally {
+            main.delete()
+            subtitle.delete()
+            folder.delete()
+        }
+    }
+
+    @Test
     fun taskStatusAndTypeFiltersCombineAndClearInTheUnifiedPage() {
         val items = listOf(
             HistoryUiItem(51, "视频记录", "", "完成", "app-private://outputs/example.mp4",

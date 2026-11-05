@@ -20,7 +20,7 @@ data class UnifiedTask(
     val type: TaskOutputType,
     val state: DownloadTaskState? = null,
     val recovery: ResumeTaskItem? = null,
-    val history: HistoryItemEntity? = null,
+    val history: HistoryUiItem? = null,
 )
 
 fun matchesTaskFilter(task: UnifiedTask, statuses: Set<TaskStatus>, types: Set<TaskOutputType>): Boolean =
@@ -31,6 +31,12 @@ fun unifiedTasks(
     liveStates: List<DownloadTaskState>,
     recovered: List<ResumeTaskItem>,
     history: List<HistoryItemEntity>,
+): List<UnifiedTask> = unifiedUiTasks(liveStates, recovered, historyUiItemsFromRows(history))
+
+internal fun unifiedUiTasks(
+    liveStates: List<DownloadTaskState>,
+    recovered: List<ResumeTaskItem>,
+    history: List<HistoryUiItem>,
 ): List<UnifiedTask> {
     val rows = linkedMapOf<String, UnifiedTask>()
     for (state in liveStates) {
@@ -44,18 +50,23 @@ fun unifiedTasks(
             row.wasQueued && row.state.stage == DownloadStage.Paused -> TaskStatus.Waiting
             else -> row.state.stage.taskStatus() ?: continue
         }
-        rows.putIfAbsent(row.taskId, UnifiedTask(
+        val live = rows[row.taskId]?.state
+        if (live != null && live.stage !in TerminalStages && live.stage != DownloadStage.Paused) continue
+        rows[row.taskId] = UnifiedTask(
             row.taskId, row.title, status, row.state.request?.let { row.state.outputType() } ?: row.outputType,
             state = row.state, recovery = row,
-        ))
+        )
     }
-    for (row in history.sortedWith(compareByDescending<HistoryItemEntity> { it.completedAt }.thenByDescending { it.id })) {
-        val id = row.taskId?.takeIf { it.isNotBlank() } ?: "history:${row.id}"
+    for (row in history.sortedWith(compareByDescending<HistoryUiItem> { it.completedAt }.thenByDescending { it.id })) {
+        val id = row.taskId ?: "history:${row.id}"
         val current = rows[id]
         if (current?.history != null) continue
-        val liveState = current?.takeIf { it.recovery == null }?.state
-        if (liveState != null && (liveState.stage !in TerminalStages || liveState.fileRecoveryAction != null)) continue
-        rows[id] = UnifiedTask(id, row.title.orEmpty(), row.taskStatus(), row.taskOutputType(), history = row)
+        if (current != null && (current.recovery != null || current.state?.fileRecoveryAction != null ||
+            current.state?.stage !in TerminalStages)) {
+            rows[id] = current.copy(history = row)
+        } else {
+            rows[id] = UnifiedTask(id, row.title, row.taskStatus(), row.outputType, history = row)
+        }
     }
     return rows.values.toList()
 }
@@ -74,7 +85,7 @@ private fun DownloadStage.taskStatus(): TaskStatus? = when (this) {
     DownloadStage.Canceled -> TaskStatus.Canceled
 }
 
-private fun HistoryItemEntity.taskStatus(): TaskStatus = when (status) {
+private fun HistoryUiItem.taskStatus(): TaskStatus = when (status) {
     HistoryItemEntity.STATUS_COMPLETED -> TaskStatus.Completed
     HistoryItemEntity.STATUS_CANCELED -> TaskStatus.Canceled
     else -> TaskStatus.Failed

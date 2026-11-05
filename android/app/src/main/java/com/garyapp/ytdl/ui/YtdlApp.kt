@@ -90,6 +90,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -126,6 +127,8 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.garyapp.ytdl.BuildConfig
 import com.garyapp.ytdl.R
 import com.garyapp.ytdl.core.files.FileKind
@@ -157,7 +160,6 @@ import com.garyapp.ytdl.core.ytdlp.ParserRuntimeState
 import com.garyapp.ytdl.core.ytdlp.ParserVersionControl
 import com.garyapp.ytdl.core.ytdlp.ParserVersionInfo
 import com.garyapp.ytdl.core.ytdlp.ParserVersionManager
-import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
 import com.garyapp.ytdl.download.DownloadCoordinator
 import com.garyapp.ytdl.download.DownloadFailureMessages
@@ -611,6 +613,7 @@ internal fun EditText.installUrlSelectionActionModeCallbacks() {
 internal data class HistoryOutputTarget(
     val uri: String,
     val mimeType: String,
+    val displayName: String = "",
 )
 
 private fun historyContentOutputTarget(
@@ -681,6 +684,7 @@ internal data class RuntimeDownloadState(
     val downloadedBytes: Long? = null,
     val totalBytes: Long? = null,
     val speedBytesPerSecond: Double? = null,
+    val etaSeconds: Long? = null,
     val downloadStatus: String = "",
     val outputPath: String = "",
     val outputBytes: Long = 0L,
@@ -742,6 +746,7 @@ internal data class QueueProgressMeta(
     val speed: String,
     val transferred: String,
     val contentDescription: String,
+    val eta: String? = null,
 )
 
 internal data class FormatSettingSummaries(
@@ -869,6 +874,7 @@ internal fun YtdlApp(
     val bridge = remember { YtdlpBridge() }
     val notificationController = remember { NotificationController(context.applicationContext) }
     val notificationRuntimePermissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    var historyAvailabilityRevision by remember { mutableStateOf(0) }
     var notificationsAllowed by remember { mutableStateOf(notificationController.canPostNotifications()) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -1152,6 +1158,7 @@ internal fun YtdlApp(
     DisposableEffect(lifecycleOwner, notificationRuntimePermissionRequired) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                historyAvailabilityRevision++
                 notificationsAllowed = refreshedNotificationPermissionState(
                     currentValue = notificationsAllowed,
                     systemValue = notificationController.canPostNotifications(),
@@ -1400,28 +1407,31 @@ internal fun YtdlApp(
         )
     }
 
-    fun outputTargetForHistoryUri(outputUri: String?, recordedMimeType: String? = null): Result<HistoryOutputTarget> {
-        val normalizedUri = outputUri.orEmpty().trim()
-        val contentUri = runCatching { Uri.parse(normalizedUri) }.getOrNull()
-        val contentTarget = contentUri?.let { uri ->
-            historyContentOutputTarget(
-                rawUri = normalizedUri,
-                resolverMimeType = recordedMimeType ?: runCatching { context.contentResolver.getType(uri) }.getOrNull(),
-            )
+    fun openHistoryOutputStream(sourceUri: String): InputStream {
+        if (sourceUri.startsWith("app-private:")) {
+            return outputForAppPrivateUri(sourceUri).getOrThrow().sourceFile.inputStream()
         }
-        if (contentTarget != null) return Result.success(contentTarget)
-
-        return outputForAppPrivateUri(normalizedUri).map { output ->
-            HistoryOutputTarget(
-                uri = fileProviderUri(output).toString(),
-                mimeType = recordedMimeType ?: output.mimeType,
-            )
-        }
+        return requireNotNull(context.contentResolver.openInputStream(Uri.parse(sourceUri)))
     }
 
-    fun outputForHistoryItem(item: HistoryUiItem): Result<HistoryOutputTarget> {
-        return outputTargetForHistoryUri(item.outputUri, item.outputMimeType)
+    fun checkHistoryOutputReadable(sourceUri: String) {
+        openHistoryOutputStream(sourceUri).use { it.read() }
     }
+
+    fun readableHistoryOutput(reference: HistoryOutputReference): HistoryOutputTarget? = runCatching {
+        val uri = Uri.parse(reference.uri)
+        val resolver = context.contentResolver
+        val privateOutput = outputForAppPrivateUri(reference.uri).getOrNull()
+        val output = if (privateOutput != null) {
+            HistoryOutputTarget(reference.uri, reference.mimeType ?: privateOutput.mimeType, privateOutput.sourceFile.name)
+        } else {
+            requireNotNull(historyContentOutputTarget(reference.uri,
+                reference.mimeType ?: runCatching { resolver.getType(uri) }.getOrNull()))
+                .copy(displayName = displayNameForUri(context, uri, reference.label))
+        }
+        checkHistoryOutputReadable(output.uri)
+        output
+    }.getOrNull()
 
     val historyExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val sourceUri = exportSourceUri
@@ -1430,10 +1440,9 @@ internal fun YtdlApp(
         if (sourceUri != null && destination != null && result.resultCode == Activity.RESULT_OK) {
             Thread {
                 val outcome = runCatching {
-                    val source = Uri.parse(sourceUri)
-                    check(source != destination)
+                    check(Uri.parse(sourceUri) != destination)
                     val resolver = context.contentResolver
-                    requireNotNull(resolver.openInputStream(source)).use { input ->
+                    openHistoryOutputStream(sourceUri).use { input ->
                         requireNotNull(resolver.openOutputStream(destination, "wt")).use { output ->
                             input.copyTo(output)
                         }
@@ -1446,55 +1455,55 @@ internal fun YtdlApp(
         }
     }
 
-    fun openHistoryItem(item: HistoryUiItem) {
-        val output = outputForHistoryItem(item).getOrElse { _ ->
-            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage())
-            return
-        }
-        val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(Uri.parse(output.uri), output.mimeType)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        runCatching {
-            context.startActivity(Intent.createChooser(intent, "打开下载文件"))
-        }.onFailure {
-            runtimeState = runtimeState.copy(userMessage = "没有可用应用打开该文件，请安装支持该文件类型的应用。")
-        }
-    }
-
-    fun shareHistoryItem(item: HistoryUiItem) {
-        val output = outputForHistoryItem(item).getOrElse { _ ->
-            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage())
-            return
-        }
-        val intent = Intent(Intent.ACTION_SEND)
-            .setType(output.mimeType)
-            .putExtra(Intent.EXTRA_STREAM, Uri.parse(output.uri))
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        runCatching {
-            context.startActivity(Intent.createChooser(intent, "分享下载文件"))
-        }.onFailure {
-            runtimeState = runtimeState.copy(userMessage = "没有可用应用分享该文件。")
-        }
-    }
-
-    fun requestHistoryExport(item: HistoryUiItem) {
-        val output = outputForHistoryItem(item).getOrElse {
-            runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage())
-            return
-        }
+    fun launchHistoryOutputAction(action: HistoryFileAction, output: HistoryOutputTarget) {
         val uri = Uri.parse(output.uri)
-        val name = outputForAppPrivateUri(item.outputUri).getOrNull()?.sourceFile?.name
-            ?: displayNameForUri(context, uri, item.title)
-        exportSourceUri = output.uri
-        runCatching {
-            historyExportLauncher.launch(Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType(output.mimeType)
-                .putExtra(Intent.EXTRA_TITLE, name))
-        }.onFailure {
-            exportSourceUri = null
-            runtimeState = runtimeState.copy(userMessage = "无法打开系统文件选择器。")
+        if (action == HistoryFileAction.Export) {
+            exportSourceUri = output.uri
+            runCatching {
+                historyExportLauncher.launch(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType(output.mimeType)
+                    .putExtra(Intent.EXTRA_TITLE, output.displayName))
+            }.onFailure {
+                exportSourceUri = null
+                runtimeState = runtimeState.copy(userMessage = "无法打开系统文件选择器。")
+            }
+            return
         }
+        val intent = if (action == HistoryFileAction.Open) {
+            Intent(Intent.ACTION_VIEW).setDataAndType(uri, output.mimeType)
+        } else {
+            Intent(Intent.ACTION_SEND).setType(output.mimeType).putExtra(Intent.EXTRA_STREAM, uri)
+                .apply { clipData = android.content.ClipData.newRawUri(output.displayName, uri) }
+        }
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        runCatching {
+            context.startActivity(Intent.createChooser(intent, "${action.label}下载文件"))
+        }.onFailure {
+            runtimeState = runtimeState.copy(userMessage = "没有可用应用${action.label}该文件。")
+        }
+    }
+
+    fun performHistoryOutputAction(action: HistoryFileAction, output: HistoryOutputTarget) {
+        Thread {
+            val checked = runCatching {
+                checkHistoryOutputReadable(output.uri)
+                if (action == HistoryFileAction.Export || !output.uri.startsWith("app-private:")) {
+                    output
+                } else {
+                    val privateFile = outputForAppPrivateUri(output.uri).getOrThrow()
+                    output.copy(uri = fileProviderUri(privateFile).toString())
+                }
+            }.getOrNull()
+            mainHandler.post {
+                if (checked != null) {
+                    launchHistoryOutputAction(action, checked)
+                } else {
+                    historyAvailabilityRevision++
+                    runtimeState = runtimeState.copy(userMessage = historyMissingLocalOutputMessage())
+                }
+            }
+        }.start()
     }
 
     fun deleteHistoryItems(items: List<HistoryUiItem>, deleteFiles: Boolean, fromSettings: Boolean = false) {
@@ -1665,11 +1674,11 @@ internal fun YtdlApp(
                                 runtimeState = runtimeState.copy(userMessage = "已请求取消所选任务。")
                             },
                             onHistoryQueryChange = { historyQuery = it },
-                            onOpen = ::openHistoryItem,
-                            onShare = ::shareHistoryItem,
                             onRetry = ::retryHistoryItem,
                             onDelete = ::requestDeleteHistoryItem,
-                            onExport = ::requestHistoryExport,
+                            resolveOutput = ::readableHistoryOutput,
+                            onOutputAction = ::performHistoryOutputAction,
+                            historyAvailabilityRevision = historyAvailabilityRevision,
                             filters = TaskFilters(taskStatusNames.map(TaskStatus::valueOf).toSet(),
                                 taskTypeNames.map(TaskOutputType::valueOf).toSet()),
                             onFiltersChange = {
@@ -2235,6 +2244,7 @@ private fun RuntimeDownloadState.withPipelineState(state: DownloadTaskState): Ru
         downloadedBytes = progress?.downloadedBytes ?: mediaOutput?.bytesWritten,
         totalBytes = stableTotalBytes,
         speedBytesPerSecond = progress?.speedBytesPerSecond?.takeIf { it > 0.0 },
+        etaSeconds = progress?.etaSeconds?.takeIf { it > 0 && state.stage in TransferringStages },
         outputPath = mediaOutput?.path.orEmpty(),
         outputBytes = mediaOutput?.bytesWritten ?: 0L,
     )
@@ -3258,19 +3268,25 @@ private fun queueOverallProgressPercent(state: DownloadTaskState, currentStagePe
     val specs = queueStageSpecs(state.request)
     if (specs.isEmpty()) return currentStagePercent
     if (state.stage == DownloadStage.Waiting) return 0.0
+    if (currentStagePercent == null && state.stage in TransferringStages) return null
     val currentIndex = specs.indexOfFirst { it.stage == state.stage }
     if (currentIndex < 0) return currentStagePercent
     val currentStageFraction = ((currentStagePercent ?: 0.0).coerceIn(0.0, 100.0)) / 100.0
     return ((currentIndex + currentStageFraction) / specs.size) * 100.0
 }
 
-private fun queueCardStatus(state: RuntimeDownloadState): String {
-    return when (state.downloadStatus) {
-        "下载完成" -> "完成"
-        "下载失败" -> "失败"
-        "已取消" -> "取消"
-        else -> "${(state.overallProgressPercent ?: state.progressPercent ?: 0.0).toInt()}%"
-    }
+private val TransferringStages = setOf(DownloadStage.DownloadingFile, DownloadStage.DownloadingVideo,
+    DownloadStage.DownloadingAudio, DownloadStage.DownloadingSubtitles)
+
+private fun queueCardStatus(state: RuntimeDownloadState): String = when (state.activeStage) {
+    DownloadStage.Completed -> "完成"
+    DownloadStage.Failed -> "失败"
+    DownloadStage.Canceled -> "取消"
+    DownloadStage.Waiting, DownloadStage.WaitingForNetwork, DownloadStage.Pausing,
+    DownloadStage.Resuming, DownloadStage.Paused -> userVisibleDownloadStatus(state.activeStage)
+    else -> (state.overallProgressPercent ?: state.progressPercent)
+        ?.takeIf(Double::isFinite)?.let { "${it.toInt()}%" }
+        ?: state.downloadStatus.ifBlank { userVisibleDownloadStatus(state.activeStage) }
 }
 
 internal fun queueCardStatusForUiTest(state: RuntimeDownloadState): String = queueCardStatus(state)
@@ -3282,10 +3298,12 @@ private fun queueCardMeta(state: RuntimeDownloadState): QueueProgressMeta {
         ?: "--"
     val downloaded = formatProgressBytes((state.downloadedBytes ?: 0L).toDouble())
     val total = state.totalBytes?.let { formatProgressBytes(it.toDouble()) } ?: "--"
+    val eta = state.etaSeconds?.takeIf { it > 0 }?.let { "剩余 ${formatDuration(it)}" }
     return QueueProgressMeta(
         speed = speed,
         transferred = "$downloaded/$total",
-        contentDescription = "下载速度 $speed，已下载 $downloaded，总容量 $total",
+        contentDescription = "下载速度 $speed，已下载 $downloaded，总容量 $total" + eta?.let { "，$it" }.orEmpty(),
+        eta = eta,
     )
 }
 
@@ -3489,8 +3507,8 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     userMessage: String,
     onCancelDownload: (String?) -> Unit,
     onHistoryQueryChange: (String) -> Unit,
-    onOpen: (HistoryUiItem) -> Unit,
-    onShare: (HistoryUiItem) -> Unit,
+    onOpen: (HistoryUiItem) -> Unit = {},
+    onShare: (HistoryUiItem) -> Unit = {},
     onRetry: (HistoryUiItem) -> Unit,
     onDelete: (HistoryUiItem) -> Unit,
     savedTasks: List<ResumeTaskItem> = emptyList(),
@@ -3499,38 +3517,30 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     onResumeTask: (String) -> Unit = {},
     onCancelSavedTask: (String) -> Unit = {},
     onRecoverTask: (ResumeTaskItem) -> Unit = { onResumeTask(it.taskId) },
-    onExport: ((HistoryUiItem) -> Unit)? = null,
+    resolveOutput: ((HistoryOutputReference) -> HistoryOutputTarget?)? = null,
+    onOutputAction: ((HistoryFileAction, HistoryOutputTarget) -> Unit)? = null,
+    historyAvailabilityRevision: Int = 0,
     filters: TaskFilters = TaskFilters(),
     onFiltersChange: (TaskFilters) -> Unit = {},
 ) {
-    val recoveredIds = savedTasks.map { it.taskId }.toSet()
-    val liveStates = activeStates?.values?.filterNot { it.request?.taskId in recoveredIds &&
-        (it.stage == DownloadStage.Paused || it.stage in TerminalDownloadStages) } ?: listOfNotNull(state.activeRequest?.let {
+    val liveStates = activeStates?.values?.toList() ?: listOfNotNull(state.activeRequest?.let {
         DownloadTaskState(state.activeStage, it)
     }).filter { shouldShowCurrentTask(state) }
     val liveIds = liveStates.mapNotNull { it.request?.taskId }.toSet()
-    val waiting = pendingRequests.filterNot { it.taskId in liveIds }
+    val waiting = pendingRequests.distinctBy { it.taskId }.filterNot { it.taskId in liveIds }
     val waitingIds = waiting.map { it.taskId }.toSet()
-    val terminalIds = historyItems.mapNotNull { it.taskId }.toSet()
-    val tasks = unifiedTasks(liveStates + waiting.map { DownloadTaskState.waiting(it) },
-        savedTasks.filterNot { it.taskId in terminalIds }, emptyList())
-        .filterNot { it.id in terminalIds && it.status in setOf(TaskStatus.Completed, TaskStatus.Canceled, TaskStatus.Failed) && it.state?.fileRecoveryAction == null }
-    val visibleTasks = tasks.filter { filters.matches(it.status, it.type, it.title, historyQuery) }
-    val currentIds = tasks.map { it.id }.toSet()
-    val visibleHistory = historyItems.filter { item ->
-        val status = when (item.status) {
-            HistoryItemEntity.STATUS_COMPLETED -> TaskStatus.Completed
-            HistoryItemEntity.STATUS_CANCELED -> TaskStatus.Canceled
-            else -> TaskStatus.Failed
-        }
-        item.taskId !in currentIds && filters.matches(status, item.outputType, item.title + " " + item.meta, historyQuery)
+    val tasks = unifiedUiTasks(liveStates + waiting.map { DownloadTaskState.waiting(it) }, savedTasks, historyItems)
+    val visibleTasks = tasks.filter { task ->
+        val text = task.title + task.history?.meta?.let { " $it" }.orEmpty()
+        filters.matches(task.status, task.type, text, historyQuery)
     }
     val currentTasks = visibleTasks.filter { it.id in liveIds && it.recovery == null }.mapNotNull { task ->
         val active = task.state ?: return@mapNotNull null
         if (activeStates == null) state else RuntimeDownloadState().withPipelineState(active)
     }
-    val visibleWaitingIds = visibleTasks.map { it.id }.toSet().intersect(waitingIds)
+    val visibleWaitingIds = visibleTasks.filter { it.state != null && it.recovery == null }.map { it.id }.toSet().intersect(waitingIds)
     val visibleSavedTasks = visibleTasks.mapNotNull { it.recovery }
+    val visibleHistory = visibleTasks.filter { it.state == null }.mapNotNull { it.history }
     item {
         TaskFilterBar(filters, onFiltersChange)
     }
@@ -3546,7 +3556,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
         )
     }
     item {
-        Text("进行中 ${tasks.count { it.status == TaskStatus.InProgress }} · 等待 ${tasks.count { it.status == TaskStatus.Waiting }} · 记录 ${historyItems.size}",
+        Text("进行中 ${tasks.count { it.status == TaskStatus.InProgress }} · 等待 ${tasks.count { it.status == TaskStatus.Waiting }} · 记录 ${tasks.count { it.history != null }}",
             modifier = Modifier.testTag("ytdl-tasks-summary-card"), color = LocalYtdlAppPalette.current.softText)
     }
     if (shouldShowRuntimeMessage(userMessage)) item { RuntimeMessageCard(userMessage) }
@@ -3562,7 +3572,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
         item { SectionTitle("当前任务") }
     }
     currentTasks.forEach { state ->
-        item(key = "active-${state.activeRequest?.taskId}") {
+        item(key = "task-${state.activeRequest?.taskId}") {
             val palette = LocalYtdlAppPalette.current
             val title = state.activeRequest?.title?.takeIf { it.isNotBlank() } ?: "下载任务"
             val thumbnailUrl = state.activeRequest?.thumbnailUrl
@@ -3586,8 +3596,10 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
                     stageItems = queueStageItems(state),
                     accent = queueCardAccent(state, palette),
                     thumbnailBitmap = taskThumbnail,
-                    onCancel = { onCancelDownload(state.activeRequest?.taskId) },
-                    onPause = if (state.activeStage in setOf(DownloadStage.Pausing, DownloadStage.WaitingForNetwork)) null else { { onPauseDownload(state.activeRequest?.taskId) } },
+                    onCancel = if (state.activeStage in TerminalDownloadStages) null
+                        else { { onCancelDownload(state.activeRequest?.taskId) } },
+                    onPause = if (state.activeStage in TransferringStages || state.activeStage == DownloadStage.Merging)
+                        { { onPauseDownload(state.activeRequest?.taskId) } } else null,
                 )
             }
         }
@@ -3596,7 +3608,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
         item { SectionTitle("等待中（${visibleWaitingIds.size}）") }
         waiting.forEachIndexed { index, request ->
             if (request.taskId !in visibleWaitingIds) return@forEachIndexed
-            item(key = "pending-${request.taskId}") {
+            item(key = "task-${request.taskId}") {
                 val palette = LocalYtdlAppPalette.current
                 val waitingState = RuntimeDownloadState(
                     activeRequest = request,
@@ -3623,15 +3635,17 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     if (visibleSavedTasks.isNotEmpty()) {
         item { SectionTitle("待恢复任务") }
         visibleSavedTasks.forEach { task ->
-            item(key = "saved-${task.taskId}") {
+            item(key = "task-${task.taskId}") {
                 AppCard(modifier = Modifier.testTag("ytdl-saved-task-${task.taskId}")) {
                     TaskCardTitle(task.title, "ytdl-saved-task-title-${task.taskId}")
                     Text(visibleTasks.first { it.id == task.taskId }.status.label, color = LocalYtdlAppPalette.current.queueAccent)
-                    Text(task.recoveryError ?: task.state.statusMessage ?: "已暂停，点击继续。")
+                    Text(task.recoveryError ?: task.state.statusMessage ?: if (task.wasQueued) "等待下载位，可继续。" else "已暂停，点击继续。")
                     Text("已下载 ${formatBytes(task.state.progress?.downloadedBytes ?: 0L)}" +
                         (task.state.progress?.totalBytes?.let { " / ${formatBytes(it)}" } ?: ""))
-                    YtdlQueueProgressBar(QueueProgressPresentation(task.state.progress?.percent?.let { (it / 100).toFloat().coerceIn(0f, 1f) }, false),
-                        LocalYtdlAppPalette.current.queueAccent, Modifier.fillMaxWidth())
+                    task.state.progress?.percent?.takeIf(Double::isFinite)?.let { percent ->
+                        YtdlQueueProgressBar(QueueProgressPresentation((percent / 100).toFloat().coerceIn(0f, 1f), false),
+                            LocalYtdlAppPalette.current.queueAccent, Modifier.fillMaxWidth())
+                    }
                     Row {
                         if (task.recoveryError == null) TextButton(onClick = { onRecoverTask(task) }) {
                             Text(when (task.state.fileRecoveryAction) {
@@ -3648,14 +3662,16 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
         }
     }
     if (visibleHistory.isNotEmpty()) item { SectionTitle("历史记录") }
-    items(visibleHistory, key = { "history-${it.id}" }) { item ->
+    items(visibleHistory, key = { "task-${it.taskId ?: "history:${it.id}"}" }) { item ->
         HistoryCard(
             item = item,
             onOpen = { onOpen(item) },
             onShare = { onShare(item) },
             onRetry = { onRetry(item) },
             onDelete = { onDelete(item) },
-            onExport = onExport?.let { export -> { export(item) } },
+            resolveOutput = resolveOutput,
+            onOutputAction = onOutputAction,
+            availabilityRevision = historyAvailabilityRevision,
             modifier = Modifier.testTag("ytdl-history-real-card"),
         )
     }
@@ -4261,6 +4277,7 @@ private fun QueueCard(
                 }
                 if (progressMeta != null) {
                     QueueProgressMetaRow(progressMeta)
+                    progressMeta.eta?.let { Text(it, color = palette.softText, style = MaterialTheme.typography.labelSmall) }
                 }
                 if (supportingText.isNotBlank()) {
                     Text(supportingText, color = palette.softText, style = MaterialTheme.typography.labelSmall)
@@ -4419,9 +4436,47 @@ private fun HistoryCard(
     onRetry: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
-    onExport: (() -> Unit)? = null,
+    resolveOutput: ((HistoryOutputReference) -> HistoryOutputTarget?)? = null,
+    onOutputAction: ((HistoryFileAction, HistoryOutputTarget) -> Unit)? = null,
+    availabilityRevision: Int = 0,
 ) {
     val palette = LocalYtdlAppPalette.current
+    val references = remember(item.outputUri, item.outputMimeType, item.subtitleOutputUris) { item.outputReferences() }
+    val verifiedOutputs by key(availabilityRevision, references) {
+        produceState<List<VerifiedHistoryOutput>?>(null) {
+            if (resolveOutput == null || references.isEmpty()) {
+                value = emptyList()
+            } else {
+                value = withContext(Dispatchers.IO) {
+                    references.mapNotNull { ref -> resolveOutput(ref)?.let { VerifiedHistoryOutput(ref, it) } }
+                }
+            }
+        }
+    }
+    var pendingAction by remember(item.id, availabilityRevision) { mutableStateOf<HistoryFileAction?>(null) }
+    val usableOutputs = verifiedOutputs.orEmpty()
+    val chooseOutput = references.size > 1 || references.singleOrNull()?.isSubtitle == true
+    pendingAction?.let { action ->
+        if (onOutputAction != null && usableOutputs.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { pendingAction = null },
+                title = { Text("选择要${action.label}的文件") },
+                text = {
+                    Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                        usableOutputs.forEach { output ->
+                            TextButton(onClick = {
+                                pendingAction = null
+                                onOutputAction(action, output.target)
+                            }) {
+                                Text(listOf(output.reference.label, output.target.displayName).distinct().joinToString(" · "))
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { pendingAction = null }) { Text("取消") } },
+            )
+        }
+    }
     var thumbnailBitmap by remember(item.thumbnailUrl) { mutableStateOf<Bitmap?>(null) }
     DisposableEffect(item.thumbnailUrl) {
         if (item.thumbnailUrl.isNullOrBlank()) {
@@ -4463,17 +4518,37 @@ private fun HistoryCard(
                 if (item.meta.isNotBlank()) {
                     Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
                 }
-                val actions = historyActionLabels(item) + if (item.hasOutput && onExport != null) listOf("导出") else emptyList()
+                if (item.subtitleOutputUris.isNotEmpty()) {
+                    Text("${item.subtitleOutputUris.size} 个独立字幕文件", style = MaterialTheme.typography.bodySmall)
+                }
+                if (resolveOutput != null && (references.isNotEmpty() || item.outputUri.isNotBlank() || item.badge == "完成")) {
+                    val availabilityMessage = when {
+                        verifiedOutputs == null -> "正在检查保存的文件…"
+                        usableOutputs.isEmpty() -> "保存的文件不存在或无法读取，请检查存储权限。"
+                        usableOutputs.size < references.size -> "部分文件不存在或无法读取。"
+                        else -> null
+                    }
+                    availabilityMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.softText) }
+                }
+                val actions = if (resolveOutput == null) historyActionLabels(item) else buildList {
+                    if (usableOutputs.isNotEmpty()) addAll(HistoryFileAction.entries.map { it.label })
+                    if (item.retryAvailable) add("再次下载")
+                    add("删除")
+                }
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     actions.forEach { action ->
-                        val callback = when (action) {
-                            "打开" -> onOpen
-                            "分享" -> onShare
-                            "再次下载" -> onRetry
-                            "导出" -> requireNotNull(onExport)
+                        val fileAction = HistoryFileAction.entries.firstOrNull { it.label == action }
+                        val callback: () -> Unit = when {
+                            fileAction != null && onOutputAction != null -> ({
+                                if (chooseOutput) pendingAction = fileAction
+                                else onOutputAction(fileAction, usableOutputs.single().target)
+                            })
+                            action == "打开" -> onOpen
+                            action == "分享" -> onShare
+                            action == "再次下载" -> onRetry
                             else -> onDelete
                         }
                         HistoryActionChip(

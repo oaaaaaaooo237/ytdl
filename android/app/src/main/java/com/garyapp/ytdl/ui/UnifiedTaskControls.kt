@@ -110,3 +110,21 @@ internal fun FileRecoveryDialog(task: ResumeTaskItem, onDismiss: () -> Unit, onC
         dismissButton = { TextButton(onClick = onDismiss) { Text("返回") } },
     )
 }
+
+
+internal enum class HistoryFileAction(val label: String) {
+    Open("打开"), Share("分享"), Export("导出"),
+}
+
+internal data class HistoryOutputReference(
+    val uri: String,
+    val label: String,
+    val mimeType: String? = null,
+    val isSubtitle: Boolean = false,
+)
+internal data class VerifiedHistoryOutput(val reference: HistoryOutputReference, val target: HistoryOutputTarget)
+
+internal fun HistoryUiItem.outputReferences(): List<HistoryOutputReference> = buildList {
+    if (hasOutput) add(HistoryOutputReference(outputUri, "主文件", outputMimeType))
+    subtitleOutputUris.forEachIndexed { index, uri -> add(HistoryOutputReference(uri, "字幕 ${index + 1}", isSubtitle = true)) }
+}.distinctBy { it.uri }

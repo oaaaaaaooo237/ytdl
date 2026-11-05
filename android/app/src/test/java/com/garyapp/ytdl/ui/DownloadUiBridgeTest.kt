@@ -289,7 +289,7 @@ class DownloadUiBridgeTest {
             "可先导出",
         ).forEach { forbidden -> assertFalse(appSource.contains(forbidden)) }
         assertTrue(appSource.contains("Intent.ACTION_CREATE_DOCUMENT"))
-        assertTrue(appSource.contains("onExport = ::requestHistoryExport"))
+        assertTrue(appSource.contains("onOutputAction = ::performHistoryOutputAction"))
         assertFalse(bridgeSource.contains("add(\"导出字幕\")"))
         assertFalse(bridgeSource.contains("suggestedExportDisplayName"))
         assertTrue(appSource.contains("DownloadStage.Completed -> \"下载完成\""))
@@ -593,7 +593,18 @@ class DownloadUiBridgeTest {
         assertEquals(null, state.downloadedBytes)
         assertEquals(null, state.totalBytes)
         assertEquals("当前阶段 · 下载音频", queueCardSubtitleForUiTest(state))
-        assertEquals("0%", queueCardStatusForUiTest(state))
+        assertEquals("下载音频", queueCardStatusForUiTest(state))
+    }
+
+    @Test
+    fun unknownProgressShowsStageAndKnownEtaUsesElapsedFormat() {
+        val waiting = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(DownloadStage.WaitingForNetwork),
+        )
+        assertEquals("等待网络", queueCardStatusForUiTest(waiting))
+        val unknown = RuntimeDownloadState(isDownloading = true, activeStage = DownloadStage.DownloadingFile,
+            downloadStatus = "下载文件", downloadedBytes = 100L)
+        assertEquals("下载文件", queueCardStatusForUiTest(unknown))
     }
 
     @Test
@@ -608,7 +619,7 @@ class DownloadUiBridgeTest {
 
         assertEquals(null, progress.fraction)
         assertTrue(progress.isIndeterminate)
-        assertEquals("33%", queueCardStatusForUiTest(state))
+        assertEquals("下载音频", queueCardStatusForUiTest(state))
     }
 
     @Test
@@ -700,7 +711,8 @@ class DownloadUiBridgeTest {
             QueueProgressMeta(
                 speed = "400.0 B/s",
                 transferred = "300.0 B/1000.0 B",
-                contentDescription = "下载速度 400.0 B/s，已下载 300.0 B，总容量 1000.0 B",
+                contentDescription = "下载速度 400.0 B/s，已下载 300.0 B，总容量 1000.0 B，剩余 00:03",
+                eta = "剩余 00:03",
             ),
             queueCardMetaForUiTest(updated),
         )
@@ -824,7 +836,8 @@ class DownloadUiBridgeTest {
             QueueProgressMeta(
                 speed = "100.0 B/s",
                 transferred = "50.0 B/200.0 B",
-                contentDescription = "下载速度 100.0 B/s，已下载 50.0 B，总容量 200.0 B",
+                contentDescription = "下载速度 100.0 B/s，已下载 50.0 B，总容量 200.0 B，剩余 00:02",
+                eta = "剩余 00:02",
             ),
             queueCardMetaForUiTest(audio),
         )
@@ -1434,7 +1447,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun failedSubtitleRecordWithMediaOutputKeepsMediaActionsOnly() {
+    fun failedSubtitleRecordKeepsRedactedReasonAndMediaActions() {
         val mediaSavedSubtitleFailed = HistoryItemEntity.createSafe(
             "媒体已保存字幕失败",
             60,
@@ -1456,7 +1469,7 @@ class DownloadUiBridgeTest {
         val item = historyUiItemsFromRows(listOf(mediaSavedSubtitleFailed)).single()
 
         assertFalse(item.meta.contains("媒体文件"))
-        assertFalse(item.meta.contains("字幕"))
+        assertTrue(item.meta.contains("所选字幕 zh-Hans 不可用"))
         assertFalse(item.meta.contains("merged-299-140.mp4"))
         assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(item))
     }

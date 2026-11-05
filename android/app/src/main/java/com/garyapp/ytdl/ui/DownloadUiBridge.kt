@@ -71,6 +71,7 @@ data class HistoryUiItem(
     val isAudioOnly: Boolean = false,
     val outputMimeType: String? = null,
     val taskId: String? = null,
+    val subtitleOutputUris: List<String> = emptyList(),
     val outputType: TaskOutputType = if (isAudioOnly) TaskOutputType.Audio else legacyTaskOutputType(outputUri, meta),
 ) {
     val hasOutput: Boolean
@@ -97,6 +98,8 @@ fun historyUiItemsFromRows(
             isAudioOnly = row.taskOutputType() == TaskOutputType.Audio,
             outputMimeType = row.outputMimeType,
             taskId = row.taskId?.takeIf { it.isNotBlank() },
+            subtitleOutputUris = row.subtitleOutputUris.orEmpty().lineSequence().map(String::trim)
+                .filter(::isHistoryOutputUri).distinct().toList(),
             outputType = row.taskOutputType(),
             retryAvailable = row.status in setOf(
                 HistoryItemEntity.STATUS_FAILED,
@@ -140,7 +143,7 @@ private fun historyMeta(row: HistoryItemEntity): String {
     val parts = listOfNotNull(
         historyTypeLabel(row.formatSummary.orEmpty()).takeIf { it.isNotBlank() },
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
-        row.errorSummary?.takeIf { it.isNotBlank() && !it.contains("字幕") },
+        row.errorSummary?.takeIf { it.isNotBlank() },
     )
     return redactHistoryUiText(parts.joinToString(" · ")).trim()
 }
