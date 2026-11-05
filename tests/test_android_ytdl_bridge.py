@@ -14,6 +14,16 @@ def test_x_post_without_visible_video_has_distinct_error():
     assert bridge._error_category(exc) == "x_no_video"
 
 
+def test_protected_media_errors_take_priority_over_format_failure():
+    bridge = load_android_ytdl_bridge()
+    drm_error = RuntimeError("No video formats found: This video is DRM protected")
+    permission_error = RuntimeError("No video formats found: Sign in to view this private video")
+    assert bridge._error_category(drm_error) == "drm"
+    assert bridge._error_category(permission_error) == "permission"
+    assert bridge._safe_error_message(drm_error) == "该内容受 DRM 保护，无法下载。"
+    assert bridge._safe_error_message(permission_error) == "需要授权访问，请确认账号权限或 cookies 文件。"
+
+
 def load_android_ytdl_bridge(youtube_dl_class=object):
     bridge_path = (
         Path(__file__).resolve().parents[1]

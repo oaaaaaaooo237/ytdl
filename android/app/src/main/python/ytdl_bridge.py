@@ -265,6 +265,9 @@ def analyze(url, cookies_path=None, android_http_fallback=None):
         cookies_digest = _cookies_digest(cookies_path) if _uses_compatible_tls(url) else None
         with _downloader_for_url(url, options, android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=False)
+            formats = info.get("formats") or []
+            if info.get("has_drm") is True or (formats and all(item.get("has_drm") is True for item in formats)):
+                raise RuntimeError("This video is DRM protected")
             analysis_key = (
                 _remember_analysis(url, info, ydl, cookies_digest)
                 if _uses_compatible_tls(url) and info.get("formats") else None
@@ -508,7 +511,7 @@ def _to_result(info):
         "title": info.get("title") or "",
         "duration": int(info.get("duration") or 0),
         "thumbnail": info.get("thumbnail") or "",
-        "formats": [_safe_format(item) for item in info.get("formats") or []],
+        "formats": [_safe_format(item) for item in info.get("formats") or [] if item.get("has_drm") is not True],
         "subtitles": _safe_subtitles(info.get("subtitles") or {}),
         "automatic_captions": _safe_subtitles(info.get("automatic_captions") or {}),
     }
@@ -728,9 +731,11 @@ def _as_float(value):
 
 
 def _error_category(exc):
-    text = str(exc).lower()
+    text = re.sub(r"https?://\S+", "", str(exc).lower())
     if "[twitter]" in text and "no video could be found in this tweet" in text:
         return "x_no_video"
+    if re.search(r"\bdrm\b|digital rights management", text):
+        return "drm"
     if "canceled" in text or "cancelled" in text or "取消" in text:
         return "canceled"
     # An HTTP response is a site response, not proof of lost connectivity.
@@ -742,6 +747,8 @@ def _error_category(exc):
         if status in (404, 410):
             return "unsupported"
         return "unknown"
+    if any(word in text for word in ("private", "sign in", "login", "permission", "forbidden", "unauthorized")):
+        return "permission"
     if (
         "no video formats found" in text
         or "format id" in text
@@ -769,8 +776,6 @@ def _error_category(exc):
         return "unsupported"
     if "subtitle" in text or "subtitles" in text or "language" in text or "extension" in text:
         return "unsupported"
-    if any(word in text for word in ("private", "sign in", "login", "permission", "forbidden", "unauthorized")):
-        return "permission"
     if "extractor" in text or "parser" in text or "unable to extract" in text:
         return "parser"
     if "network" in text:
@@ -782,6 +787,10 @@ def _safe_error_message(exc):
     category = _error_category(exc)
     if category == "x_no_video":
         return "X 未返回这条帖子的视频。"
+    if category == "drm":
+        return "该内容受 DRM 保护，无法下载。"
+    if category == "permission":
+        return "需要授权访问，请确认账号权限或 cookies 文件。"
     if "no video formats found" in str(exc).lower():
         return "网站本次未返回可下载的视频格式，请稍后重新分析。"
     if category == "canceled":
@@ -792,8 +801,6 @@ def _safe_error_message(exc):
         return "网络连接失败，请稍后重试。"
     if category == "unsupported":
         return "暂不支持分析这个地址。"
-    if category == "permission":
-        return "需要授权访问，请确认账号权限或 cookies 文件。"
     if category == "parser":
         return "解析失败，请通过应用更新获取新版解析器后重试。"
     return "分析失败，请检查地址或稍后重试。"

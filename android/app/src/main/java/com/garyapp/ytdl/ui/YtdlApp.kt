@@ -1188,20 +1188,18 @@ internal fun YtdlApp(
                     else -> null
                 }
             } else null
-            if (probe is FileProbeResult.FileFound && (retryFileRoute != null || !probe.metadata.isStreamManifest())) {
-                val metadata = probe.metadata
-                val selection = FileDownloadSelection(
+            val probedFile = (probe as? FileProbeResult.FileFound)?.metadata
+            val fileSelection = probedFile?.takeUnless { it.isStreamManifest() }?.let { metadata ->
+                FileDownloadSelection(
                     metadata = metadata,
                     fileName = retryFileRoute?.fileName ?: metadata.fileName,
                     conflictPolicy = retryFileRoute?.conflictPolicy ?: settings.fileConflictPolicy,
                 )
+            }
+            if (fileSelection != null && (retryFileRoute != null || fileSelection.metadata.kind == FileKind.Other)) {
                 mainHandler.post {
                     if (analysisRequestRevision.get() == requestRevision) {
-                        runtimeState = runtimeState.copy(
-                            fileSelection = selection,
-                            isAnalyzing = false,
-                            userMessage = DefaultRuntimeMessage,
-                        )
+                        runtimeState = runtimeState.withFileRecognition(fileSelection)
                     }
                 }
                 return@Thread
@@ -1240,6 +1238,9 @@ internal fun YtdlApp(
                 if (analysisRequestRevision.get() != requestRevision) return@post
                 runtimeState = result.fold(
                     onSuccess = { analysis ->
+                        if (fileSelection != null && FormatMode.entries.none { isFormatModeAvailable(analysis, it) }) {
+                            return@fold runtimeState.withFileRecognition(fileSelection)
+                        }
                         val analyzed = runtimeState.withAnalysisResult(analysis)
                         if (retryDraft == null) {
                             analyzed
@@ -1255,7 +1256,12 @@ internal fun YtdlApp(
                         }
                     },
                     onFailure = { error ->
-                        runtimeState.copy(isAnalyzing = false, userMessage = analysisFailureMessage(error))
+                        val category = (error as? YtdlpAnalysisException)?.category
+                        if (fileSelection != null && category in setOf(AnalysisErrorCategory.Unsupported, AnalysisErrorCategory.Parser)) {
+                            runtimeState.withFileRecognition(fileSelection)
+                        } else {
+                            runtimeState.copy(isAnalyzing = false, userMessage = analysisFailureMessage(error))
+                        }
                     },
                 )
                 runtimeState.analysis?.thumbnailUrl?.takeIf { it.isNotBlank() }?.let { loadThumbnail(it, requestRevision) }
@@ -1945,6 +1951,9 @@ private fun RuntimeDownloadState.withNewUrl(url: String): RuntimeDownloadState =
     userMessage = DefaultRuntimeMessage,
 )
 
+private fun RuntimeDownloadState.withFileRecognition(selection: FileDownloadSelection): RuntimeDownloadState =
+    copy(fileSelection = selection, isAnalyzing = false, userMessage = DefaultRuntimeMessage)
+
 private fun RuntimeDownloadState.withAnalysisResult(analysis: VideoAnalysis): RuntimeDownloadState {
     val freshSelection = defaultFormatSelection(analysis)
     return copy(
@@ -2092,6 +2101,7 @@ private fun analysisFailureMessage(error: Throwable): String {
         AnalysisErrorCategory.Network -> "分析失败：网络连接失败，请检查网络后重试。"
         AnalysisErrorCategory.Unsupported -> "分析失败：当前地址不受支持或格式不正确。"
         AnalysisErrorCategory.Permission -> "分析失败：网站需要登录或 cookies 文件，请确认授权后重试。"
+        AnalysisErrorCategory.Drm -> "该内容受 DRM 保护，无法下载。"
         AnalysisErrorCategory.Parser -> "分析失败：解析器暂时无法处理该地址，请稍后重试。"
         AnalysisErrorCategory.Canceled -> "分析已取消。"
         AnalysisErrorCategory.Unknown -> "分析失败，请检查地址或网络。"

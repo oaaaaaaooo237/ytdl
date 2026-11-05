@@ -267,7 +267,7 @@ class DownloadPipeline(
             emit(state.completeWith(finalOutputs).getOrThrow())
         } catch (exc: Exception) {
             val permanentSiteError = exc is YtdlpDownloadException &&
-                exc.category in setOf(AnalysisErrorCategory.Permission, AnalysisErrorCategory.Unsupported)
+                exc.category in setOf(AnalysisErrorCategory.Permission, AnalysisErrorCategory.Unsupported, AnalysisErrorCategory.Drm)
             val requestedReason = cancellation.stopReason.takeUnless { it == DownloadStopReason.NetworkUnavailable && permanentSiteError }
             val reason = requestedReason ?: if (
                 exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Network && !isNetworkAvailable()

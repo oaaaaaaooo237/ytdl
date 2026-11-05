@@ -55,6 +55,7 @@ object DownloadFailureMessages {
                 AnalysisErrorCategory.Network -> network(exc.safeMessage)
                 AnalysisErrorCategory.Unsupported -> "当前地址或格式暂不支持，请检查地址格式或重新选择格式。"
                 AnalysisErrorCategory.Permission -> "需要授权或 cookies 文件，请确认你有权访问该内容后重试。"
+                AnalysisErrorCategory.Drm -> "该内容受 DRM 保护，无法下载。"
                 AnalysisErrorCategory.Parser -> processing(exc.safeMessage)
                 AnalysisErrorCategory.Canceled -> canceled()
                 AnalysisErrorCategory.Unknown -> fromErrorText(exc.safeMessage)

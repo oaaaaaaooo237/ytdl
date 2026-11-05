@@ -65,8 +65,9 @@ internal data class FileDownloadSelection(
 }
 
 internal fun FileMetadata.isStreamManifest(): Boolean = when (mimeType) {
-    "application/vnd.apple.mpegurl", "application/x-mpegurl", "audio/mpegurl", "audio/x-mpegurl",
+    "application/vnd.apple.mpegurl", "application/mpegurl", "application/x-mpegurl", "audio/mpegurl", "audio/x-mpegurl",
     "application/dash+xml" -> true
+    "application/xml", "text/xml" -> fileName.endsWith(".mpd", ignoreCase = true)
     "application/octet-stream", "text/plain", null ->
         fileName.substringAfterLast('.', "").lowercase(Locale.ROOT) in setOf("m3u8", "mpd")
     else -> false

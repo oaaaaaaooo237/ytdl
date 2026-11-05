@@ -233,6 +233,7 @@ class YtdlpBridge(
                 "network" -> AnalysisErrorCategory.Network
                 "unsupported" -> AnalysisErrorCategory.Unsupported
                 "permission" -> AnalysisErrorCategory.Permission
+                "drm" -> AnalysisErrorCategory.Drm
                 "parser" -> AnalysisErrorCategory.Parser
                 "canceled" -> AnalysisErrorCategory.Canceled
                 else -> AnalysisErrorCategory.Unknown

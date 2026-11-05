@@ -91,6 +91,7 @@ enum class AnalysisErrorCategory {
     Network,
     Unsupported,
     Permission,
+    Drm,
     Parser,
     Canceled,
     Unknown,
