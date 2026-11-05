@@ -45,7 +45,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -76,7 +75,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -132,6 +130,7 @@ import kotlinx.coroutines.withContext
 import com.garyapp.ytdl.BuildConfig
 import com.garyapp.ytdl.R
 import com.garyapp.ytdl.core.files.FileKind
+import com.garyapp.ytdl.download.outputType
 import com.garyapp.ytdl.core.files.FileProbeResult
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Switch
@@ -192,7 +191,6 @@ import com.garyapp.ytdl.ui.theme.YtdlThemeMode
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.garyapp.ytdl.ui.theme.ytdlAppPaletteForPreset
 import com.garyapp.ytdl.ui.theme.ytdlColorPresets
-import android.util.LruCache
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -203,7 +201,6 @@ import java.net.URLDecoder
 import java.util.Locale
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 private val DefaultPalette = ytdlAppPaletteForPreset(AppearanceSettings.ColorPresetMorandi)
@@ -212,15 +209,7 @@ private val HistoryFailureRed = Color(0xFFFF5B63)
 
 private const val DefaultRuntimeMessage = "等待输入下载链接。"
 private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始下载。"
-private const val QueueThumbnailImageTag = "ytdl-queue-thumbnail-image"
-private const val QueueThumbnailPlaceholderTag = "ytdl-queue-thumbnail-placeholder"
-private const val HistoryThumbnailImageTag = "ytdl-history-thumbnail-image"
-private const val HistoryThumbnailPlaceholderTag = "ytdl-history-thumbnail-placeholder"
-private const val HistoryThumbnailTargetPx = 160
-private const val HistoryThumbnailCacheMaxItems = 64
 private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
-private val CardPillBadgeMinWidth = 60.dp
-private val CardPillBadgeMinHeight = 28.dp
 private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
     checker = ParserUpdateChecker.forCurrentVersion(
         currentVersionProvider = { ParserRuntimeState.activeVersion },
@@ -333,39 +322,6 @@ private val DownloadTabIcon = tabIcon("DownloadTab") {
     lineTo(19f, 18f)
     lineTo(19f, 20f)
     lineTo(5f, 20f)
-    close()
-}
-
-private val StorageCapacityIcon = tabIcon("StorageCapacity") {
-    moveTo(4f, 4f)
-    lineTo(20f, 4f)
-    lineTo(22f, 11f)
-    lineTo(2f, 11f)
-    close()
-    moveTo(2f, 11f)
-    lineTo(4f, 11f)
-    lineTo(4f, 20f)
-    lineTo(2f, 20f)
-    close()
-    moveTo(20f, 11f)
-    lineTo(22f, 11f)
-    lineTo(22f, 20f)
-    lineTo(20f, 20f)
-    close()
-    moveTo(2f, 18f)
-    lineTo(22f, 18f)
-    lineTo(22f, 20f)
-    lineTo(2f, 20f)
-    close()
-    moveTo(6f, 13f)
-    lineTo(14f, 13f)
-    lineTo(14f, 15f)
-    lineTo(6f, 15f)
-    close()
-    moveTo(17f, 13f)
-    lineTo(20f, 13f)
-    lineTo(20f, 16f)
-    lineTo(17f, 16f)
     close()
 }
 
@@ -533,7 +489,6 @@ internal const val TaskTitleMarqueeIterations = Int.MAX_VALUE
 internal const val TaskTitleMarqueeVelocityDp = 30
 internal const val TaskTitleMaxLines = 1
 internal const val TaskTitleSoftWrap = false
-internal const val TaskProgressIconSizeDp = 14
 
 internal fun colorArgbHexForUiTest(color: Color): String = String.format(Locale.US, "#%08X", color.toArgb())
 
@@ -2347,35 +2302,6 @@ private fun calculateInSampleSize(bounds: BitmapFactory.Options, targetSizePx: I
     return inSampleSize
 }
 
-private object HistoryThumbnailLoader {
-    private val historyThumbnailCache = LruCache<String, Bitmap>(HistoryThumbnailCacheMaxItems)
-    private val executor = Executors.newFixedThreadPool(2)
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val cacheLock = Any()
-
-    fun load(thumbnailUrl: String, onLoaded: (Bitmap?) -> Unit): AutoCloseable {
-        val cached = synchronized(cacheLock) { historyThumbnailCache.get(thumbnailUrl) }
-        if (cached != null) {
-            mainHandler.post { onLoaded(cached) }
-            return AutoCloseable { }
-        }
-
-        val closed = AtomicBoolean(false)
-        executor.execute {
-            val bitmap = loadThumbnailBitmap(thumbnailUrl, targetSizePx = HistoryThumbnailTargetPx)
-            if (bitmap != null) {
-                synchronized(cacheLock) { historyThumbnailCache.put(thumbnailUrl, bitmap) }
-            }
-            mainHandler.post {
-                if (!closed.get()) {
-                    onLoaded(bitmap)
-                }
-            }
-        }
-        return AutoCloseable { closed.set(true) }
-    }
-}
-
 private fun displayNameForUri(context: android.content.Context, uri: Uri, fallback: String): String {
     val queriedName = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -2416,7 +2342,7 @@ private fun YtdlBottomBar(
                     end = 10.dp,
                     bottom = 7.dp + navigationBottomPadding + BottomBarGestureBuffer,
                 ).selectableGroup(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             destinations.forEach { destination ->
@@ -2426,27 +2352,26 @@ private fun YtdlBottomBar(
                         .weight(1f)
                         .defaultMinSize(minHeight = 48.dp)
                         .testTag("ytdl-tab-${destination.route}")
+                        .background(if (selected) palette.actionContainer else Color.Transparent)
                         .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.Tab) { onSelected(destination.route) }
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(1.dp),
                 ) {
                     Box(
-                        modifier = Modifier
-                            .size(width = 60.dp, height = 26.dp)
-                            .background(if (selected) palette.actionContainer else Color.Transparent),
+                        modifier = Modifier.size(26.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = destination.icon,
                             contentDescription = null,
-                            tint = if (selected) destination.accent else palette.neutralText,
+                            tint = palette.neutralText,
                             modifier = Modifier.size(20.dp),
                         )
                     }
                     Text(
                         text = destination.label,
-                        color = if (selected) destination.accent else palette.neutralText,
+                        color = palette.neutralText,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -2658,7 +2583,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
         }
         state.isAnalyzing -> item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+                RecognitionProgress()
                 Text("正在识别链接")
             }
         }
@@ -2955,6 +2880,63 @@ private fun formatDuration(totalSeconds: Long): String {
     }
 }
 
+@Composable
+private fun RecognitionProgress() {
+    val palette = LocalYtdlAppPalette.current
+    val transition = rememberInfiniteTransition(label = "recognition-progress")
+    val position by transition.animateFloat(
+        initialValue = -0.22f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1350, easing = androidx.compose.animation.core.LinearEasing)),
+        label = "recognition-progress-position",
+    )
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().height(4.dp).clip(RectangleShape).background(palette.borderColor),
+    ) {
+        Box(
+            Modifier.offset(x = maxWidth * position)
+                .width(maxWidth * 0.22f).fillMaxHeight().background(palette.downloadAccent),
+        )
+    }
+}
+
+@Composable
+private fun FormatDetailLine(
+    title: String,
+    value: String,
+    tag: String,
+    options: Map<String, FormatSelection> = emptyMap(),
+    onSelect: (FormatSelection) -> Unit = {},
+) {
+    val palette = LocalYtdlAppPalette.current
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .background(palette.cardBackground)
+                .border(1.dp, palette.borderColor)
+                .clickable(enabled = options.size > 1) { expanded = true }
+                .testTag(tag)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, color = palette.titleText, maxLines = 1)
+            Text(value, modifier = Modifier.weight(1f), color = palette.softText,
+                textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (options.size > 1) Text("▾", color = palette.formatAccent)
+        }
+        androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (label, selection) ->
+                ChoiceItem(label, "$tag-option-$label") {
+                    expanded = false
+                    onSelect(selection)
+                }
+            }
+        }
+    }
+}
+
 internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems(
     analysis: VideoAnalysis,
     selection: FormatSelection,
@@ -2966,34 +2948,13 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems
 
     if (audioMode) {
         item {
-            SettingLineCard(
-                title = "视频分辨率",
-                subtitle = "音频模式不适用",
-                leading = "—",
-                trailing = "",
-                enabled = false,
-                modifier = Modifier.testTag("ytdl-format-video-resolution-line"),
-            )
+            FormatDetailLine("视频分辨率", "音频模式不适用", "ytdl-format-video-resolution-line")
         }
         item {
-            SettingLineCard(
-                title = "帧率",
-                subtitle = "音频模式不适用",
-                leading = "—",
-                trailing = "",
-                enabled = false,
-                modifier = Modifier.testTag("ytdl-format-frame-rate-line"),
-            )
+            FormatDetailLine("帧率", "音频模式不适用", "ytdl-format-frame-rate-line")
         }
         item {
-            SettingLineCard(
-                title = "视频编码",
-                subtitle = "音频模式不适用",
-                leading = "—",
-                trailing = "",
-                enabled = false,
-                modifier = Modifier.testTag("ytdl-format-video-codec-line"),
-            )
+            FormatDetailLine("视频编码", "音频模式不适用", "ytdl-format-video-codec-line")
         }
         item {
             AppCard(modifier = Modifier.testTag("ytdl-format-audio-card")) {
@@ -3021,13 +2982,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems
             }
         }
         item {
-            SettingLineCard(
-                "音频容器",
-                summaries.container,
-                "♫",
-                "",
-                modifier = Modifier.testTag("ytdl-format-container-line"),
-            )
+            FormatDetailLine("音频容器", summaries.container, "ytdl-format-container-line")
         }
     } else {
         item {
@@ -3059,49 +3014,34 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.formatSelectionItems
                 }
             }
         }
-        item {
-            SettingLineCard(
-                "帧率",
-                summaries.frameRate,
-                "",
-                "",
-                modifier = Modifier.testTag("ytdl-format-frame-rate-line"),
-            )
+        val selected = rows.firstOrNull { it.selected && it.selectable }
+        val height = analysis.formats.firstOrNull { it.id == selected?.videoFormatId }?.height
+        val alternatives = analysis.formats.mapNotNull { format ->
+            if (selected == null || !format.isSupported || !format.hasVideo || format.height != height) return@mapNotNull null
+            if (selection.mode == FormatMode.VideoAndAudio &&
+                (format.hasAudio || !format.isNativeMp4MergeVideoCompatible())) return@mapNotNull null
+            val candidate = selection.copy(selectedHeight = height, selectedVideoFormatId = format.id)
+            formatSettingSummariesForRow(analysis, selection.mode, selected.copy(videoFormatId = format.id)) to candidate
         }
-        item {
-            SettingLineCard(
-                "视频编码",
-                summaries.videoCodec,
-                "",
-                "",
-                modifier = Modifier.testTag("ytdl-format-video-codec-line"),
-            )
-        }
-        item {
-            SettingLineCard(
-                "容器格式",
-                summaries.container,
-                "",
-                "",
-                modifier = Modifier.testTag("ytdl-format-container-line"),
-            )
-        }
-    }
-    item {
-        val palette = LocalYtdlAppPalette.current
-        Surface(
-            modifier = Modifier.testTag("ytdl-format-summary"),
-            color = palette.formatAccent.copy(alpha = 0.11f),
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, palette.formatAccent.copy(alpha = 0.35f)),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "实际下载：${formatSelectionSummary(analysis, selection)}",
-                    color = palette.formatAccent,
-                    fontWeight = FontWeight.Bold,
-                )
+        fun choices(value: String, property: (FormatSettingSummaries) -> String): Map<String, FormatSelection> =
+            buildMap {
+                put(value, selection)
+                alternatives.sortedByDescending { (candidate, _) ->
+                    listOf(candidate.frameRate == summaries.frameRate, candidate.videoCodec == summaries.videoCodec,
+                        candidate.container == summaries.container).count { it }
+                }.forEach { (candidate, format) -> putIfAbsent(property(candidate), format) }
             }
+        item {
+            FormatDetailLine("帧率", summaries.frameRate, "ytdl-format-frame-rate-line",
+                choices(summaries.frameRate) { it.frameRate }, onSelectionChange)
+        }
+        item {
+            FormatDetailLine("视频编码", summaries.videoCodec, "ytdl-format-video-codec-line",
+                choices(summaries.videoCodec) { it.videoCodec }, onSelectionChange)
+        }
+        item {
+            FormatDetailLine("容器格式", summaries.container, "ytdl-format-container-line",
+                choices(summaries.container) { it.container }, onSelectionChange)
         }
     }
 }
@@ -3128,23 +3068,31 @@ private fun formatSettingSummaries(
             videoCodec = "请选择可用格式",
             container = "请选择可用格式",
         )
+    return formatSettingSummariesForRow(analysis, selection.mode, row)
+}
+
+private fun formatSettingSummariesForRow(
+    analysis: VideoAnalysis,
+    mode: FormatMode,
+    row: FormatResolutionRow,
+): FormatSettingSummaries {
     val video = row.videoFormatId?.let { id -> analysis.formats.firstOrNull { it.id == id } }
     val audio = row.audioFormatId?.let { id -> analysis.formats.firstOrNull { it.id == id } }
 
     val frameRate = when {
-        selection.mode == FormatMode.AudioOnly -> "不适用"
+        mode == FormatMode.AudioOnly -> "不适用"
         video?.fps != null -> "${String.format(Locale.US, "%.2f", video.fps).trimEnd('0').trimEnd('.')}fps"
         else -> "未提供"
     }
     val videoCodec = when {
-        selection.mode == FormatMode.AudioOnly -> "不适用"
+        mode == FormatMode.AudioOnly -> "不适用"
         else -> video?.videoCodec
             ?.takeIf { it.isNotBlank() && it != "none" }
             ?: "未提供"
     }
     val container = when {
         row.mergeRequired -> "MP4（原生合并输出）"
-        selection.mode == FormatMode.AudioOnly -> audio?.ext?.uppercase(Locale.US)?.ifBlank { null } ?: "音频容器未提供"
+        mode == FormatMode.AudioOnly -> audio?.ext?.uppercase(Locale.US)?.ifBlank { null } ?: "音频容器未提供"
         else -> video?.ext?.uppercase(Locale.US)?.ifBlank { null } ?: "未提供"
     }
 
@@ -3555,11 +3503,11 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
             shape = RectangleShape,
         )
     }
-    item {
-        Text("进行中 ${tasks.count { it.status == TaskStatus.InProgress }} · 等待 ${tasks.count { it.status == TaskStatus.Waiting }} · 记录 ${tasks.count { it.history != null }}",
-            modifier = Modifier.testTag("ytdl-tasks-summary-card"), color = LocalYtdlAppPalette.current.softText)
+    if (shouldShowRuntimeMessage(userMessage) && userMessage != "正在${state.downloadStatus}..." &&
+        userMessage !in setOf("下载完成", "下载已取消。")
+    ) {
+        item { RuntimeMessageCard(userMessage) }
     }
-    if (shouldShowRuntimeMessage(userMessage)) item { RuntimeMessageCard(userMessage) }
     if (visibleTasks.isEmpty() && visibleHistory.isEmpty()) item {
         AppCard(modifier = Modifier.testTag("ytdl-tasks-empty")) {
             Text(if (tasks.isEmpty() && historyItems.isEmpty()) "暂无下载任务" else "没有符合条件的任务")
@@ -3568,100 +3516,81 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
             }
         }
     }
-    if (currentTasks.isNotEmpty()) {
-        item { SectionTitle("当前任务") }
-    }
     currentTasks.forEach { state ->
         item(key = "task-${state.activeRequest?.taskId}") {
-            val palette = LocalYtdlAppPalette.current
-            val title = state.activeRequest?.title?.takeIf { it.isNotBlank() } ?: "下载任务"
-            val thumbnailUrl = state.activeRequest?.thumbnailUrl
-            var taskThumbnail by remember(thumbnailUrl) { mutableStateOf(state.thumbnailBitmap) }
-            DisposableEffect(thumbnailUrl) {
-                val loader = thumbnailUrl?.takeIf { taskThumbnail == null }?.let { url ->
-                    HistoryThumbnailLoader.load(url) { taskThumbnail = it }
-                }
-                onDispose { loader?.close() }
-            }
-            Box(modifier = Modifier.testTag("ytdl-real-queue-card")) {
-                QueueCard(
-                    title = title,
-                    titleTag = "ytdl-current-task-title",
-                    subtitle = queueCardSubtitle(state),
-                    progress = queueProgressPresentation(state),
-                    status = queueCardStatus(state),
-                    progressMeta = queueCardMeta(state),
-                    formatBadge = queueCardFormatBadge(state),
-                    codecBadge = queueCardCodecBadge(state),
-                    stageItems = queueStageItems(state),
-                    accent = queueCardAccent(state, palette),
-                    thumbnailBitmap = taskThumbnail,
-                    onCancel = if (state.activeStage in TerminalDownloadStages) null
-                        else { { onCancelDownload(state.activeRequest?.taskId) } },
-                    onPause = if (state.activeStage in TransferringStages || state.activeStage == DownloadStage.Merging)
-                        { { onPauseDownload(state.activeRequest?.taskId) } } else null,
-                )
-            }
+            val request = state.activeRequest ?: return@item
+            val progress = queueProgressPresentation(state)
+            val meta = queueCardMeta(state)
+            val pause = state.activeStage in TransferringStages || state.activeStage == DownloadStage.Merging
+            val cancel = state.activeStage !in TerminalDownloadStages
+            TaskLine(
+                title = request.title.ifBlank { "下载任务" },
+                titleTag = "ytdl-current-task-title",
+                kind = request.outputType(),
+                details = listOf(queueCardFormatBadge(state), queueCardCodecBadge(state), meta.transferred)
+                    .filter(String::isNotBlank).joinToString(" · "),
+                status = if (progress.isIndeterminate) state.downloadStatus
+                    else listOf(state.downloadStatus, queueCardStatus(state)).distinct().joinToString(" · "),
+                trailing = listOfNotNull(meta.speed, meta.eta).joinToString(" · "),
+                progress = progress.takeIf { state.activeStage in TransferringStages },
+                modifier = Modifier.testTag("ytdl-real-queue-card"),
+                actions = {
+                    if (pause) TaskIconAction("暂停", PauseTaskIcon, "ytdl-queue-pause-action") { onPauseDownload(request.taskId) }
+                    if (cancel) TaskIconAction("取消", CancelTaskIcon, "ytdl-queue-cancel-action") { onCancelDownload(request.taskId) }
+                },
+            )
         }
     }
-    if (visibleWaitingIds.isNotEmpty()) {
-        item { SectionTitle("等待中（${visibleWaitingIds.size}）") }
-        waiting.forEachIndexed { index, request ->
-            if (request.taskId !in visibleWaitingIds) return@forEachIndexed
-            item(key = "task-${request.taskId}") {
-                val palette = LocalYtdlAppPalette.current
-                val waitingState = RuntimeDownloadState(
-                    activeRequest = request,
-                    activeStage = DownloadStage.Waiting,
-                    downloadStatus = "等待中",
-                )
-                QueueCard(
-                    title = request.title.ifBlank { "等待下载的任务" },
-                    titleTag = "ytdl-pending-task-title-$index",
-                    subtitle = "已加入队列 · 按顺序等待",
-                    progress = QueueProgressPresentation(fraction = 0f, isIndeterminate = false),
-                    status = "等待中",
-                    supportingText = "前方 ${index + currentTasks.size} 个任务",
-                    formatBadge = formatResolutionBadgeForRequest(request),
-                    codecBadge = formatCodecBadgeForRequest(request),
-                    stageItems = queueStageItems(waitingState),
-                    accent = palette.queueAccent,
-                    modifier = Modifier.testTag("ytdl-pending-queue-card-$index"),
-                    onCancel = { onCancelDownload(request.taskId) },
-                )
-            }
+    waiting.forEachIndexed { index, request ->
+        if (request.taskId !in visibleWaitingIds) return@forEachIndexed
+        item(key = "task-${request.taskId}") {
+            TaskLine(
+                title = request.title.ifBlank { "等待下载的任务" },
+                titleTag = "ytdl-pending-task-title-$index",
+                kind = request.outputType(),
+                details = listOf(formatResolutionBadgeForRequest(request), formatCodecBadgeForRequest(request))
+                    .filter(String::isNotBlank).joinToString(" · "),
+                status = "等待中",
+                trailing = "等待空闲下载位",
+                modifier = Modifier.testTag("ytdl-pending-queue-card-$index"),
+                actions = { TaskIconAction("取消", CancelTaskIcon, "ytdl-queue-cancel-action") { onCancelDownload(request.taskId) } },
+            )
         }
     }
-    if (visibleSavedTasks.isNotEmpty()) {
-        item { SectionTitle("待恢复任务") }
-        visibleSavedTasks.forEach { task ->
-            item(key = "task-${task.taskId}") {
-                AppCard(modifier = Modifier.testTag("ytdl-saved-task-${task.taskId}")) {
-                    TaskCardTitle(task.title, "ytdl-saved-task-title-${task.taskId}")
-                    Text(visibleTasks.first { it.id == task.taskId }.status.label, color = LocalYtdlAppPalette.current.queueAccent)
-                    Text(task.recoveryError ?: task.state.statusMessage ?: if (task.wasQueued) "等待下载位，可继续。" else "已暂停，点击继续。")
-                    Text("已下载 ${formatBytes(task.state.progress?.downloadedBytes ?: 0L)}" +
-                        (task.state.progress?.totalBytes?.let { " / ${formatBytes(it)}" } ?: ""))
-                    task.state.progress?.percent?.takeIf(Double::isFinite)?.let { percent ->
-                        YtdlQueueProgressBar(QueueProgressPresentation((percent / 100).toFloat().coerceIn(0f, 1f), false),
-                            LocalYtdlAppPalette.current.queueAccent, Modifier.fillMaxWidth())
+    visibleSavedTasks.forEach { task ->
+        item(key = "task-${task.taskId}") {
+            val progress = task.state.progress
+            val rowStatus = visibleTasks.first { it.id == task.taskId }.status
+            val label = when (task.state.fileRecoveryAction) {
+                FileRecoveryAction.Retry -> "重试"
+                FileRecoveryAction.ConfirmRestart -> "重新下载"
+                FileRecoveryAction.ChooseFileName -> "修改文件名"
+                null -> "继续"
+            }
+            TaskLine(
+                title = task.title,
+                titleTag = "ytdl-saved-task-title-${task.taskId}",
+                kind = task.state.request?.outputType() ?: task.outputType,
+                details = task.recoveryError ?: task.state.statusMessage.orEmpty(),
+                status = listOfNotNull(rowStatus.label, progress?.percent?.takeIf(Double::isFinite)?.let { "${it.toInt()}%" })
+                    .joinToString(" · "),
+                trailing = "已下载 ${formatBytes(progress?.downloadedBytes ?: 0L)}" +
+                    (progress?.totalBytes?.let { " / ${formatBytes(it)}" } ?: ""),
+                progress = progress?.percent?.takeIf(Double::isFinite)?.let {
+                    QueueProgressPresentation((it / 100).toFloat().coerceIn(0f, 1f), false)
+                },
+                modifier = Modifier.testTag("ytdl-saved-task-${task.taskId}"),
+                actions = {
+                    if (task.recoveryError == null) {
+                        TaskIconAction(label, if (label == "继续") ContinueTaskIcon else HistoryRetryIcon,
+                            "ytdl-saved-task-recover-${task.taskId}") { onRecoverTask(task) }
                     }
-                    Row {
-                        if (task.recoveryError == null) TextButton(onClick = { onRecoverTask(task) }) {
-                            Text(when (task.state.fileRecoveryAction) {
-                                FileRecoveryAction.Retry -> "重试"
-                                FileRecoveryAction.ConfirmRestart -> "重新下载"
-                                FileRecoveryAction.ChooseFileName -> "修改文件名"
-                                null -> "继续"
-                            })
-                        }
-                        TextButton(onClick = { onCancelSavedTask(task.taskId) }) { Text("取消") }
-                    }
-                }
-            }
+                    TaskIconAction("取消", CancelTaskIcon, "ytdl-saved-task-cancel-${task.taskId}") { onCancelSavedTask(task.taskId) }
+                },
+                accent = if (rowStatus == TaskStatus.Failed) HistoryFailureRed else LocalYtdlAppPalette.current.queueAccent,
+            )
         }
     }
-    if (visibleHistory.isNotEmpty()) item { SectionTitle("历史记录") }
     items(visibleHistory, key = { "task-${it.taskId ?: "history:${it.id}"}" }) { item ->
         HistoryCard(
             item = item,
@@ -4083,13 +4012,13 @@ private fun ResolutionRow(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = row.label,
-            modifier = Modifier.defaultMinSize(minWidth = 54.dp),
+            text = if (row.label == "自动（推荐）") row.summary.removeSuffix(" 单文件").removeSuffix(" 需原生合并") else row.label,
+            modifier = if (row.label == "自动（推荐）") Modifier.weight(1f) else Modifier.defaultMinSize(minWidth = 54.dp),
             color = if (row.selectable) palette.titleText else palette.softText.copy(alpha = 0.55f),
             fontWeight = if (row.selected) FontWeight.Bold else FontWeight.Normal,
         )
         if (row.codecOptions.isEmpty()) {
-            Spacer(modifier = Modifier.weight(1f))
+            if (row.label != "自动（推荐）") Spacer(modifier = Modifier.weight(1f))
         } else {
             FlowRow(
                 modifier = Modifier.weight(1f),
@@ -4218,105 +4147,87 @@ private fun QueueStageStrip(stageItems: List<QueueStageItem>) {
     }
 }
 
+private val VideoTaskIcon = tabIcon("VideoTask") {
+    moveTo(3f, 6f); lineTo(15f, 6f); lineTo(15f, 18f); lineTo(3f, 18f); close()
+    moveTo(5f, 8f); lineTo(5f, 16f); lineTo(13f, 16f); lineTo(13f, 8f); close()
+    moveTo(15f, 10f); lineTo(21f, 6f); lineTo(21f, 18f); lineTo(15f, 14f); close()
+}
+private val AudioTaskIcon = tabIcon("AudioTask") {
+    moveTo(10f, 5f); lineTo(20f, 3f); lineTo(20f, 16f); lineTo(18f, 18f); lineTo(14f, 18f)
+    lineTo(13f, 16f); lineTo(14f, 14f); lineTo(18f, 14f); lineTo(18f, 7f); lineTo(12f, 8f)
+    lineTo(12f, 18f); lineTo(10f, 20f); lineTo(6f, 20f); lineTo(4f, 18f); lineTo(6f, 16f); lineTo(10f, 16f); close()
+}
+private val FileTaskIcon = tabIcon("FileTask") {
+    moveTo(5f, 2f); lineTo(14f, 2f); lineTo(20f, 8f); lineTo(20f, 22f); lineTo(5f, 22f); close()
+    moveTo(7f, 4f); lineTo(7f, 20f); lineTo(18f, 20f); lineTo(18f, 9f); lineTo(13f, 9f); lineTo(13f, 4f); close()
+    moveTo(9f, 12f); lineTo(16f, 12f); lineTo(16f, 14f); lineTo(9f, 14f); close()
+    moveTo(9f, 16f); lineTo(16f, 16f); lineTo(16f, 17f); lineTo(9f, 17f); close()
+}
+private val PauseTaskIcon = tabIcon("PauseTask") {
+    moveTo(8f, 5f); lineTo(10f, 5f); lineTo(10f, 19f); lineTo(8f, 19f); close()
+    moveTo(14f, 5f); lineTo(16f, 5f); lineTo(16f, 19f); lineTo(14f, 19f); close()
+}
+private val ContinueTaskIcon = tabIcon("ContinueTask") {
+    moveTo(7f, 4f); lineTo(20f, 12f); lineTo(7f, 20f); close()
+}
+private val CancelTaskIcon = tabIcon("CancelTask") {
+    moveTo(5f, 6f); lineTo(6f, 5f); lineTo(19f, 18f); lineTo(18f, 19f); close()
+    moveTo(18f, 5f); lineTo(19f, 6f); lineTo(6f, 19f); lineTo(5f, 18f); close()
+}
+private val MoreTaskIcon = tabIcon("MoreTask") {
+    listOf(5f, 11f, 17f).forEach { x ->
+        moveTo(x, 11f); lineTo(x + 2f, 11f); lineTo(x + 2f, 13f); lineTo(x, 13f); close()
+    }
+}
+
 @Composable
-private fun QueueCard(
+private fun TaskIconAction(label: String, icon: ImageVector, tag: String, onClick: () -> Unit) {
+    androidx.compose.material3.IconButton(onClick = onClick, modifier = Modifier.size(48.dp).testTag(tag)) {
+        Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp),
+            tint = LocalYtdlAppPalette.current.queueAccent)
+    }
+}
+
+@Composable
+private fun TaskLine(
     title: String,
     titleTag: String,
-    subtitle: String,
-    progress: QueueProgressPresentation,
+    kind: FileKind,
+    details: String,
     status: String,
-    progressMeta: QueueProgressMeta? = null,
-    supportingText: String = "",
-    formatBadge: String,
-    codecBadge: String,
-    stageItems: List<QueueStageItem>,
-    accent: Color,
+    trailing: String,
     modifier: Modifier = Modifier,
-    thumbnailBitmap: Bitmap? = null,
-    onCancel: (() -> Unit)? = null,
-    onPause: (() -> Unit)? = null,
+    progress: QueueProgressPresentation? = null,
+    accent: Color = LocalYtdlAppPalette.current.queueAccent,
+    actions: @Composable () -> Unit,
 ) {
     val palette = LocalYtdlAppPalette.current
-    AppCard(modifier = modifier) {
-        Row(
-            modifier = Modifier.height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            if (thumbnailBitmap != null) {
-                Image(
-                    bitmap = thumbnailBitmap.asImageBitmap(),
-                    contentDescription = "队列任务缩略图",
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .testTag(QueueThumbnailImageTag),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .testTag(QueueThumbnailPlaceholderTag)
-                        .background(Brush.linearGradient(listOf(Color(0xFF74B9E7), Color(0xFFE8C27D)))),
-                )
+    val icon = when (kind) {
+        FileKind.Video -> VideoTaskIcon
+        FileKind.Audio -> AudioTaskIcon
+        FileKind.Other -> FileTaskIcon
+    }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(38.dp).clip(RoundedCornerShape(7.dp))
+                .background(accent.copy(alpha = 0.16f)).testTag("ytdl-task-type-icon"),
+                contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = kind.identificationLabel(), modifier = Modifier.size(20.dp), tint = accent)
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 TaskCardTitle(title, titleTag)
-                Text(subtitle, color = palette.softText, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (stageItems.isNotEmpty()) {
-                    QueueStageStrip(stageItems)
-                }
-                if (stageItems.isNotEmpty() || progress.fraction != null || progress.isIndeterminate) {
-                    YtdlQueueProgressBar(
-                        progress = progress,
-                        accent = accent,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                if (progressMeta != null) {
-                    QueueProgressMetaRow(progressMeta)
-                    progressMeta.eta?.let { Text(it, color = palette.softText, style = MaterialTheme.typography.labelSmall) }
-                }
-                if (supportingText.isNotBlank()) {
-                    Text(supportingText, color = palette.softText, style = MaterialTheme.typography.labelSmall)
-                }
-                Row {
-                if (onPause != null) {
-                    TextButton(onClick = onPause, modifier = Modifier.height(36.dp).testTag("ytdl-queue-pause-action")) { Text("暂停") }
-                }
-                if (onCancel != null) {
-                    Box(
-                        modifier = Modifier
-                            .testTag("ytdl-queue-cancel-action")
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable(onClick = onCancel)
-                            .defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "取消",
-                            color = palette.downloadAccent,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-                }
+                if (details.isNotBlank()) Text(details, color = palette.softText, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            CardTrailingBadges(
-                status = status,
-                statusAccent = accent,
-                formatBadge = formatBadge,
-                codecBadge = codecBadge,
-                formatAccent = palette.formatAccent,
-                statusTag = "ytdl-queue-status-badge",
-                formatTag = "ytdl-queue-format-badge",
-                codecTag = "ytdl-queue-codec-badge",
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) { actions() }
         }
+        progress?.let { YtdlQueueProgressBar(it, accent, Modifier.fillMaxWidth()) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(status, color = accent, style = MaterialTheme.typography.labelSmall)
+            Text(trailing, Modifier.weight(1f), color = palette.softText, style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.End)
+        }
+        androidx.compose.material3.HorizontalDivider(color = palette.borderColor)
     }
 }
 
@@ -4341,47 +4252,6 @@ private fun TaskCardTitle(
         softWrap = TaskTitleSoftWrap,
         overflow = TextOverflow.Clip,
     )
-}
-
-@Composable
-private fun QueueProgressMetaRow(meta: QueueProgressMeta) {
-    val color = LocalYtdlAppPalette.current.softText
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics(mergeDescendants = true) { contentDescription = meta.contentDescription },
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                DownloadTabIcon,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(TaskProgressIconSizeDp.dp)
-                    .testTag("ytdl-queue-download-speed-icon"),
-                tint = color,
-            )
-            Text(meta.speed, color = color, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                StorageCapacityIcon,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(TaskProgressIconSizeDp.dp)
-                    .testTag("ytdl-queue-storage-icon"),
-                tint = color,
-            )
-            Text(meta.transferred, color = color, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-        }
-    }
 }
 
 @Composable
@@ -4477,102 +4347,67 @@ private fun HistoryCard(
             )
         }
     }
-    var thumbnailBitmap by remember(item.thumbnailUrl) { mutableStateOf<Bitmap?>(null) }
-    DisposableEffect(item.thumbnailUrl) {
-        if (item.thumbnailUrl.isNullOrBlank()) {
-            thumbnailBitmap = null
-            return@DisposableEffect onDispose { }
-        }
-        val closeable = HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty()) { bitmap ->
-            thumbnailBitmap = bitmap
-        }
-        onDispose { closeable.close() }
+    val availabilityMessage = if (resolveOutput == null) null else when {
+        verifiedOutputs == null || references.isEmpty() && item.badge != "完成" -> null
+        usableOutputs.isEmpty() -> "保存的文件不存在或无法读取，请检查存储权限。"
+        usableOutputs.size < references.size -> "部分文件不存在或无法读取。"
+        else -> null
     }
-    AppCard(modifier = modifier) {
-        Row(
-            modifier = Modifier.height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            if (thumbnailBitmap != null) {
-                Image(
-                    bitmap = thumbnailBitmap!!.asImageBitmap(),
-                    contentDescription = "历史记录缩略图",
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .testTag(HistoryThumbnailImageTag),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .testTag(HistoryThumbnailPlaceholderTag)
-                        .background(Brush.linearGradient(listOf(Color(0xFF97C9E8), Color(0xFF8EBE8A)))),
-                )
+    val actions = if (resolveOutput == null) historyActionLabels(item) else buildList {
+        if (usableOutputs.isNotEmpty()) addAll(HistoryFileAction.entries.map { it.label })
+        if (item.retryAvailable) add("再次下载")
+        add("删除")
+    }
+    fun runAction(action: String) {
+        val fileAction = HistoryFileAction.entries.firstOrNull { it.label == action }
+        when {
+            fileAction != null && onOutputAction != null -> {
+                if (chooseOutput) pendingAction = fileAction
+                else onOutputAction(fileAction, usableOutputs.single().target)
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                TaskCardTitle(item.title, "ytdl-history-title-${item.id}")
-                if (item.meta.isNotBlank()) {
-                    Text(item.meta, color = palette.softText, style = MaterialTheme.typography.bodySmall)
-                }
-                if (item.subtitleOutputUris.isNotEmpty()) {
-                    Text("${item.subtitleOutputUris.size} 个独立字幕文件", style = MaterialTheme.typography.bodySmall)
-                }
-                if (resolveOutput != null && (references.isNotEmpty() || item.outputUri.isNotBlank() || item.badge == "完成")) {
-                    val availabilityMessage = when {
-                        verifiedOutputs == null -> "正在检查保存的文件…"
-                        usableOutputs.isEmpty() -> "保存的文件不存在或无法读取，请检查存储权限。"
-                        usableOutputs.size < references.size -> "部分文件不存在或无法读取。"
-                        else -> null
-                    }
-                    availabilityMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.softText) }
-                }
-                val actions = if (resolveOutput == null) historyActionLabels(item) else buildList {
-                    if (usableOutputs.isNotEmpty()) addAll(HistoryFileAction.entries.map { it.label })
-                    if (item.retryAvailable) add("再次下载")
-                    add("删除")
-                }
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    actions.forEach { action ->
-                        val fileAction = HistoryFileAction.entries.firstOrNull { it.label == action }
-                        val callback: () -> Unit = when {
-                            fileAction != null && onOutputAction != null -> ({
-                                if (chooseOutput) pendingAction = fileAction
-                                else onOutputAction(fileAction, usableOutputs.single().target)
-                            })
-                            action == "打开" -> onOpen
-                            action == "分享" -> onShare
-                            action == "再次下载" -> onRetry
-                            else -> onDelete
+            action == "打开" -> onOpen()
+            action == "分享" -> onShare()
+            action == "再次下载" -> onRetry()
+            else -> onDelete()
+        }
+    }
+    val primary = actions.firstOrNull { it == "打开" || it == "再次下载" }
+    val extras = actions.filterNot { it == primary }
+    var menu by remember(item.id) { mutableStateOf(false) }
+    TaskLine(
+        title = item.title,
+        titleTag = "ytdl-history-title-${item.id}",
+        kind = item.outputType,
+        details = listOf(item.meta, item.formatBadge, item.codecBadge,
+            item.subtitleOutputUris.takeIf { it.isNotEmpty() }?.let { "${it.size} 个独立字幕文件" }.orEmpty())
+            .filter(String::isNotBlank).joinToString(" · "),
+        status = when (item.badge) {
+            "完成" -> "已完成"
+            "取消" -> "已取消"
+            else -> item.badge
+        },
+        trailing = availabilityMessage.orEmpty(),
+        modifier = modifier,
+        accent = historyStatusBadgeAccent(item, palette),
+        actions = {
+            primary?.let { action ->
+                TaskIconAction(action, historyActionIcon(action), "ytdl-history-action-${item.id}-$action") { runAction(action) }
+            }
+            if (extras.isNotEmpty()) {
+                Box {
+                    TaskIconAction("更多操作", MoreTaskIcon, "ytdl-history-more-${item.id}") { menu = true }
+                    androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        extras.forEach { action ->
+                            ChoiceItem(action, "ytdl-history-action-${item.id}-$action") {
+                                menu = false
+                                runAction(action)
+                            }
                         }
-                        HistoryActionChip(
-                            action = action,
-                            icon = historyActionIcon(action),
-                            accent = if (action == "删除") palette.downloadAccent else palette.neutralText,
-                            onClick = callback,
-                            modifier = Modifier.testTag("ytdl-history-action-${item.id}-$action"),
-                        )
                     }
                 }
             }
-            CardTrailingBadges(
-                status = item.badge,
-                statusAccent = historyStatusBadgeAccent(item, palette),
-                formatBadge = item.formatBadge,
-                codecBadge = item.codecBadge,
-                formatAccent = palette.formatAccent,
-                statusTag = "ytdl-history-status-badge",
-                formatTag = "ytdl-history-format-badge",
-                codecTag = "ytdl-history-codec-badge",
-            )
-        }
-    }
+        },
+    )
 }
 
 private fun historyActionIcon(action: String): ImageVector = when (action) {
@@ -4580,112 +4415,6 @@ private fun historyActionIcon(action: String): ImageVector = when (action) {
     "分享", "导出" -> HistoryShareIcon
     "再次下载" -> HistoryRetryIcon
     else -> HistoryDeleteIcon
-}
-
-@Composable
-private fun HistoryActionChip(
-    action: String,
-    icon: ImageVector,
-    accent: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        color = accent.copy(alpha = 0.08f),
-        shape = RoundedCornerShape(9.dp),
-        modifier = modifier
-            .clip(RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick)
-            .defaultMinSize(minHeight = 30.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                icon,
-                contentDescription = action,
-                tint = accent,
-                modifier = Modifier.size(14.dp),
-            )
-            Text(
-                action,
-                color = accent,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
-}
-
-@Composable
-private fun CardTrailingBadges(
-    status: String,
-    statusAccent: Color,
-    formatBadge: String,
-    codecBadge: String,
-    formatAccent: Color,
-    statusTag: String,
-    formatTag: String,
-    codecTag: String,
-) {
-    Column(
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        CardPillBadge(
-            text = status,
-            accent = statusAccent,
-            tag = statusTag,
-        )
-        if (codecBadge.isNotBlank()) {
-            CardPillBadge(
-                text = codecBadge,
-                accent = formatAccent,
-                tag = codecTag,
-            )
-        }
-        if (formatBadge.isNotBlank()) {
-            CardPillBadge(
-                text = formatBadge,
-                accent = formatAccent,
-                tag = formatTag,
-            )
-        }
-    }
-}
-
-@Composable
-private fun CardPillBadge(
-    text: String,
-    accent: Color,
-    tag: String,
-) {
-    Surface(
-        color = accent.copy(alpha = 0.12f),
-        shape = RoundedCornerShape(10.dp),
-        modifier = Modifier
-            .size(width = CardPillBadgeMinWidth, height = CardPillBadgeMinHeight)
-            .testTag(tag),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)
-                .padding(horizontal = 9.dp, vertical = 5.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text,
-                color = accent,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
 }
 
 private fun historyStatusBadgeAccent(

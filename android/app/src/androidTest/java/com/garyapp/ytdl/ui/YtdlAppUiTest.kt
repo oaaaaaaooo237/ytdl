@@ -230,6 +230,7 @@ class YtdlAppUiTest {
             tapTag("ytdl-tab-tasks")
             assertTextContains(title, timeoutMs = 5_000)
 
+            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-删除")
             assertTagVisible("ytdl-history-delete-confirm")
             assertTextContains(title, timeoutMs = 1_000)
@@ -238,6 +239,7 @@ class YtdlAppUiTest {
             tapTag("ytdl-history-delete-cancel")
             assertTrue("取消删除后测试记录必须保留", historyContains(id))
 
+            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-删除")
             assertTagVisible("ytdl-history-delete-confirm")
             assertTextContains(title, timeoutMs = 1_000)
@@ -286,9 +288,11 @@ class YtdlAppUiTest {
             assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
             assertTextContains("重新下载", timeoutMs = 1_000)
 
+            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-分享")
             assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
 
+            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-导出")
             assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
             saveScreen("12-history-missing-output-recovery.png")
@@ -605,8 +609,8 @@ class YtdlAppUiTest {
         try {
             tapTag("ytdl-tab-tasks")
             assertTextContains(title, timeoutMs = 5_000)
-            assertTagVisible("ytdl-history-thumbnail-image", timeoutMs = 20_000)
-            saveScreen("11-history-thumbnail.png")
+            assertTagVisible("ytdl-task-type-icon", timeoutMs = 20_000)
+            saveScreen("11-history-type-icon.png")
         } finally {
             historyDao.deleteById(id)
         }

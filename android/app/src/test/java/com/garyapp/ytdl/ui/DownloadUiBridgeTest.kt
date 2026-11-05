@@ -332,7 +332,20 @@ class DownloadUiBridgeTest {
         ).readText()
 
         assertTrue(source.contains("\"ytdl-queue-cancel-action\""))
-        assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)"))
+        assertTrue(source.contains("IconButton(onClick = onClick, modifier = Modifier.size(48.dp).testTag(tag))"))
+    }
+
+    @Test
+    fun selectedBottomTabFillsItsTouchTargetAndKeepsLabelColor() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText().substringAfter("private fun YtdlBottomBar(").substringBefore("private fun PageHeader(")
+        val tab = source.substringAfter(".testTag(\"ytdl-tab-").substringBefore(".selectable(selected")
+        assertTrue(tab.contains(".background(if (selected) palette.actionContainer else Color.Transparent)"))
+        val label = source.substringAfter("text = destination.label").substringBefore("style =")
+        assertTrue(label.contains("color = palette.neutralText"))
+        assertFalse(label.contains("selected"))
     }
 
     @Test
@@ -409,7 +422,7 @@ class DownloadUiBridgeTest {
         assertFalse(source.contains("海边散步片段"))
         assertFalse(source.contains("SettingLineCard(\"通知权限\", \"待系统确认"))
         assertFalse(source.contains("M6 下载管线"))
-        assertTrue(source.contains("ytdl-tasks-summary-card"))
+        assertFalse(source.contains("ytdl-tasks-summary-card"))
         assertTrue(source.contains("没有符合条件的任务"))
         assertTrue(source.contains("暂无下载任务"))
         assertTrue(source.contains("notificationPermissionSubtitle("))
@@ -1106,14 +1119,7 @@ class DownloadUiBridgeTest {
         assertTrue(historyEntityFields.contains("thumbnailUrl"))
         assertTrue(historyUiFields.contains("thumbnailUrl"))
         assertTrue(historyUiFields.contains("formatBadge"))
-        assertTrue(source.contains("ytdl-history-thumbnail-image"))
-        assertTrue(source.contains("\"ytdl-history-status-badge\""))
-        assertTrue(source.contains("\"ytdl-history-format-badge\""))
-        assertTrue(source.contains("verticalArrangement = Arrangement.spacedBy(4.dp)"))
-        assertTrue(source.contains("defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)"))
-        assertTrue(source.contains("private val CardPillBadgeMinWidth = 60.dp"))
-        assertTrue(source.contains("private val CardPillBadgeMinHeight = 28.dp"))
-        assertTrue(source.contains("HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty())"))
+        assertTrue(source.contains("kind = item.outputType"))
     }
 
     @Test
@@ -1140,16 +1146,9 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("HistoryActionChip("))
-        assertTrue(source.contains("icon = historyActionIcon(action)"))
-        assertTrue(source.contains("contentDescription = action"))
-        assertTrue(source.contains("testTag(\"ytdl-history-action-${'$'}{item.id}-${'$'}action\")"))
-        assertTrue(source.contains("\"打开\" -> onOpen"))
-        assertTrue(source.contains("\"分享\" -> onShare"))
-        assertFalse(source.contains("\"导出\" -> onExport"))
-        assertTrue(source.contains("else -> onDelete"))
-        assertTrue(source.contains("actions.forEach { action ->"))
-        assertFalse(source.contains("filterNot { it == \"删除\" }"))
+        assertTrue(source.contains("TaskIconAction(action, historyActionIcon(action)"))
+        assertTrue(source.contains("extras.forEach { action ->"))
+        assertTrue(source.contains("else -> onDelete()"))
     }
 
     @Test
@@ -1159,12 +1158,7 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("HistoryThumbnailLoader"))
-        assertTrue(source.contains("LruCache<String, Bitmap>(HistoryThumbnailCacheMaxItems)"))
-        assertTrue(source.contains("Executors.newFixedThreadPool(2)"))
-        assertTrue(source.contains("AtomicBoolean(false)"))
-        assertTrue(source.contains("historyThumbnailCache"))
-        assertTrue(source.contains("loadThumbnailBitmap(thumbnailUrl, targetSizePx = HistoryThumbnailTargetPx)"))
+        assertFalse(source.contains("HistoryThumbnailLoader"))
         assertTrue(source.contains("BitmapFactory.Options"))
         assertTrue(source.contains("calculateInSampleSize"))
         assertFalse(source.contains("Thread {\n            val bitmap = loadThumbnailBitmap(item.thumbnailUrl.orEmpty())"))
@@ -1434,13 +1428,8 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("formatBadge = queueCardFormatBadge(state)"))
-        assertTrue(source.contains("\"ytdl-queue-status-badge\""))
-        assertTrue(source.contains("\"ytdl-queue-format-badge\""))
-        assertTrue(source.contains("verticalArrangement = Arrangement.spacedBy(4.dp)"))
-        assertTrue(source.contains("defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)"))
-        assertTrue(source.contains("private val CardPillBadgeMinWidth = 60.dp"))
-        assertTrue(source.contains("private val CardPillBadgeMinHeight = 28.dp"))
+        assertTrue(source.contains("listOf(queueCardFormatBadge(state), queueCardCodecBadge(state), meta.transferred)"))
+        assertTrue(source.contains("ytdl-task-type-icon"))
         assertTrue(source.contains("style = MaterialTheme.typography.labelSmall"))
         assertFalse(source.contains("\"下载失败\", \"已取消\" -> palette.downloadAccent"))
         assertTrue(source.contains("\"下载失败\" -> HistoryFailureRed"))

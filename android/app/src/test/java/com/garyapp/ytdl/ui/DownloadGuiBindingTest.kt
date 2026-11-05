@@ -333,20 +333,7 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun allTaskTitlesUseSharedMarqueeAndProgressUsesMatchingIcons() {
-        val source = sourceFile(
-            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
-            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
-        ).readText()
-        val progressRow = source
-            .substringAfter("private fun QueueProgressMetaRow(")
-            .substringBefore("private fun YtdlQueueProgressBar(")
-
-        assertEquals(14, TaskProgressIconSizeDp)
-        assertTrue(progressRow.contains("DownloadTabIcon"))
-        assertTrue(progressRow.contains("StorageCapacityIcon"))
-        assertEquals(2, "size\\(TaskProgressIconSizeDp\\.dp\\)".toRegex().findAll(progressRow).count())
-        assertEquals(2, "tint = color".toRegex().findAll(progressRow).count())
+    fun allTaskTitlesAndRealProgressRemainVisibleInFlatRows() {
         val request = requestFor(progressiveFormat("18", 360)).copy(
             title = "这是一个长到无法在任务卡片一行完整显示并需要持续循环滚动的当前下载标题",
         )
@@ -382,14 +369,8 @@ class DownloadGuiBindingTest {
 
         composeRule.onNodeWithTag("ytdl-current-task-title")
             .assertExists()
-        composeRule.onNodeWithTag("ytdl-queue-download-speed-icon", useUnmergedTree = true)
-            .assertWidthIsEqualTo(14.dp)
-            .assertHeightIsEqualTo(14.dp)
-        composeRule.onNodeWithTag("ytdl-queue-storage-icon", useUnmergedTree = true)
-            .assertWidthIsEqualTo(14.dp)
-            .assertHeightIsEqualTo(14.dp)
-        composeRule.onNodeWithText("400.0 B/s", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithText("300.0 B/1000.0 B", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("400.0 B/s", substring = true).assertExists()
+        composeRule.onNodeWithText("300.0 B/1000.0 B", substring = true).assertExists()
         composeRule.onNodeWithText("temporary-file.mp4", substring = true).assertDoesNotExist()
 
         composeRule.onNodeWithTag("test-tasks-list").performScrollToNode(hasTestTag("ytdl-pending-task-title-0"))
@@ -606,7 +587,7 @@ class DownloadGuiBindingTest {
             composeRule.onNodeWithTag(tag).assertIsNotEnabled()
         }
         composeRule.onNodeWithTag("test-download-list")
-            .performScrollToNode(hasTestTag("ytdl-format-summary"))
+            .performScrollToNode(hasTestTag("ytdl-download-format-toggle"))
         composeRule.onNodeWithText("音频 M4A 单文件", substring = true).assertExists()
     }
 
@@ -643,7 +624,7 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithTag("ytdl-format-row-240").performClick()
 
         composeRule.onNodeWithTag("test-download-list")
-            .performScrollToNode(hasTestTag("ytdl-format-summary"))
+            .performScrollToNode(hasTestTag("ytdl-download-format-toggle"))
         composeRule.onNodeWithText("240p MP4 H.264 单文件", substring = true).assertExists()
     }
 
@@ -667,6 +648,7 @@ class DownloadGuiBindingTest {
         }
 
         composeRule.onAllNodesWithTag("ytdl-format-row-1080").assertCountEquals(1)
+        composeRule.onNodeWithText("自动（推荐） · 1080p MP4 H.264").assertExists()
         composeRule.onNodeWithTag("ytdl-format-codec-1080-h264").assertExists()
         composeRule.onNodeWithTag("ytdl-format-codec-1080-av1").performClick()
 
@@ -674,6 +656,11 @@ class DownloadGuiBindingTest {
             assertEquals(1080, selection.value.selectedHeight)
             assertEquals("av1-1080", selection.value.selectedVideoFormatId)
         }
+        val codecLine = "ytdl-format-video-codec-line"
+        composeRule.onNodeWithTag("test-download-list").performScrollToNode(hasTestTag(codecLine))
+        composeRule.onNodeWithTag(codecLine).performClick()
+        composeRule.onNodeWithTag("$codecLine-option-avc1").performClick()
+        composeRule.runOnIdle { assertEquals("h264-1080", selection.value.selectedVideoFormatId) }
     }
 
     @Test
@@ -948,13 +935,14 @@ class DownloadGuiBindingTest {
         var canceled = false
 
         renderTasksPage(running, emptyList(), emptyList(), onCancelDownload = { canceled = true })
-        composeRule.onNodeWithTag("ytdl-queue-cancel-action").performClick()
+        composeRule.onNodeWithTag("ytdl-queue-cancel-action")
+            .assertWidthIsEqualTo(48.dp).assertHeightIsEqualTo(48.dp).performClick()
 
         composeRule.runOnIdle { assertTrue(canceled) }
     }
 
     @Test
-    fun realQueuePageRendersAnalysisThumbnailNodeWhenAvailable() {
+    fun realQueueRowUsesTypeIconEvenWithAnalysisThumbnail() {
         val request = requestFor(progressiveFormat(id = "18", height = 360))
         val thumbnail = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         val runningWithThumbnail = RuntimeDownloadState(thumbnailBitmap = thumbnail)
@@ -963,12 +951,13 @@ class DownloadGuiBindingTest {
         renderTasksPage(runningWithThumbnail, emptyList(), emptyList())
 
         composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(1)
-        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-image").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-image").assertCountEquals(0)
         composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-placeholder").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-task-type-icon").assertCountEquals(1)
     }
 
     @Test
-    fun realQueuePageRendersPlaceholderNodeWhenThumbnailIsMissing() {
+    fun realQueueRowUsesTypeIconWithoutAnalysisThumbnail() {
         val request = requestFor(progressiveFormat(id = "18", height = 360))
         val runningWithoutThumbnail = RuntimeDownloadState()
             .withPipelineStateForUiTest(DownloadTaskState.waiting(request))
@@ -977,7 +966,8 @@ class DownloadGuiBindingTest {
 
         composeRule.onAllNodesWithTag("ytdl-real-queue-card").assertCountEquals(1)
         composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-image").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-placeholder").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("ytdl-queue-thumbnail-placeholder").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("ytdl-task-type-icon").assertCountEquals(1)
     }
 
     @Test
@@ -1080,7 +1070,8 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithTag("ytdl-real-queue-card").assertExists()
         composeRule.onNodeWithTag("test-tasks-list").performScrollToNode(hasTestTag("ytdl-pending-queue-card-0"))
         composeRule.onNodeWithTag("ytdl-pending-queue-card-0").assertExists()
-        composeRule.onNodeWithText("等待中（1）").assertExists()
+        composeRule.onNode(androidx.compose.ui.test.hasText("等待中") and
+            androidx.compose.ui.test.hasAnyAncestor(hasTestTag("ytdl-pending-queue-card-0"))).assertExists()
         composeRule.onNodeWithText("下一条视频").assertExists()
     }
 
@@ -1098,10 +1089,13 @@ class DownloadGuiBindingTest {
             composeRule.waitUntil(5_000) {
                 composeRule.onAllNodes(card).fetchSemanticsNodes().isNotEmpty()
             }
+            composeRule.onNodeWithTag("ytdl-history-more-$id").performClick()
             listOf("打开", "分享", "导出").forEach { action ->
                 composeRule.onNodeWithTag("ytdl-history-action-$id-$action").assertDoesNotExist()
             }
             composeRule.onNodeWithTag("ytdl-history-action-$id-删除").assertExists()
+            composeRule.onNodeWithTag("ytdl-history-action-$id-删除").performClick()
+            composeRule.onNodeWithText("取消").performClick()
         }
     }
 
@@ -1122,7 +1116,7 @@ class DownloadGuiBindingTest {
                 composeRule.onAllNodesWithTag("ytdl-history-action-50-打开").fetchSemanticsNodes().isNotEmpty()
             }
             listOf("打开", "分享", "导出").forEach { action ->
-                composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-action-50-$action"))
+                if (action != "打开") composeRule.onNodeWithTag("ytdl-history-more-50").performClick()
                 composeRule.onNodeWithTag("ytdl-history-action-50-$action").performClick()
                 composeRule.onNodeWithText("主文件 · main.mp4").assertExists()
                 composeRule.onNodeWithText("字幕 1 · captions.vtt").assertExists()
@@ -1183,7 +1177,7 @@ class DownloadGuiBindingTest {
         composeRule.onNodeWithTag("test-tasks-list").performScrollToNode(hasTestTag("ytdl-saved-task-${request.taskId}"))
         composeRule.onNodeWithText("已下载 500 B / 1000 B").assertExists()
         assertEquals(null, resumed)
-        composeRule.onNodeWithText("继续").performClick()
+        composeRule.onNodeWithTag("ytdl-saved-task-recover-${request.taskId}").performClick()
         assertEquals(request.taskId, resumed)
     }
 
@@ -1293,24 +1287,16 @@ class DownloadGuiBindingTest {
 
         renderTasksPage(RuntimeDownloadState(), emptyList(), listOf(completed, canceled))
 
-        val openTop = composeRule.onNodeWithTag("ytdl-history-action-101-打开")
-            .getUnclippedBoundsInRoot().top
-        val shareTop = composeRule.onNodeWithTag("ytdl-history-action-101-分享")
-            .getUnclippedBoundsInRoot().top
-        val completedDeleteTop = composeRule.onNodeWithTag("ytdl-history-action-101-删除")
-            .getUnclippedBoundsInRoot().top
-        assertEquals(openTop, shareTop)
-        assertEquals(openTop, completedDeleteTop)
-
-        val retryTop = composeRule.onNodeWithTag("ytdl-history-action-102-再次下载")
-            .getUnclippedBoundsInRoot().top
-        val canceledDeleteTop = composeRule.onNodeWithTag("ytdl-history-action-102-删除")
-            .getUnclippedBoundsInRoot().top
-        assertEquals(retryTop, canceledDeleteTop)
+        composeRule.onNodeWithTag("ytdl-history-action-101-打开").assertExists()
+        composeRule.onNodeWithTag("ytdl-history-action-102-再次下载").assertExists()
+        composeRule.onNodeWithTag("ytdl-history-action-101-分享").assertDoesNotExist()
+        composeRule.onNodeWithTag("ytdl-history-more-101").performClick()
+        composeRule.onNodeWithTag("ytdl-history-action-101-分享").assertExists()
+        composeRule.onNodeWithTag("ytdl-history-action-101-删除").assertExists()
     }
 
     @Test
-    fun historyCardKeepsThreeTrailingBadgesEvenlySeparated() {
+    fun historyRowShowsFormatInMetadataWithoutTrailingBadges() {
         val completed = HistoryUiItem(
             id = 103L,
             title = "三枚标签的视频",
@@ -1325,21 +1311,10 @@ class DownloadGuiBindingTest {
 
         renderTasksPage(RuntimeDownloadState(), emptyList(), listOf(completed))
 
-        val statusBounds = composeRule.onNodeWithTag("ytdl-history-status-badge")
-            .getUnclippedBoundsInRoot()
-        val codecBounds = composeRule.onNodeWithTag("ytdl-history-codec-badge")
-            .getUnclippedBoundsInRoot()
-        val formatBounds = composeRule.onNodeWithTag("ytdl-history-format-badge")
-            .getUnclippedBoundsInRoot()
-        val firstGap = codecBounds.top - statusBounds.bottom
-        val secondGap = formatBounds.top - codecBounds.bottom
-
-        assertTrue(firstGap.value >= 0f)
-        assertTrue(secondGap.value >= 0f)
-        assertEquals(firstGap.value, secondGap.value, 0.5f)
-        assertTrue((statusBounds.bottom - statusBounds.top).value <= 28.5f)
-        assertTrue((codecBounds.bottom - codecBounds.top).value <= 28.5f)
-        assertTrue((formatBounds.bottom - formatBounds.top).value <= 28.5f)
+        composeRule.onNodeWithText("视频 · 07/15 12:02 · 720p · H.264").assertExists()
+        composeRule.onNode(androidx.compose.ui.test.hasText("已完成") and
+            androidx.compose.ui.test.hasAnyAncestor(hasTestTag("ytdl-history-real-card"))).assertExists()
+        composeRule.onNodeWithTag("ytdl-history-format-badge").assertDoesNotExist()
     }
 
     private fun requestFor(vararg formats: VideoFormat): DownloadRequest {

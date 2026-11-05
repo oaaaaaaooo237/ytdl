@@ -166,11 +166,11 @@ class YtdlAppDownloadFlowTest {
             composeRule.onAllNodesWithTag("ytdl-screen-download").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("ytdl-screen-download")
-            .performScrollToNode(hasTestTag("ytdl-format-summary"))
+            .performScrollToNode(hasTestTag("ytdl-download-format-toggle"))
 
         assertEquals(originalRequest.url, analyzedUrl.get())
         assertEquals(null, unexpectedDownloadRequest.get())
-        composeRule.onNodeWithText("实际下载：1080p MP4 AV1 单文件").assertExists()
+        composeRule.onNodeWithText("1080p MP4 AV1 单文件", substring = true).assertExists()
         composeRule.onNodeWithTag("ytdl-download-filename").assertDoesNotExist()
     }
 
@@ -470,8 +470,8 @@ class YtdlAppDownloadFlowTest {
             .performScrollToNode(hasTestTag(formatRowTag))
         composeRule.onNodeWithTag(formatRowTag).performClick()
 
-        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-format-summary"))
-        composeRule.onNodeWithText("实际下载：$expectedSummary").assertExists()
+        composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-download-format-toggle"))
+        composeRule.onNodeWithText(expectedSummary, substring = true).assertExists()
         composeRule.onNodeWithTag("ytdl-download-start")
             .assertIsEnabled()
             .performClick()

@@ -108,7 +108,7 @@ private fun rowsFromVideoChoices(
     val explicitAutoChoice = selection.selectedVideoFormatId?.let { formatId ->
         choices.firstOrNull { it.video.id == formatId }
     }
-    val autoChoice = explicitAutoChoice ?: best
+    val autoChoice = explicitAutoChoice?.takeIf { selection.selectedHeight == null } ?: best
     val auto = rowFromChoice(
         height = null,
         label = "自动（推荐）",
