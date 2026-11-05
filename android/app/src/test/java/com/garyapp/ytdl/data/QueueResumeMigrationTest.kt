@@ -34,6 +34,7 @@ class QueueResumeMigrationTest {
             val row = QueueItemEntity.createSafe("任务", 0, "https", "hash", "web", null, "原始", "paused", 20, "", "", "", 1, 2)
             row.queueOrder = 5
             row.phase = "DownloadingAudio"
+            row.outputType = "Audio"
             row.stopReason = "UserPause"
             row.downloadedBytes = 42
             row.totalBytes = 100L
@@ -47,6 +48,7 @@ class QueueResumeMigrationTest {
             assertEquals(100L, restored.totalBytes)
             assertEquals("UserPause", restored.stopReason)
             assertEquals("DownloadingAudio", restored.phase)
+            assertEquals("Audio", restored.outputType)
             assertEquals(12L, restored.checkpointAt)
             restored.downloadedBytes = 50
             db.queueDao().update(restored)
@@ -57,11 +59,15 @@ class QueueResumeMigrationTest {
         } finally { db.close() }
     }
 
-    @Test fun version3MigrationKeepsOldQueueAndHistoryAndAddsResumeFields() {
+    @Test fun version3MigrationKeepsOldQueueAndHistoryAndAddsResumeFields() = verifyLegacyMigration(3)
+
+    @Test fun version4MigrationKeepsOldQueueAndHistoryAndAddsOutputMetadata() = verifyLegacyMigration(4)
+
+    private fun verifyLegacyMigration(version: Int) {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val path = ProjectTestPaths.createTempDirectory("queue-migration-").resolve("version3.db").toString()
+        val path = ProjectTestPaths.createTempDirectory("queue-migration-").resolve("legacy.db").toString()
         val helper = FrameworkSQLiteOpenHelperFactory().create(SupportSQLiteOpenHelper.Configuration.builder(context)
-            .name(path).callback(object : SupportSQLiteOpenHelper.Callback(3) {
+            .name(path).callback(object : SupportSQLiteOpenHelper.Callback(version) {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     val base = "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT, durationSeconds INTEGER NOT NULL, " +
                         "sourceScheme TEXT, sourceHostHash TEXT, sourceCategory TEXT, outputUri TEXT, formatSummary TEXT, " +
@@ -71,20 +77,31 @@ class QueueResumeMigrationTest {
                     db.execSQL("CREATE TABLE history_items ($base, completedAt INTEGER NOT NULL, thumbnailUrl TEXT, subtitleOutputUris TEXT)")
                     db.execSQL("INSERT INTO queue_items(id,title,durationSeconds,status,progress,createdAt,updatedAt) VALUES(7,'旧队列',8,'queued',23,10,20)")
                     db.execSQL("INSERT INTO history_items(id,title,durationSeconds,status,progress,createdAt,updatedAt,completedAt) VALUES(9,'旧历史',8,'completed',100,10,20,30)")
+                    if (version == 4) YtdlDatabase.MIGRATION_3_4.migrate(db)
                 }
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
             }).build())
         helper.writableDatabase
         helper.close()
-        val migration = YtdlDatabase::class.java.fields.firstOrNull { it.name == "MIGRATION_3_4" }
-        assertNotNull("Room 3 to 4 migration is required", migration)
         val database = Room.databaseBuilder(context, YtdlDatabase::class.java, path)
-            .addMigrations(migration!!.get(null) as androidx.room.migration.Migration).allowMainThreadQueries().build()
+            .addMigrations(YtdlDatabase.MIGRATION_3_4, YtdlDatabase.MIGRATION_4_5).allowMainThreadQueries().build()
         try {
             val row = database.queueDao().getById(7)
             assertEquals("旧队列", row.title)
             assertEquals(23, row.progress)
-            assertEquals("旧历史", database.historyDao().listRecent(1).single().title)
+            val history = database.historyDao().listRecent(1).single()
+            assertEquals("旧历史", history.title)
+            assertNull(history.taskId)
+            assertNull(history.outputType)
+            assertNull(history.outputMimeType)
+            history.taskId = row.taskId
+            history.outputType = "Audio"
+            history.outputMimeType = "audio/webm"
+            database.historyDao().insert(history)
+            val saved = database.historyDao().getById(9)
+            assertEquals(row.taskId, saved.taskId)
+            assertEquals("Audio", saved.outputType)
+            assertEquals("audio/webm", saved.outputMimeType)
             val taskField = QueueItemEntity::class.java.getField("taskId")
             assertTrue((taskField.get(row) as String).matches(Regex("^[0-9a-f]{32}$")))
             assertEquals(7L, QueueItemEntity::class.java.getField("queueOrder").getLong(row))

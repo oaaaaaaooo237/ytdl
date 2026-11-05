@@ -6,6 +6,8 @@ import androidx.room.Ignore;
 import androidx.room.Index;
 import androidx.room.PrimaryKey;
 
+import com.garyapp.ytdl.download.TaskOutputTypeKt;
+
 @Entity(tableName = "queue_items", indices = {@Index(value = {"taskId"}, unique = true)})
 public class QueueItemEntity {
     public static final String STATUS_QUEUED = "queued";
@@ -18,6 +20,7 @@ public class QueueItemEntity {
 
     @PrimaryKey(autoGenerate = true)
     public long id;
+    public String outputType;
     public String title;
     public long durationSeconds;
     public String sourceScheme;
@@ -141,6 +144,7 @@ public class QueueItemEntity {
                 updatedAt
         );
         copy.taskId = taskId;
+        copy.outputType = TaskOutputTypeKt.taskOutputTypeFromStored(outputType) != null ? outputType : null;
         copy.queueOrder = queueOrder;
         copy.phase = safeState(phase);
         copy.stopReason = safeState(stopReason);

@@ -229,7 +229,7 @@ class DownloadService : Service() {
         val outputs = result.outputs.map { output ->
             ExportController.discoverAppPrivateOutput(File(output.path), outputRoot,
                 allowEmptyFile = output.kind == DownloadOutputKind.File,
-                mimeType = output.mimeType ?: (request.route as? DownloadRoute.HttpFile)?.metadata?.mimeType,
+                mimeType = output.resolvedMimeType(request),
                 askOnConflict = (request.route as? DownloadRoute.HttpFile)?.conflictPolicy == HttpFileConflictPolicy.Ask,
                 displayName = (request.route as? DownloadRoute.HttpFile)?.fileName).getOrThrow()
         }

@@ -363,11 +363,20 @@ object ExportController {
         }.getOrDefault(segment)
     }
 
-    private fun mimeTypeFor(displayName: String): String {
+    internal fun mimeTypeFor(displayName: String, audioOnly: Boolean = false): String {
         return when (displayName.substringAfterLast('.', "").lowercase()) {
-            "mp4" -> "video/mp4"
+            "mp4" -> if (audioOnly) "audio/mp4" else "video/mp4"
             "m4a" -> "audio/mp4"
-            "webm" -> "video/webm"
+            "webm" -> if (audioOnly) "audio/webm" else "video/webm"
+            "mkv" -> "video/x-matroska"
+            "mov" -> "video/quicktime"
+            "avi" -> "video/x-msvideo"
+            "flv" -> "video/x-flv"
+            "3gp" -> if (audioOnly) "audio/3gpp" else "video/3gpp"
+            "aac" -> "audio/aac"
+            "flac" -> "audio/flac"
+            "wav" -> "audio/wav"
+            "ogg", "oga", "opus" -> "audio/ogg"
             "mp3" -> "audio/mpeg"
             "vtt" -> "text/vtt"
             "srt" -> "application/x-subrip"

@@ -1,6 +1,7 @@
 package com.garyapp.ytdl.core.settings
 
 import com.garyapp.ytdl.core.storage.StorageTarget
+import com.garyapp.ytdl.download.HttpFileConflictPolicy
 
 data class AppSettings(
     val defaultStorageTarget: StorageTarget = StorageTarget.AppPrivate,
@@ -8,7 +9,15 @@ data class AppSettings(
     val themeModeId: String = AppearanceSettings.ThemeModeSystem,
     val colorPresetId: String = AppearanceSettings.ColorPresetReferenceV3,
     val siteCookies: Map<String, SiteCookies> = emptyMap(),
-)
+    val maxConcurrentDownloads: Int = DefaultMaxConcurrentDownloads,
+    val fileConflictPolicy: HttpFileConflictPolicy = HttpFileConflictPolicy.AutoRename,
+    val notifyDownloadCompleted: Boolean = true,
+    val notifyDownloadFailed: Boolean = true,
+) {
+    companion object {
+        const val DefaultMaxConcurrentDownloads = 2
+    }
+}
 
 object AppearanceSettings {
     const val ThemeModeSystem = "system"

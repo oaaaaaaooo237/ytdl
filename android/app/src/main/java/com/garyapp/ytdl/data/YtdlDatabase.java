@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
                 QueueItemEntity.class,
                 HistoryItemEntity.class
         },
-        version = 4,
+        version = 5,
         exportSchema = false
 )
 public abstract class YtdlDatabase extends RoomDatabase {
@@ -26,6 +26,16 @@ public abstract class YtdlDatabase extends RoomDatabase {
             database.execSQL("ALTER TABLE queue_items ADD COLUMN checkpointAt INTEGER NOT NULL DEFAULT 0");
             database.execSQL("UPDATE queue_items SET taskId = lower(hex(randomblob(16))), queueOrder = id");
             database.execSQL("CREATE UNIQUE INDEX index_queue_items_taskId ON queue_items(taskId)");
+        }
+    };
+
+    public static final Migration MIGRATION_4_5 = new Migration(4, 5) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE history_items ADD COLUMN taskId TEXT");
+            database.execSQL("ALTER TABLE history_items ADD COLUMN outputType TEXT");
+            database.execSQL("ALTER TABLE history_items ADD COLUMN outputMimeType TEXT");
+            database.execSQL("ALTER TABLE queue_items ADD COLUMN outputType TEXT");
         }
     };
 

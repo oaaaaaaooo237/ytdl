@@ -11,6 +11,7 @@ import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRequestException
 import com.garyapp.ytdl.download.DownloadStage
+import com.garyapp.ytdl.download.TaskOutputType
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,6 +69,7 @@ data class HistoryUiItem(
     val codecBadge: String = "",
     val retryAvailable: Boolean = false,
     val isAudioOnly: Boolean = false,
+    val outputMimeType: String? = null,
 ) {
     val hasOutput: Boolean
         get() = isHistoryOutputUri(outputUri) &&
@@ -90,7 +92,8 @@ fun historyUiItemsFromRows(
             thumbnailUrl = row.thumbnailUrl?.takeIf { it.isNotBlank() },
             formatBadge = formatResolutionBadgeForSummary(row.formatSummary.orEmpty()),
             codecBadge = formatCodecBadgeForSummary(row.formatSummary.orEmpty()),
-            isAudioOnly = isAudioOnlyFormatSummary(row.formatSummary.orEmpty()),
+            isAudioOnly = row.taskOutputType() == TaskOutputType.Audio,
+            outputMimeType = row.outputMimeType,
             retryAvailable = row.status in setOf(
                 HistoryItemEntity.STATUS_FAILED,
                 HistoryItemEntity.STATUS_CANCELED,
@@ -172,11 +175,7 @@ private fun formatResolutionLabelFromSummary(formatSummary: String): String? {
     return match.value.lowercase(Locale.ROOT)
 }
 
-private fun isAudioOnlyFormatSummary(formatSummary: String): Boolean {
-    return historyTypeLabel(formatSummary) == "仅音频"
-}
-
-private fun historyTypeLabel(formatSummary: String): String {
+internal fun historyTypeLabel(formatSummary: String): String {
     val normalized = formatSummary.trim()
     return when {
         normalized.contains("仅音频") ||

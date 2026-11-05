@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.storage.StorageTargets
+import com.garyapp.ytdl.download.HttpFileConflictPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -59,6 +60,10 @@ class SettingsRepository(
             }.toString())
             .putString(KeyThemeMode, settings.themeModeId)
             .putString(KeyColorPreset, settings.colorPresetId)
+            .putInt(KeyMaxConcurrentDownloads, settings.maxConcurrentDownloads)
+            .putString(KeyFileConflictPolicy, settings.fileConflictPolicy.name)
+            .putBoolean(KeyNotifyDownloadCompleted, settings.notifyDownloadCompleted)
+            .putBoolean(KeyNotifyDownloadFailed, settings.notifyDownloadFailed)
             .putString(KeyStorageTargetType, StorageTargets.persistedType(target))
         if (target is StorageTarget.SafTree) {
             editor
@@ -76,6 +81,7 @@ class SettingsRepository(
         defaultStorageTarget = StorageTargets.sanitizeDefault(defaultStorageTarget),
         themeModeId = AppearanceSettings.normalizeThemeModeId(themeModeId),
         colorPresetId = AppearanceSettings.normalizeColorPresetId(colorPresetId),
+        maxConcurrentDownloads = maxConcurrentDownloads.takeIf { it in 1..3 } ?: AppSettings.DefaultMaxConcurrentDownloads,
     )
 
     companion object {
@@ -85,12 +91,17 @@ class SettingsRepository(
         private const val KeyCookiesDisplayName = "cookies_display_name"
         private const val KeyThemeMode = "theme_mode"
         private const val KeyColorPreset = "color_preset"
+        private const val KeyMaxConcurrentDownloads = "max_concurrent_downloads"
+        private const val KeyFileConflictPolicy = "file_conflict_policy"
+        private const val KeyNotifyDownloadCompleted = "notify_download_completed"
+        private const val KeyNotifyDownloadFailed = "notify_download_failed"
         private const val KeyStorageTargetType = "storage_target_type"
         private const val KeyStorageTreeUri = "storage_tree_uri"
         private const val KeyStorageDisplayName = "storage_display_name"
 
         fun fromContext(context: Context): SettingsRepository {
             val prefs = context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
+            val saved = prefs.all
             return SettingsRepository(
                 initialSettings = AppSettings(
                     defaultStorageTarget = StorageTargets.restoreDefault(
@@ -105,6 +116,11 @@ class SettingsRepository(
                     themeModeId = prefs.getString(KeyThemeMode, null).orEmpty(),
                     colorPresetId = prefs.getString(KeyColorPreset, null).orEmpty(),
                     siteCookies = readSites(prefs.getString(KeySiteCookies, null)),
+                    maxConcurrentDownloads = saved[KeyMaxConcurrentDownloads] as? Int ?: AppSettings.DefaultMaxConcurrentDownloads,
+                    fileConflictPolicy = HttpFileConflictPolicy.entries.firstOrNull { it.name == saved[KeyFileConflictPolicy] }
+                        ?: HttpFileConflictPolicy.AutoRename,
+                    notifyDownloadCompleted = saved[KeyNotifyDownloadCompleted] as? Boolean ?: true,
+                    notifyDownloadFailed = saved[KeyNotifyDownloadFailed] as? Boolean ?: true,
                 ),
                 preferences = prefs,
             )

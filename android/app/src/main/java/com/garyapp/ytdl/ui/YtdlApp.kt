@@ -1270,13 +1270,13 @@ internal fun YtdlApp(
         )
     }
 
-    fun outputTargetForHistoryUri(outputUri: String?): Result<HistoryOutputTarget> {
+    fun outputTargetForHistoryUri(outputUri: String?, recordedMimeType: String? = null): Result<HistoryOutputTarget> {
         val normalizedUri = outputUri.orEmpty().trim()
         val contentUri = runCatching { Uri.parse(normalizedUri) }.getOrNull()
         val contentTarget = contentUri?.let { uri ->
             historyContentOutputTarget(
                 rawUri = normalizedUri,
-                resolverMimeType = runCatching { context.contentResolver.getType(uri) }.getOrNull(),
+                resolverMimeType = recordedMimeType ?: runCatching { context.contentResolver.getType(uri) }.getOrNull(),
             )
         }
         if (contentTarget != null) return Result.success(contentTarget)
@@ -1284,13 +1284,13 @@ internal fun YtdlApp(
         return outputForAppPrivateUri(normalizedUri).map { output ->
             HistoryOutputTarget(
                 uri = fileProviderUri(output).toString(),
-                mimeType = output.mimeType,
+                mimeType = recordedMimeType ?: output.mimeType,
             )
         }
     }
 
     fun outputForHistoryItem(item: HistoryUiItem): Result<HistoryOutputTarget> {
-        return outputTargetForHistoryUri(item.outputUri)
+        return outputTargetForHistoryUri(item.outputUri, item.outputMimeType)
     }
 
     fun openHistoryItem(item: HistoryUiItem) {

@@ -6,6 +6,7 @@ import com.garyapp.ytdl.core.ytdlp.DownloadProgress
 import com.garyapp.ytdl.data.QueueItemEntity
 import com.garyapp.ytdl.data.YtdlDatabase
 import com.garyapp.ytdl.data.YtdlDatabaseProvider
+import com.garyapp.ytdl.ui.legacyTaskOutputType
 import java.io.File
 
 data class ResumeTaskItem(
@@ -14,6 +15,7 @@ data class ResumeTaskItem(
     val state: DownloadTaskState,
     val recoveryError: String? = null,
     val wasQueued: Boolean = false,
+    val outputType: TaskOutputType = TaskOutputType.Other,
 )
 
 /** Room is the commit marker: no runnable item is exposed before all three stores exist. */
@@ -36,6 +38,7 @@ internal class ResumeTaskRepository(
                 val row = QueueItemEntity.createSafe(request.title, 0, "", "", "", "", request.formatSummary,
                     QueueItemEntity.STATUS_QUEUED, 0, "", "", null, now, now).apply {
                     taskId = request.taskId
+                    outputType = request.outputType().name
                     queueOrder = (queue.listAll().maxOfOrNull { it.queueOrder } ?: 0) + 1
                     phase = DownloadStage.Waiting.name
                     checkpointAt = now
@@ -71,12 +74,13 @@ internal class ResumeTaskRepository(
                         FileRecoveryAction.ChooseFileName -> "文件名已存在，请选择其他名称。"
                         null -> if (reason == DownloadStopReason.UserPause) "点击继续下载。" else "应用曾退出，点击继续。"
                     },
-                ), wasQueued = row.status == QueueItemEntity.STATUS_QUEUED)
+                ), wasQueued = row.status == QueueItemEntity.STATUS_QUEUED, outputType = request.outputType())
             }.getOrElse {
                 ResumeTaskItem(row.taskId, safeTitle(row.title), DownloadTaskState(
                     DownloadStage.Paused, progress = DownloadProgress("paused", null, row.downloadedBytes,
                         row.totalBytes, 0.0, null, null),
-                ), "恢复信息不可用，请取消任务后重新分析。")
+                ), "恢复信息不可用，请取消任务后重新分析。", outputType = taskOutputTypeFromStored(row.outputType)
+                    ?: legacyTaskOutputType(row.outputUri, row.formatSummary))
             }
             restored
         }
