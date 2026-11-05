@@ -8,9 +8,9 @@
 
 ## Task 0：现有功能盘点与基线
 
-- [ ] 只读建立功能→拥有代码→测试映射，特别是 UI 重新布局容易丢的媒体功能。
-- [ ] `./gradlew.bat :app:testDebugUnitTest --console=plain`，保存基线测试数量与失败；失败先定位不能归咎新改动。
-- [ ] 记录新旧权威关系；旧五入口被本轮三入口覆盖，原始图片不改。
+- [x] 只读建立功能→拥有代码→测试映射，特别是 UI 重新布局容易丢的媒体功能。见 `docs/qa/android-universal-downloader-retention.md`。
+- [x] `./gradlew.bat :app:testDebugUnitTest --console=plain`：500 项全过，无跳过，BUILD SUCCESSFUL in 2m 50s。
+- [x] 记录新旧权威关系；原始图片不改。源码实际已为三导航，不因旧文档倒退为五入口。
 
 ## Task 1：独立 HTTP 文件识别与安全续传核心
 

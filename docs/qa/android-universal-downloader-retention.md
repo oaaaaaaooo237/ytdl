@@ -30,5 +30,5 @@
 
 ## 本轮状态
 
-Task 0：源码盘点已完成；基线全量单测运行中，尚未记录通过。
+Task 0：源码盘点已完成；基线全量单测已通过，50 个测试套件、500 项测试，0 失败、0 错误、0 跳过。命令 `:app:testDebugUnitTest --console=plain`，BUILD SUCCESSFUL in 2m 50s；原始报告在工作树 `android/app/build/reports/tests/testDebugUnitTest/index.html`（后续测试运行会覆盖，计数在此留档）。
 Task 1～6：未完成。目标保持完整，最终逐行补充实现提交、测试输出与前台 GUI 证据。
