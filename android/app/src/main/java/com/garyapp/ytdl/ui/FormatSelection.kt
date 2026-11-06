@@ -108,7 +108,7 @@ private fun rowsFromVideoChoices(
     val explicitAutoChoice = selection.selectedVideoFormatId?.let { formatId ->
         choices.firstOrNull { it.video.id == formatId }
     }
-    val autoChoice = explicitAutoChoice ?: best
+    val autoChoice = explicitAutoChoice?.takeIf { selection.selectedHeight == null } ?: best
     val auto = rowFromChoice(
         height = null,
         label = "自动（推荐）",
@@ -230,6 +230,7 @@ internal fun retryFormatSelection(
     draft: RetryDownloadDraft,
 ): FormatSelection {
     val mode = when (draft.route) {
+        is DownloadRoute.HttpFile -> error("文件下载无需媒体格式选择，请从文件任务继续。")
         is DownloadRoute.MergeRequired -> FormatMode.VideoAndAudio
         is DownloadRoute.AudioOnly -> FormatMode.AudioOnly
         is DownloadRoute.DirectSingleFile,
@@ -239,12 +240,14 @@ internal fun retryFormatSelection(
     if (!isFormatModeAvailable(analysis, mode)) return defaultFormatSelection(analysis)
 
     val preferredVideoFormatId = when (val route = draft.route) {
+        is DownloadRoute.HttpFile -> null
         is DownloadRoute.DirectSingleFile -> route.formatId
         is DownloadRoute.VideoOnly -> route.videoFormatId
         is DownloadRoute.MergeRequired -> route.videoFormatId
         is DownloadRoute.AudioOnly -> null
     }
     val preferredAudioFormatId = when (val route = draft.route) {
+        is DownloadRoute.HttpFile -> null
         is DownloadRoute.MergeRequired -> route.audioFormatId
         is DownloadRoute.AudioOnly -> route.audioFormatId
         is DownloadRoute.DirectSingleFile,
@@ -271,7 +274,7 @@ fun formatSelectionSummary(
     analysis: VideoAnalysis?,
     selection: FormatSelection,
 ): String {
-    if (analysis == null) return "分析后显示真实格式"
+    if (analysis == null) return "分析后显示可用格式"
     val selectedRow = buildFormatResolutionRows(analysis, selection)
         .firstOrNull { it.selected }
         ?: return "请选择可用格式"

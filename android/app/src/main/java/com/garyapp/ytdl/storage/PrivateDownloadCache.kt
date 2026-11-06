@@ -224,7 +224,7 @@ class PrivateDownloadCache(
 
     private fun isProtectedOutput(file: File, protectedUris: Set<String>): Boolean {
         val uri = ExportController.appPrivateOutputUri(file.absolutePath, canonicalRoot.absolutePath)
-        return uri in protectedUris
+        return uri in protectedUris || "$uri?kind=file" in protectedUris
     }
 
     private fun isAppPrivateOutputUri(value: String): Boolean {

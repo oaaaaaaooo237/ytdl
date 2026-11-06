@@ -97,7 +97,7 @@ class YtdlDatabaseMigrationTest {
 
         helper.close()
         val migratedRoom = Room.databaseBuilder(context, YtdlDatabase::class.java, dbName)
-            .addMigrations(HistoryItemEntity.MIGRATION_1_2, migration2To3(), YtdlDatabase.MIGRATION_3_4)
+            .addMigrations(HistoryItemEntity.MIGRATION_1_2, migration2To3(), YtdlDatabase.MIGRATION_3_4, YtdlDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -194,7 +194,7 @@ class YtdlDatabaseMigrationTest {
 
         helper.close()
         val migratedRoom = Room.databaseBuilder(context, YtdlDatabase::class.java, dbName)
-            .addMigrations(migration2To3(), YtdlDatabase.MIGRATION_3_4)
+            .addMigrations(migration2To3(), YtdlDatabase.MIGRATION_3_4, YtdlDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {

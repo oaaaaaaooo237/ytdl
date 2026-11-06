@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.Executor
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class SettingsCacheUiTest {
     @get:Rule
     val composeRule = createComposeRule()
@@ -102,7 +102,7 @@ class SettingsCacheUiTest {
         composeRule.onNodeWithText("7 B · 2 个文件").assertExists()
         composeRule.onNodeWithTag("ytdl-settings-cache-clear").performClick()
         composeRule.onNodeWithText("确认清理临时缓存").assertExists()
-        composeRule.onNodeWithText("只删除未被下载记录引用的 App 私有临时文件；不会删除完成文件、合并文件或所选文件夹中的文件。").assertExists()
+        composeRule.onNodeWithText("已完成的文件与可恢复任务的进度会保留。", substring = true).assertExists()
 
         composeRule.onNodeWithTag("ytdl-cache-clear-confirm").performClick()
         composeRule.onNodeWithText("清理完成").assertExists()
@@ -173,6 +173,9 @@ class SettingsCacheUiTest {
 
     private fun openCacheRow() {
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-storage"))
+        composeRule.onNodeWithTag("ytdl-settings-category-storage").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-cache-clear"))
     }

@@ -8,6 +8,9 @@ import com.garyapp.ytdl.ui.FormatSelection
 import com.garyapp.ytdl.ui.formatSelectionSummary
 import com.garyapp.ytdl.ui.isNativeMp4MergeAudioCompatible
 import com.garyapp.ytdl.ui.isNativeMp4MergeVideoCompatible
+import com.garyapp.ytdl.core.settings.AppSettings
+import com.garyapp.ytdl.core.settings.CookiesReference
+import com.garyapp.ytdl.core.settings.cookiesForUrl
 
 data class DownloadRequest(
     val url: String,
@@ -21,7 +24,14 @@ data class DownloadRequest(
     val usesCookies: Boolean = !cookiesPath.isNullOrBlank(),
     val storageTarget: com.garyapp.ytdl.core.storage.StorageTarget? = null,
     val analysisKey: String? = null,
+    val pinnedCookiesReference: CookiesReference? = null,
+    val cookiesSelectionPinned: Boolean = false,
+    val resumeTransfers: Boolean = true,
 ) {
+    fun cookiesReferenceFor(settings: AppSettings): CookiesReference? {
+        if (!usesCookies) return null
+        return if (cookiesSelectionPinned) pinnedCookiesReference else settings.cookiesForUrl(url)
+    }
     init {
         require(taskId.matches(Regex("^[0-9a-f]{32}$"))) { "任务标识不可用。" }
     }
@@ -144,7 +154,21 @@ data class DownloadRequest(
     }
 }
 
+enum class HttpFileConflictPolicy { AutoRename, Ask }
+
 sealed interface DownloadRoute {
+    data class HttpFile(
+        val metadata: com.garyapp.ytdl.core.files.FileMetadata,
+        val fileName: String = metadata.fileName,
+        val conflictPolicy: HttpFileConflictPolicy = HttpFileConflictPolicy.AutoRename,
+    ) : DownloadRoute {
+        init {
+            require(fileName.isNotBlank() && fileName !in setOf(".", "..") &&
+                fileName.none { it in "\\/:*?\"<>|" || it.isISOControl() } &&
+                fileName == fileName.trimEnd('.', ' ') && fileName.toByteArray(Charsets.UTF_8).size <= 230 &&
+                fileName.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8) == fileName) { "文件名不可用。" }
+        }
+    }
     data class DirectSingleFile(val formatId: String) : DownloadRoute
     data class VideoOnly(val videoFormatId: String) : DownloadRoute
     data class AudioOnly(val audioFormatId: String) : DownloadRoute

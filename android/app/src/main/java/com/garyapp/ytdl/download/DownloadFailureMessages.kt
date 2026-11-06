@@ -11,6 +11,7 @@ object DownloadFailureMessages {
     }
 
     fun missingSubtitle(language: String? = null, detail: String? = null): String {
+        if (detail == "字幕下载请求过多，请稍后重试。") return detail
         val safeLanguage = language?.takeIf { it.matches(Regex("""^[A-Za-z0-9._-]{1,24}$""")) }
         return if (safeLanguage.isNullOrBlank()) {
             "所选字幕不可用，请取消字幕或重新分析后再试。"
@@ -51,9 +52,11 @@ object DownloadFailureMessages {
         if (exc is YtdlpDownloadException) {
             if (exc.safeMessage == YtdlpBridge.NO_FORMATS_MESSAGE) return YtdlpBridge.NO_FORMATS_MESSAGE
             return when (exc.category) {
+                AnalysisErrorCategory.XNoVideo -> "X 未返回这条帖子的视频，请在 X 打开原帖确认。"
                 AnalysisErrorCategory.Network -> network(exc.safeMessage)
                 AnalysisErrorCategory.Unsupported -> "当前地址或格式暂不支持，请检查地址格式或重新选择格式。"
                 AnalysisErrorCategory.Permission -> "需要授权或 cookies 文件，请确认你有权访问该内容后重试。"
+                AnalysisErrorCategory.Drm -> "该内容受 DRM 保护，无法下载。"
                 AnalysisErrorCategory.Parser -> processing(exc.safeMessage)
                 AnalysisErrorCategory.Canceled -> canceled()
                 AnalysisErrorCategory.Unknown -> fromErrorText(exc.safeMessage)

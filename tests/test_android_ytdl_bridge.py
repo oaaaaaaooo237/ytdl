@@ -8,6 +8,22 @@ import types
 from pathlib import Path
 
 
+def test_x_post_without_visible_video_has_distinct_error():
+    bridge = load_android_ytdl_bridge()
+    exc = RuntimeError("ERROR: [twitter] 2109772550783856786: No video could be found in this tweet")
+    assert bridge._error_category(exc) == "x_no_video"
+
+
+def test_protected_media_errors_take_priority_over_format_failure():
+    bridge = load_android_ytdl_bridge()
+    drm_error = RuntimeError("No video formats found: This video is DRM protected")
+    permission_error = RuntimeError("No video formats found: Sign in to view this private video")
+    assert bridge._error_category(drm_error) == "drm"
+    assert bridge._error_category(permission_error) == "permission"
+    assert bridge._safe_error_message(drm_error) == "该内容受 DRM 保护，无法下载。"
+    assert bridge._safe_error_message(permission_error) == "需要授权访问，请确认账号权限或 cookies 文件。"
+
+
 def load_android_ytdl_bridge(youtube_dl_class=object):
     bridge_path = (
         Path(__file__).resolve().parents[1]
@@ -498,6 +514,16 @@ def test_explicit_format_id_rejects_ytdlp_selector_aliases():
     assert bridge._is_explicit_format_id("394")
 
 
+def test_x_hls_audio_uses_declared_mp4a_path_when_codec_field_is_missing():
+    bridge = load_android_ytdl_bridge()
+    audio = {"vcodec": "none", "ext": "mp4", "protocol": "m3u8_native",
+             "url": "https://video.twimg.com/amplify_video/123/pl/mp4a/128000/audio.m3u8"}
+    assert bridge._safe_format(audio)["acodec"] == "mp4a"
+    assert bridge._safe_format(dict(audio, acodec="opus"))["acodec"] == "opus"
+    assert bridge._safe_format(dict(audio, url="https://example.com/pl/mp4a/audio.m3u8"))["acodec"] is None
+    assert bridge._safe_format(dict(audio, url="https://video.twimg.com/audio.m3u8?hint=/mp4a/"))["acodec"] is None
+
+
 def test_safe_format_preserves_unknown_codecs_without_inventing_none():
     bridge = load_android_ytdl_bridge()
 
@@ -545,13 +571,15 @@ def test_download_options_have_bounded_network_waits(tmp_path):
     bridge = load_android_ytdl_bridge(BoundedProbe)
     bridge.download_format("https://example.test/watch", str(tmp_path), "18", "media")
     bridge.download_subtitle("https://example.test/watch", str(tmp_path), "en", "vtt", "manual")
-    assert len(captured) == 2
-    for options in captured:
+    bridge.download_format("https://example.test/watch", str(tmp_path), "18", "media", resume_transfers=False)
+    bridge.download_subtitle("https://example.test/watch", str(tmp_path), "en", "vtt", "manual", resume_transfers=False)
+    assert len(captured) == 4
+    for index, options in enumerate(captured):
         assert options["socket_timeout"] == 10
         assert options["retries"] == 1
         assert options["fragment_retries"] == 1
         assert options["extractor_retries"] == 1
-        assert options["continuedl"] is True
+        assert options["continuedl"] is (index < 2)
         assert options["nopart"] is False
 
 def test_stop_during_metadata_fallback_does_not_start_python_retry():

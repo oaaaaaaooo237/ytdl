@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
         }
         configureLightSystemBars()
         setContent {
-            YtdlApp()
+            YtdlApp(showFirstRunGuide = true)
         }
     }
 

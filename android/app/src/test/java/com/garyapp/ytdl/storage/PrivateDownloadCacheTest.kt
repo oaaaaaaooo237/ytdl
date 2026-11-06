@@ -44,6 +44,19 @@ class PrivateDownloadCacheTest {
     }
 
     @Test
+    fun fileKindHistoryUriProtectsEmptyOutputInIncompleteWorkspace() {
+        val task = File(privateRoot, "task-${"a".repeat(32)}").apply { mkdirs() }
+        ExportController.markPrivateTaskStarted(task).getOrThrow()
+        val output = File(task, "outputs/empty.pdf").writeBytesAfterCreating(byteArrayOf())
+        val uri = ExportController.appPrivateOutputUri(output.path, privateRoot.path, true)
+        database.historyDao().insert(historyItem("空文件", uri, null))
+        val cache = PrivateDownloadCache(privateRoot, database.queueDao(), database.historyDao())
+        assertEquals(CacheStats(0, 0), cache.inspect())
+        assertEquals(CacheClearResult.Success(0, 0), cache.clear())
+        assertTrue(output.isFile)
+    }
+
+    @Test
     fun pausedTaskWithoutOutputUriProtectsWholeDirectory() {
         val row = queueItem("暂停任务", "").apply { status = "paused" }
         database.queueDao().insert(row)

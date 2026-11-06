@@ -126,6 +126,47 @@ class TaskWorkspaceTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ResumeRequestStoreTest {
+    @Test fun cookiesChoiceIsPinnedAcrossSettingsChangesAndEncryptedRestore() {
+        val root = root()
+        val store = FileResumeRequestStore(root, cipher)
+        val original = com.garyapp.ytdl.core.settings.CookiesReference.fromUserReference("content://files/original", "x.txt")!!
+        val settings = com.garyapp.ytdl.core.settings.SettingsRepository()
+        settings.setSiteCookies("X", "x.com", original)
+        val pinned = request().copy(url = "https://x.com/u/status/1", cookiesSelectionPinned = true,
+            pinnedCookiesReference = original)
+        store.save(pinned).getOrThrow()
+        settings.setSiteCookies("X", "x.com", com.garyapp.ytdl.core.settings.CookiesReference.fromUserReference("content://files/new"))
+        val restored = store.load(id).getOrThrow()
+        assertEquals(original, restored.cookiesReferenceFor(settings.getSettings()))
+        assertEquals(null, restored.cookiesPath)
+        assertFalse(root.resolve("$id.bin").readBytes().toString(Charsets.UTF_8).contains("content://files/original"))
+    }
+
+    @Test fun versionOneRequestsStillUseCurrentSiteSettings() {
+        val root = root()
+        val store = FileResumeRequestStore(root, cipher)
+        store.save(request()).getOrThrow()
+        val file = root.resolve("$id.bin")
+        val payload = cipher.decrypt(file.readBytes()).dropLast(3).toByteArray()
+        java.nio.ByteBuffer.wrap(payload).putInt(4, 1)
+        file.writeBytes(cipher.encrypt(payload))
+        val old = store.load(id).getOrThrow()
+        assertFalse(old.cookiesSelectionPinned)
+        assertTrue(old.usesCookies)
+        assertTrue(old.resumeTransfers)
+    }
+
+    @Test fun disabledResumePolicyRoundTripsAndLegacyVersionThreeDefaultsToEnabled() {
+        val root = root()
+        val store = FileResumeRequestStore(root, cipher)
+        store.save(request().copy(resumeTransfers = false)).getOrThrow()
+        assertFalse(store.load(id).getOrThrow().resumeTransfers)
+        val file = root.resolve("$id.bin")
+        val payload = cipher.decrypt(file.readBytes()).dropLast(1).toByteArray()
+        java.nio.ByteBuffer.wrap(payload).putInt(4, 3)
+        file.writeBytes(cipher.encrypt(payload))
+        assertTrue(store.load(id).getOrThrow().resumeTransfers)
+    }
     private val id = "a".repeat(32)
     private val other = "b".repeat(32)
     private val cipher = AesGcmRetryPayloadCipher(SecretKeySpec(ByteArray(32) { (it + 1).toByte() }, "AES"))

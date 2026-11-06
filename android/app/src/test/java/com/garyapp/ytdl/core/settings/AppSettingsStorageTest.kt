@@ -119,7 +119,7 @@ class AppSettingsStorageTest {
 
         assertEquals(StorageTarget.AppPrivate, settings.defaultStorageTarget)
         assertEquals(AppearanceSettings.ThemeModeSystem, settings.themeModeId)
-        assertEquals(AppearanceSettings.ColorPresetReferenceV3, settings.colorPresetId)
+        assertEquals(AppearanceSettings.ColorPresetMorandi, settings.colorPresetId)
     }
 
     @Test
@@ -170,6 +170,19 @@ class AppSettingsStorageTest {
     }
 
     @Test
+    fun settingsRepositoryMigratesLegacyReferencePaletteWithoutChangingManualMode() {
+        val repository = SettingsRepository(
+            initialSettings = AppSettings(
+                themeModeId = AppearanceSettings.ThemeModeLight,
+                colorPresetId = AppearanceSettings.ColorPresetReferenceV3,
+            ),
+        )
+
+        assertEquals(AppearanceSettings.ColorPresetMorandi, repository.getSettings().colorPresetId)
+        assertEquals(AppearanceSettings.ThemeModeLight, repository.getSettings().themeModeId)
+    }
+
+    @Test
     fun settingsRepositoryFallsBackForUnknownAppearanceIds() {
         val repository = SettingsRepository(
             initialSettings = AppSettings(
@@ -179,12 +192,12 @@ class AppSettingsStorageTest {
         )
 
         assertEquals(AppearanceSettings.ThemeModeSystem, repository.getSettings().themeModeId)
-        assertEquals(AppearanceSettings.ColorPresetReferenceV3, repository.getSettings().colorPresetId)
+        assertEquals(AppearanceSettings.ColorPresetMorandi, repository.getSettings().colorPresetId)
 
         repository.setThemeMode("bad-mode")
         repository.setColorPreset("bad-preset")
 
         assertEquals(AppearanceSettings.ThemeModeSystem, repository.getSettings().themeModeId)
-        assertEquals(AppearanceSettings.ColorPresetReferenceV3, repository.getSettings().colorPresetId)
+        assertEquals(AppearanceSettings.ColorPresetMorandi, repository.getSettings().colorPresetId)
     }
 }

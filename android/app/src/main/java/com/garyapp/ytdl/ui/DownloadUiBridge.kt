@@ -11,6 +11,7 @@ import com.garyapp.ytdl.data.HistoryItemEntity
 import com.garyapp.ytdl.download.DownloadRequest
 import com.garyapp.ytdl.download.DownloadRequestException
 import com.garyapp.ytdl.download.DownloadStage
+import com.garyapp.ytdl.download.TaskOutputType
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,6 +69,10 @@ data class HistoryUiItem(
     val codecBadge: String = "",
     val retryAvailable: Boolean = false,
     val isAudioOnly: Boolean = false,
+    val outputMimeType: String? = null,
+    val taskId: String? = null,
+    val subtitleOutputUris: List<String> = emptyList(),
+    val outputType: TaskOutputType = if (isAudioOnly) TaskOutputType.Audio else legacyTaskOutputType(outputUri, meta),
 ) {
     val hasOutput: Boolean
         get() = isHistoryOutputUri(outputUri) &&
@@ -90,8 +95,14 @@ fun historyUiItemsFromRows(
             thumbnailUrl = row.thumbnailUrl?.takeIf { it.isNotBlank() },
             formatBadge = formatResolutionBadgeForSummary(row.formatSummary.orEmpty()),
             codecBadge = formatCodecBadgeForSummary(row.formatSummary.orEmpty()),
-            isAudioOnly = isAudioOnlyFormatSummary(row.formatSummary.orEmpty()),
+            isAudioOnly = row.taskOutputType() == TaskOutputType.Audio,
+            outputMimeType = row.outputMimeType,
+            taskId = row.taskId?.takeIf { it.isNotBlank() },
+            subtitleOutputUris = row.subtitleOutputUris.orEmpty().lineSequence().map(String::trim)
+                .filter(::isHistoryOutputUri).distinct().toList(),
+            outputType = row.taskOutputType(),
             retryAvailable = row.status in setOf(
+                HistoryItemEntity.STATUS_COMPLETED,
                 HistoryItemEntity.STATUS_FAILED,
                 HistoryItemEntity.STATUS_CANCELED,
             ) && retryDraftAvailable(row.id),
@@ -133,7 +144,7 @@ private fun historyMeta(row: HistoryItemEntity): String {
     val parts = listOfNotNull(
         historyTypeLabel(row.formatSummary.orEmpty()).takeIf { it.isNotBlank() },
         row.completedAt.takeIf { it > 0L }?.let { formatHistoryTime(it) },
-        row.errorSummary?.takeIf { it.isNotBlank() && !it.contains("字幕") },
+        row.errorSummary?.takeIf { it.isNotBlank() },
     )
     return redactHistoryUiText(parts.joinToString(" · ")).trim()
 }
@@ -172,11 +183,7 @@ private fun formatResolutionLabelFromSummary(formatSummary: String): String? {
     return match.value.lowercase(Locale.ROOT)
 }
 
-private fun isAudioOnlyFormatSummary(formatSummary: String): Boolean {
-    return historyTypeLabel(formatSummary) == "仅音频"
-}
-
-private fun historyTypeLabel(formatSummary: String): String {
+internal fun historyTypeLabel(formatSummary: String): String {
     val normalized = formatSummary.trim()
     return when {
         normalized.contains("仅音频") ||
@@ -206,13 +213,11 @@ fun historyActionLabels(item: HistoryUiItem): List<String> {
         buildList {
             add("打开")
             add("分享")
-            if (item.retryAvailable) {
-                add("再次下载")
-            }
+            add("再次下载")
             add("删除")
         }
     } else {
-        if (item.retryAvailable) listOf("再次下载", "删除") else listOf("删除")
+        listOf("再次下载", "删除")
     }
 }
 
@@ -239,6 +244,7 @@ fun userVisibleDownloadStatus(stage: DownloadStage): String {
         DownloadStage.WaitingForNetwork -> "等待网络"
         DownloadStage.Resuming -> "正在继续"
         DownloadStage.Waiting -> "等待中"
+        DownloadStage.DownloadingFile -> "下载文件"
         DownloadStage.DownloadingVideo -> "下载视频"
         DownloadStage.DownloadingAudio -> "下载音频"
         DownloadStage.DownloadingSubtitles -> "处理附加文件"
@@ -254,13 +260,6 @@ fun settingsParserVersionLabel(): String = "yt-dlp ${YtdlpBridge.PINNED_YTDLP_VE
 
 fun settingsMediaProcessorLabel(): String = "原生合并 · 不转码"
 
-fun settingsPrivacyLegalLines(): List<String> = listOf(
-    "仅处理用户粘贴的公开 http/https 页面地址。",
-    "Cookies 只保存文件引用，不保存内容；任务运行时临时读取并清理。",
-    "下载结果默认保存在 App 私有目录；打开和分享由系统授权。",
-    "历史缩略图可能刷新公开预览图；请求不携带 Cookies 或授权信息。",
-    "不绕过 DRM、付费墙或未授权访问限制。",
-)
 
 fun notificationPermissionSubtitle(
     isGranted: Boolean,
@@ -295,7 +294,6 @@ internal fun settingsParserVersionLabelForUiTest(): String = settingsParserVersi
 
 internal fun settingsMediaProcessorLabelForUiTest(): String = settingsMediaProcessorLabel()
 
-internal fun settingsPrivacyLegalLinesForUiTest(): List<String> = settingsPrivacyLegalLines()
 
 internal fun notificationPermissionSubtitleForUiTest(
     isGranted: Boolean,

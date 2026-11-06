@@ -85,6 +85,29 @@ class DownloadCoordinatorTest {
     }
 
     @Test
+    fun delayedCallbacksFromPreviousLaunchIgnoreNewWorkerWithSameTaskId() {
+        val request = request()
+        DownloadCoordinator.enqueueForServiceStart(request, tempRoot).getOrThrow()
+        val old = DownloadCoordinator.claimPendingLaunch()!!
+        DownloadCoordinator.activateLaunch(old)
+        DownloadCoordinator.finishActiveLaunch(old)
+
+        DownloadCoordinator.enqueueForServiceStart(request, tempRoot).getOrThrow()
+        val next = DownloadCoordinator.claimPendingLaunch()!!
+        assertTrue(old !== next)
+        DownloadCoordinator.activateLaunch(next)
+        val token = MutableDownloadCancellation()
+        DownloadCoordinator.attachCancellation(token, request.taskId)
+        DownloadCoordinator.waitForNetwork(old)
+        assertNull(token.stopReason)
+        DownloadCoordinator.pauseActive(request.taskId)
+        DownloadCoordinator.warnIfStopping(old)
+        assertNull(DownloadCoordinator.activeStates().getValue(request.taskId).statusMessage)
+        DownloadCoordinator.warnIfStopping(next)
+        assertNotNull(DownloadCoordinator.activeStates().getValue(request.taskId).statusMessage)
+    }
+
+    @Test
     fun cannotClaimSecondWorkerBeforeFirstHasExited() {
         DownloadCoordinator.enqueueForServiceStart(request("第一条"), tempRoot).getOrThrow()
         DownloadCoordinator.enqueueForServiceStart(request("第二条"), tempRoot).getOrThrow()

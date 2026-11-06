@@ -17,8 +17,8 @@ android {
         applicationId = "com.garyapp.ytdl"
         minSdk = 24
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 13
+        versionName = "1.11.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -26,6 +26,8 @@ android {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
+
+    packaging.jniLibs.useLegacyPackaging = true
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -35,7 +37,7 @@ android {
 chaquopy {
     defaultConfig {
         version = "3.12"
-        buildPython("D:/garyapp/ytdl/.venv/Scripts/python.exe")
+        buildPython(providers.environmentVariable("YTDL_BUILD_PYTHON").orElse("python3").get())
         pip {
             install("yt-dlp==2026.3.17")
         }

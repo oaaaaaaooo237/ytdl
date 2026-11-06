@@ -26,6 +26,22 @@ class SettingsRepositoryStorageTargetTest {
     }
 
     @Test
+    fun permissionGuideCompletionSurvivesRecreationWithoutChoosingStorage() {
+        val repository = SettingsRepository.fromContext(context)
+        assertEquals(false, repository.getSettings().permissionGuideCompleted)
+        repository.update { it.copy(permissionGuideCompleted = true) }
+        val restored = SettingsRepository.fromContext(context).getSettings()
+        assertEquals(true, restored.permissionGuideCompleted)
+        assertEquals(false, restored.storageChoiceConfirmed)
+    }
+
+    @Test
+    fun firstStorageChoicePersistsAfterExplicitSelection() {
+        assertEquals(false, SettingsRepository.fromContext(context).getSettings().storageChoiceConfirmed)
+        SettingsRepository.fromContext(context).setDefaultStorageTarget(StorageTarget.AppPrivate)
+        assertEquals(true, SettingsRepository.fromContext(context).getSettings().storageChoiceConfirmed)
+    }
+    @Test
     fun safTreeTargetSurvivesRepositoryRecreation() {
         val target = StorageTarget.SafTree(
             treeUri = "content://com.android.externalstorage.documents/tree/primary%3AMovies",

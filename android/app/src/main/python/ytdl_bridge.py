@@ -265,6 +265,9 @@ def analyze(url, cookies_path=None, android_http_fallback=None):
         cookies_digest = _cookies_digest(cookies_path) if _uses_compatible_tls(url) else None
         with _downloader_for_url(url, options, android_http_fallback) as ydl:
             info = ydl.extract_info(url, download=False)
+            formats = info.get("formats") or []
+            if info.get("has_drm") is True or (formats and all(item.get("has_drm") is True for item in formats)):
+                raise RuntimeError("This video is DRM protected")
             analysis_key = (
                 _remember_analysis(url, info, ydl, cookies_digest)
                 if _uses_compatible_tls(url) and info.get("formats") else None
@@ -350,6 +353,7 @@ def download_format(
     progress_listener=None,
     android_http_fallback=None,
     analysis_key=None,
+    resume_transfers=True,
 ):
     try:
         normalized_format_id = str(format_id or "").strip()
@@ -378,7 +382,7 @@ def download_format(
             "retries": 1,
             "fragment_retries": 1,
             "extractor_retries": 1,
-            "continuedl": True,
+            "continuedl": bool(resume_transfers),
             "nopart": False,
         }
         if cookies_path:
@@ -427,6 +431,7 @@ def download_subtitle(
     cookies_path=None,
     progress_listener=None,
     android_http_fallback=None,
+    resume_transfers=True,
 ):
     try:
         normalized_language = str(language or "").strip()
@@ -459,7 +464,7 @@ def download_subtitle(
             "retries": 1,
             "fragment_retries": 1,
             "extractor_retries": 1,
-            "continuedl": True,
+            "continuedl": bool(resume_transfers),
             "nopart": False,
         }
         if cookies_path:
@@ -508,13 +513,20 @@ def _to_result(info):
         "title": info.get("title") or "",
         "duration": int(info.get("duration") or 0),
         "thumbnail": info.get("thumbnail") or "",
-        "formats": [_safe_format(item) for item in info.get("formats") or []],
+        "formats": [_safe_format(item) for item in info.get("formats") or [] if item.get("has_drm") is not True],
         "subtitles": _safe_subtitles(info.get("subtitles") or {}),
         "automatic_captions": _safe_subtitles(info.get("automatic_captions") or {}),
     }
 
 
 def _safe_format(item):
+    acodec = _safe_codec(item.get("acodec"))
+    if (acodec is None and item.get("vcodec") == "none" and item.get("ext") == "mp4"
+            and item.get("protocol") in ("m3u8", "m3u8_native")):
+        # X identifies these standalone audio playlists in the CDN path.
+        playlist = urllib.parse.urlsplit(item.get("url") or "")
+        if playlist.hostname == "video.twimg.com" and "/mp4a/" in playlist.path:
+            acodec = "mp4a"
     return {
         "format_id": str(item.get("format_id") or ""),
         "ext": str(item.get("ext") or ""),
@@ -522,7 +534,7 @@ def _safe_format(item):
         "width": item.get("width"),
         "fps": item.get("fps"),
         "vcodec": _safe_codec(item.get("vcodec")),
-        "acodec": _safe_codec(item.get("acodec")),
+        "acodec": acodec,
         "filesize": item.get("filesize") or item.get("filesize_approx"),
         "tbr": item.get("tbr"),
     }
@@ -721,7 +733,11 @@ def _as_float(value):
 
 
 def _error_category(exc):
-    text = str(exc).lower()
+    text = re.sub(r"https?://\S+", "", str(exc).lower())
+    if "[twitter]" in text and "no video could be found in this tweet" in text:
+        return "x_no_video"
+    if re.search(r"\bdrm\b|digital rights management", text):
+        return "drm"
     if "canceled" in text or "cancelled" in text or "取消" in text:
         return "canceled"
     # An HTTP response is a site response, not proof of lost connectivity.
@@ -733,6 +749,8 @@ def _error_category(exc):
         if status in (404, 410):
             return "unsupported"
         return "unknown"
+    if any(word in text for word in ("private", "sign in", "login", "permission", "forbidden", "unauthorized")):
+        return "permission"
     if (
         "no video formats found" in text
         or "format id" in text
@@ -760,8 +778,6 @@ def _error_category(exc):
         return "unsupported"
     if "subtitle" in text or "subtitles" in text or "language" in text or "extension" in text:
         return "unsupported"
-    if any(word in text for word in ("private", "sign in", "login", "permission", "forbidden", "unauthorized")):
-        return "permission"
     if "extractor" in text or "parser" in text or "unable to extract" in text:
         return "parser"
     if "network" in text:
@@ -771,18 +787,25 @@ def _error_category(exc):
 
 def _safe_error_message(exc):
     category = _error_category(exc)
+    if category == "x_no_video":
+        return "X 未返回这条帖子的视频。"
+    if category == "drm":
+        return "该内容受 DRM 保护，无法下载。"
+    if category == "permission":
+        return "需要授权访问，请确认账号权限或 cookies 文件。"
     if "no video formats found" in str(exc).lower():
         return "网站本次未返回可下载的视频格式，请稍后重新分析。"
     if category == "canceled":
         return "下载已取消。"
-    if "subtitle" in str(exc).lower() or "subtitles" in str(exc).lower():
+    subtitle_error = re.sub(r"https?://\S+", "", str(exc).lower())
+    if "subtitle" in subtitle_error:
+        if re.search(r"\bhttp error 429\b", subtitle_error):
+            return "字幕下载请求过多，请稍后重试。"
         return "没有可用的匹配字幕文件，请选择分析结果中的语言和格式。"
     if category == "network":
         return "网络连接失败，请稍后重试。"
     if category == "unsupported":
         return "暂不支持分析这个地址。"
-    if category == "permission":
-        return "需要授权访问，请确认账号权限或 cookies 文件。"
     if category == "parser":
         return "解析失败，请通过应用更新获取新版解析器后重试。"
     return "分析失败，请检查地址或稍后重试。"

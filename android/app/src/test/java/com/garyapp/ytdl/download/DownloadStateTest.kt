@@ -28,6 +28,7 @@ class DownloadStateTest {
                 DownloadStage.Paused,
                 DownloadStage.WaitingForNetwork,
                 DownloadStage.Resuming,
+                DownloadStage.DownloadingFile,
                 DownloadStage.DownloadingVideo,
                 DownloadStage.DownloadingAudio,
                 DownloadStage.DownloadingSubtitles,

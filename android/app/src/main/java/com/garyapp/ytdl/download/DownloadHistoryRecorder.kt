@@ -43,7 +43,7 @@ internal fun updateRetryDraftForHistory(
 ): Result<Unit> {
     val historyId = historyRecordResult.getOrNull() ?: return Result.success(Unit)
     val request = state.request
-    return if (state.stage in setOf(DownloadStage.Failed, DownloadStage.Canceled) && request != null) {
+    return if (request != null && state.stage in setOf(DownloadStage.Completed, DownloadStage.Failed, DownloadStage.Canceled)) {
         retryStore.save(historyId, RetryDownloadDraft.fromRequest(request))
     } else {
         retryStore.delete(historyId).map { Unit }
@@ -54,6 +54,7 @@ private fun DownloadRequest.userVisibleHistoryFormatSummary(): String {
     formatSummary.takeIf { it.isNotBlank() }?.let { return it }
 
     val routeSummary = when (val currentRoute = route) {
+        is DownloadRoute.HttpFile -> "文件下载"
         is DownloadRoute.DirectSingleFile -> "格式 ${currentRoute.formatId}"
         is DownloadRoute.VideoOnly -> "仅视频 ${currentRoute.videoFormatId}"
         is DownloadRoute.AudioOnly -> "仅音频 ${currentRoute.audioFormatId}"

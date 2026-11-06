@@ -68,7 +68,7 @@ internal class FileResumeRequestStore(
         return ByteArrayOutputStream().also { buffer ->
             DataOutputStream(buffer).use { output ->
                 output.writeInt(PayloadMagic)
-                output.writeInt(1)
+                output.writeInt(4)
                 output.writeSafeString(request.taskId)
                 output.writeSafeString(request.url)
                 output.writeSafeString(request.title)
@@ -85,6 +85,7 @@ internal class FileResumeRequestStore(
                     }
                 }
                 when (val route = request.route) {
+                    is DownloadRoute.HttpFile -> { output.writeInt(5); output.writeHttpFileRoute(route) }
                     is DownloadRoute.DirectSingleFile -> { output.writeInt(1); output.writeSafeString(route.formatId) }
                     is DownloadRoute.VideoOnly -> { output.writeInt(2); output.writeSafeString(route.videoFormatId) }
                     is DownloadRoute.AudioOnly -> { output.writeInt(3); output.writeSafeString(route.audioFormatId) }
@@ -100,6 +101,13 @@ internal class FileResumeRequestStore(
                     output.writeSafeString(it.ext)
                     output.writeSafeString(it.source.name)
                 }
+                output.writeBoolean(request.cookiesSelectionPinned)
+                output.writeBoolean(request.pinnedCookiesReference != null)
+                request.pinnedCookiesReference?.let {
+                    output.writeSafeString(it.value)
+                    output.writeSafeString(it.displayName.orEmpty())
+                }
+                output.writeBoolean(request.resumeTransfers)
             }
         }.toByteArray().also { require(it.size <= MaxPayloadBytes) { "恢复信息过大。" } }
     }
@@ -107,7 +115,9 @@ internal class FileResumeRequestStore(
     private fun decode(payload: ByteArray): DownloadRequest {
         require(payload.size in 1..MaxPayloadBytes) { "恢复信息不可用。" }
         return DataInputStream(ByteArrayInputStream(payload)).use { input ->
-            require(input.readInt() == PayloadMagic && input.readInt() == 1) { "恢复信息不可用。" }
+            require(input.readInt() == PayloadMagic) { "恢复信息不可用。" }
+            val version = input.readInt()
+            require(version in 1..4) { "恢复信息不可用。" }
             val id = input.readUTF()
             val url = input.readUTF()
             val title = input.readUTF()
@@ -124,6 +134,7 @@ internal class FileResumeRequestStore(
                 2 -> DownloadRoute.VideoOnly(input.readUTF())
                 3 -> DownloadRoute.AudioOnly(input.readUTF())
                 4 -> DownloadRoute.MergeRequired(input.readUTF(), input.readUTF())
+                5 -> { require(version >= 3); input.readHttpFileRoute() }
                 else -> error("恢复格式不可用。")
             }
             val count = input.readInt()
@@ -131,9 +142,16 @@ internal class FileResumeRequestStore(
             val subtitles = List(count) {
                 SubtitleInfo(input.readUTF(), input.readUTF(), SubtitleSource.valueOf(input.readUTF()))
             }
+            val pinned = version >= 2 && input.readBoolean()
+            val reference = if (version >= 2 && input.readBoolean()) {
+                com.garyapp.ytdl.core.settings.CookiesReference.fromUserReference(input.readUTF(), input.readUTF())
+                    ?: error("恢复授权引用不可用。")
+            } else null
+            val resumeTransfers = version < 4 || input.readBoolean()
             require(input.available() == 0) { "恢复信息不可用。" }
             DownloadRequest(url, title, route, selectedSubtitles = subtitles, formatSummary = summary,
-                taskId = id, usesCookies = usesCookies, storageTarget = target)
+                taskId = id, usesCookies = usesCookies, storageTarget = target,
+                cookiesSelectionPinned = pinned, pinnedCookiesReference = reference, resumeTransfers = resumeTransfers)
         }
     }
 

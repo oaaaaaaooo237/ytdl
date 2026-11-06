@@ -15,6 +15,7 @@ import com.garyapp.ytdl.download.DownloadOutputKind;
 import com.garyapp.ytdl.download.DownloadRequest;
 import com.garyapp.ytdl.download.DownloadStage;
 import com.garyapp.ytdl.download.DownloadTaskState;
+import com.garyapp.ytdl.download.TaskOutputTypeKt;
 import com.garyapp.ytdl.storage.ExportController;
 
 import java.io.File;
@@ -29,6 +30,9 @@ public class HistoryItemEntity {
 
     @PrimaryKey(autoGenerate = true)
     public long id;
+    public String taskId;
+    public String outputType;
+    public String outputMimeType;
     public String title;
     public long durationSeconds;
     public String sourceScheme;
@@ -317,7 +321,7 @@ public class HistoryItemEntity {
         String errorSummary = terminalErrorSummary(stage, state.getErrorMessage());
         int progress = terminalProgress(stage, state);
 
-        return createSafe(
+        HistoryItemEntity row = createSafe(
                 request.getTitle(),
                 0,
                 sourceScheme,
@@ -336,10 +340,17 @@ public class HistoryItemEntity {
                 eventTime,
                 eventTime
         );
+        row.taskId = request.getTaskId();
+        row.outputType = TaskOutputTypeKt.outputType(state).name();
+        DownloadOutputFile primaryOutput = TaskOutputTypeKt.primaryOutput(state);
+        if (primaryOutput != null) {
+            row.outputMimeType = TaskOutputTypeKt.resolvedMimeType(primaryOutput, request);
+        }
+        return row;
     }
 
     HistoryItemEntity sanitizedCopy() {
-        return new HistoryItemEntity(
+        HistoryItemEntity copy = new HistoryItemEntity(
                 id,
                 PersistenceSanitizer.clean(title),
                 durationSeconds,
@@ -359,6 +370,10 @@ public class HistoryItemEntity {
                 updatedAt,
                 completedAt
         );
+        copy.taskId = taskId != null && taskId.matches("[0-9a-f]{32}") ? taskId : null;
+        copy.outputType = TaskOutputTypeKt.taskOutputTypeFromStored(outputType) != null ? outputType : null;
+        copy.outputMimeType = TaskOutputTypeKt.safeTaskMimeType(outputMimeType);
+        return copy;
     }
 
     @Override
@@ -421,7 +436,7 @@ public class HistoryItemEntity {
 
     private static String safeOutputUri(List<DownloadOutputFile> outputs) {
         for (DownloadOutputFile output : outputs) {
-            if (output.getKind() == DownloadOutputKind.Media) {
+            if ((output.getKind() == DownloadOutputKind.Media || output.getKind() == DownloadOutputKind.File)) {
                 return preferredOutputUri(output);
             }
         }
@@ -449,7 +464,7 @@ public class HistoryItemEntity {
         if (externalUri != null) {
             return externalUri;
         }
-        return ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath());
+        return ExportController.appPrivateOutputUri(output.getPath(), output.getAppPrivateRootPath(), output.getKind() == DownloadOutputKind.File);
     }
 
     private static String safeExternalDocumentUri(String rawUri) {
@@ -470,11 +485,11 @@ public class HistoryItemEntity {
         for (DownloadOutputFile output : outputs) {
             File file = new File(output.getPath());
             if (
-                    output.getKind() == DownloadOutputKind.Media
-                            && output.getBytesWritten() > 0L
+                    (output.getKind() == DownloadOutputKind.Media || output.getKind() == DownloadOutputKind.File)
+                            && (output.getBytesWritten() > 0L || output.getKind() == DownloadOutputKind.File && output.getBytesWritten() == 0L)
                             && (
                             safeExternalDocumentUri(output.getExternalDocumentUri()) != null
-                                    || (file.isFile() && file.length() > 0L)
+                                    || (file.isFile() && (file.length() > 0L || output.getKind() == DownloadOutputKind.File && file.length() == 0L))
                     )
             ) {
                 return true;

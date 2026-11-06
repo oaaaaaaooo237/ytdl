@@ -113,6 +113,8 @@ class TemporaryCookiesFile private constructor(
             val value = reference.value
             return when {
                 value.startsWith("content://", ignoreCase = true) -> {
+                    val logins = SiteLoginStore.fromContext(context)
+                    if (logins.owns(value)) return logins.read(value).inputStream()
                     context.contentResolver.openInputStream(Uri.parse(value))
                         ?: throw IllegalArgumentException("无法读取所选 cookies 文件。")
                 }

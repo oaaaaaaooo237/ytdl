@@ -42,6 +42,10 @@ class YtdlAppUiTest {
     private fun openAppToDownloadPage() {
         device.pressHome()
         device.executeShellCommand("am start -W -n $packageName/.MainActivity")
+        if (device.wait(Until.hasObject(By.res("ytdl-first-run-guide")), 800)) {
+            val continueButton = device.findObject(By.res("ytdl-first-run-continue"))
+            checkNotNull(continueButton).click()
+        }
         if (findTag("ytdl-screen-download", timeoutMs = 5_000) == null) {
             findTag("ytdl-tab-download", timeoutMs = 5_000)?.click()
         }
@@ -82,13 +86,13 @@ class YtdlAppUiTest {
     fun settingsAppearanceColorPresetsAreVisibleAndSummaryUpdates() {
         tapTag("ytdl-tab-settings")
         scrollUntilTag("ytdl-settings-color-preset-1")
-        assertTextContains("基准图配色", timeoutMs = 1_000)
+        assertTextContains("莫兰迪", timeoutMs = 1_000)
         assertTextContains("Codex 风格", timeoutMs = 1_000)
 
         try {
             tapTag("ytdl-settings-color-preset-0")
             scrollUntilTag("ytdl-settings-appearance-summary")
-            assertAppearanceSummaryContains("基准图配色")
+            assertAppearanceSummaryContains("莫兰迪")
             scrollUntilTag("ytdl-settings-color-preset-1")
             tapTag("ytdl-settings-color-preset-1")
             scrollUntilTag("ytdl-settings-appearance-summary")
@@ -605,8 +609,8 @@ class YtdlAppUiTest {
         try {
             tapTag("ytdl-tab-tasks")
             assertTextContains(title, timeoutMs = 5_000)
-            assertTagVisible("ytdl-history-thumbnail-image", timeoutMs = 20_000)
-            saveScreen("11-history-thumbnail.png")
+            assertTagVisible("ytdl-task-type-icon", timeoutMs = 20_000)
+            saveScreen("11-history-type-icon.png")
         } finally {
             historyDao.deleteById(id)
         }
@@ -618,13 +622,13 @@ class YtdlAppUiTest {
     ) {
         setTextTag("ytdl-url-input", url)
         tapTag("ytdl-analyze-button")
-        assertTextContains("分析完成", timeoutMs = 45_000)
+        assertTextContains("已识别", timeoutMs = 45_000)
         expectedTitleText?.let { assertTextContains(it, timeoutMs = 1_000) }
 
+        scrollUntilTag("ytdl-download-format-toggle")
+        tapTag("ytdl-download-format-toggle")
         scrollUntilTag("ytdl-format-row-1080")
         tapTag("ytdl-format-row-1080")
-        scrollUntilTag("ytdl-download-authorized-checkbox")
-        tapTag("ytdl-download-authorized-checkbox")
         scrollUntilTag("ytdl-download-start")
         tapTag("ytdl-download-start")
     }
@@ -639,19 +643,19 @@ class YtdlAppUiTest {
         saveScreen("${screenshotPrefix}02-url.png")
 
         tapTag("ytdl-analyze-button")
-        assertTextContains("分析完成", timeoutMs = 45_000)
+        assertTextContains("已识别", timeoutMs = 45_000)
         expectedTitleText?.let { assertTextContains(it, timeoutMs = 1_000) }
         assertTagVisible("ytdl-thumbnail-image", timeoutMs = 15_000)
         saveScreen("${screenshotPrefix}03-analysis.png")
 
+        scrollUntilTag("ytdl-download-format-toggle")
+        tapTag("ytdl-download-format-toggle")
         scrollUntilTag("ytdl-format-row-1080")
         assertTextContains("1080p", timeoutMs = 1_000)
         assertTextContains("需原生合并", timeoutMs = 1_000)
         tapTag("ytdl-format-row-1080")
         assertTagVisible("ytdl-screen-download")
         assertTextContains("1080p", timeoutMs = 1_000)
-        scrollUntilTag("ytdl-download-authorized-checkbox")
-        tapTag("ytdl-download-authorized-checkbox")
         saveScreen("${screenshotPrefix}03-format-applied.png")
 
         if (!completeDownloadAndHistory) {
@@ -772,8 +776,8 @@ class YtdlAppUiTest {
 
     private fun openNotificationShadeAndTapCancel() {
         device.openNotification()
-        val notificationTitle = device.wait(Until.findObject(By.textContains("YTDL 下载任务")), 10_000)
-        assertNotNull("通知栏未显示 YTDL 下载任务", notificationTitle)
+        val notificationTitle = device.wait(Until.findObject(By.textContains("CaptainFlash 下载任务")), 10_000)
+        assertNotNull("通知栏未显示 CaptainFlash 下载任务", notificationTitle)
         assertAnyTextContains(
             texts = listOf("正在下载视频", "正在下载音频", "正在原生合并", "等待下载"),
             timeoutMs = 10_000,

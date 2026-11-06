@@ -1,5 +1,7 @@
 package com.garyapp.ytdl.download
 
+import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -24,6 +26,7 @@ class RetryDraftStoreTest {
                 videoFormatId = "video-av1-1080",
                 audioFormatId = "audio-opus-251",
             ),
+            selectedSubtitles = listOf(SubtitleInfo("en", "vtt", SubtitleSource.Automatic)),
         )
 
         assertTrue(FileRetryDraftStore(root, cipher).save(42L, draft).isSuccess)

@@ -32,7 +32,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class ParserUpdateSettingsUiTest {
     @get:Rule
     val composeRule = createComposeRule()
@@ -82,6 +82,9 @@ class ParserUpdateSettingsUiTest {
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
         composeRule.onNodeWithTag("ytdl-parser-download-latest").performClick()
@@ -114,6 +117,9 @@ class ParserUpdateSettingsUiTest {
         }
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
@@ -171,6 +177,9 @@ class ParserUpdateSettingsUiTest {
         }
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
@@ -234,6 +243,9 @@ class ParserUpdateSettingsUiTest {
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
         composeRule.onNodeWithTag("ytdl-parser-select-2026.4.1").performClick()
@@ -273,6 +285,9 @@ class ParserUpdateSettingsUiTest {
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
         composeRule.onNodeWithTag("ytdl-parser-download-latest").performClick()
@@ -281,6 +296,9 @@ class ParserUpdateSettingsUiTest {
         composeRule.runOnIdle { generation.value += 1 }
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
@@ -317,6 +335,9 @@ class ParserUpdateSettingsUiTest {
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithText("本进程：2026.4.1；下次启动：2026.5.1").assertExists()
 
@@ -344,6 +365,9 @@ class ParserUpdateSettingsUiTest {
         checkExecutor.runNext()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
@@ -373,6 +397,9 @@ class ParserUpdateSettingsUiTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
@@ -407,6 +434,9 @@ class ParserUpdateSettingsUiTest {
 
         composeRule.onNodeWithTag("ytdl-screen-download").assertExists()
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
@@ -446,6 +476,9 @@ class ParserUpdateSettingsUiTest {
 
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
         composeRule.onNodeWithText("正在检查解析器更新...").assertExists()
@@ -465,6 +498,9 @@ class ParserUpdateSettingsUiTest {
         composeRule.waitForIdle()
         composeRule.onAllNodesWithTag("ytdl-parser-update-dialog").assertCountEquals(0)
         composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()

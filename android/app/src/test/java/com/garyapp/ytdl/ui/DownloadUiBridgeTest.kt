@@ -97,7 +97,7 @@ class DownloadUiBridgeTest {
         )
 
         assertTrue(contentItem.hasOutput)
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(contentItem))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(contentItem))
     }
 
     @Test
@@ -126,7 +126,7 @@ class DownloadUiBridgeTest {
         assertTrue(retryable.retryAvailable)
         assertEquals(listOf("再次下载", "删除"), historyActionLabelsForUiTest(retryable))
         assertFalse(unavailable.retryAvailable)
-        assertEquals(listOf("删除"), historyActionLabelsForUiTest(unavailable))
+        assertEquals(listOf("再次下载", "删除"), historyActionLabelsForUiTest(unavailable))
     }
 
     @Test
@@ -269,7 +269,7 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun historyUiSourceContainsNoManualExportStateLauncherCallbacksOrLabels() {
+    fun historyExportUsesSystemCreateDocumentAndPreservesCompletedStatus() {
         val appSource = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
@@ -284,12 +284,12 @@ class DownloadUiBridgeTest {
             "exportLauncher",
             "exportHistoryItem",
             "exportSubtitleHistoryItem",
-            "onExport:",
             "onExportSubtitle:",
             "HistoryExportIcon",
             "可先导出",
         ).forEach { forbidden -> assertFalse(appSource.contains(forbidden)) }
-        assertFalse(bridgeSource.contains("add(\"导出\")"))
+        assertTrue(appSource.contains("Intent.ACTION_CREATE_DOCUMENT"))
+        assertTrue(appSource.contains("onOutputAction = ::performHistoryOutputAction"))
         assertFalse(bridgeSource.contains("add(\"导出字幕\")"))
         assertFalse(bridgeSource.contains("suggestedExportDisplayName"))
         assertTrue(appSource.contains("DownloadStage.Completed -> \"下载完成\""))
@@ -332,7 +332,20 @@ class DownloadUiBridgeTest {
         ).readText()
 
         assertTrue(source.contains("\"ytdl-queue-cancel-action\""))
-        assertTrue(source.contains("defaultMinSize(minWidth = 56.dp, minHeight = 36.dp)"))
+        assertTrue(source.contains("IconButton(onClick = onClick, modifier = Modifier.size(48.dp).testTag(tag))"))
+    }
+
+    @Test
+    fun selectedBottomTabFillsItsTouchTargetAndKeepsLabelColor() {
+        val source = sourceFile(
+            "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+            "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
+        ).readText().substringAfter("private fun YtdlBottomBar(").substringBefore("private fun PageHeader(")
+        val tab = source.substringAfter(".testTag(\"ytdl-tab-").substringBefore(".selectable(selected")
+        assertTrue(tab.contains(".background(if (selected) palette.actionContainer else Color.Transparent)"))
+        val label = source.substringAfter("text = destination.label").substringBefore("style =")
+        assertTrue(label.contains("color = palette.neutralText"))
+        assertFalse(label.contains("selected"))
     }
 
     @Test
@@ -358,7 +371,7 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText().replace("\r\n", "\n")
 
-        assertTrue(source.contains("userMessage = runtimeState.userMessage"))
+        assertTrue(source.contains("userMessage = runtimeState.taskActionMessage"))
         assertTrue(source.contains("userMessage: String,\n    onHistoryQueryChange"))
         assertTrue(source.contains("if (shouldShowRuntimeMessage(userMessage))"))
     }
@@ -409,14 +422,14 @@ class DownloadUiBridgeTest {
         assertFalse(source.contains("海边散步片段"))
         assertFalse(source.contains("SettingLineCard(\"通知权限\", \"待系统确认"))
         assertFalse(source.contains("M6 下载管线"))
-        assertTrue(source.contains("当前和等待"))
-        assertTrue(source.contains("当前没有进行中或等待任务"))
-        assertTrue(source.contains("暂无真实历史记录，完成下载后会显示"))
+        assertFalse(source.contains("ytdl-tasks-summary-card"))
+        assertTrue(source.contains("没有符合条件的任务"))
+        assertTrue(source.contains("暂无下载任务"))
         assertTrue(source.contains("notificationPermissionSubtitle("))
         assertTrue(source.contains("ytdl-settings-notification-permission"))
         assertFalse(source.contains("SettingLineCard(\"隐私与授权说明\", \"查看说明\""))
-        assertTrue(source.contains("settingsPrivacyLegalLines()"))
-        assertTrue(source.contains("ytdl-settings-privacy-legal"))
+        assertFalse(source.contains("settingsPrivacyLegalLines()"))
+        assertFalse(source.contains("ytdl-settings-privacy-legal"))
     }
 
     @Test
@@ -443,7 +456,7 @@ class DownloadUiBridgeTest {
         ).readText()
 
         assertTrue(source.contains("state.activeStage !in TerminalDownloadStages"))
-        assertTrue(source.contains("if (hasCurrentTask)"))
+        assertTrue(source.contains("state.isDownloading && state.activeStage !in TerminalDownloadStages"))
         assertTrue(source.contains("历史记录"))
         assertTrue(source.contains("当前阶段"))
     }
@@ -563,24 +576,12 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun settingsPrivacyLegalTextStatesConcreteBoundariesWithoutSecrets() {
-        val lines = settingsPrivacyLegalLinesForUiTest()
-        val joined = lines.joinToString("\n")
-
-        assertTrue(lines.size >= 4)
-        assertTrue(joined.contains("http/https"))
-        assertTrue(joined.contains("Cookies"))
-        assertTrue(joined.contains("文件引用"))
-        assertTrue(joined.contains("不保存内容"))
-        assertTrue(joined.contains("App 私有目录"))
-        assertTrue(joined.contains("打开和分享由系统授权"))
-        assertTrue(joined.contains("历史缩略图"))
-        assertTrue(joined.contains("公开预览图"))
-        assertTrue(joined.contains("不携带 Cookies"))
-        assertTrue(joined.contains("DRM") || joined.contains("未授权"))
-        listOf("SID=secret", "Authorization", "Bearer raw-token", "--cookies D:/private/cookies.txt").forEach {
-            assertFalse("privacy text leaked $it", joined.contains(it))
-        }
+    fun settingsOpenSourceEntryReplacesDefensiveStatements() {
+        val source = sourceFile("app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt", "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt").readText()
+        assertFalse(source.contains("隐私与授权说明"))
+        assertFalse(source.contains("公开授权内容由用户确认"))
+        assertFalse(source.contains("ytdl-download-authorized-checkbox"))
+        assertTrue(source.contains("开源声明"))
     }
 
     @Test
@@ -605,7 +606,18 @@ class DownloadUiBridgeTest {
         assertEquals(null, state.downloadedBytes)
         assertEquals(null, state.totalBytes)
         assertEquals("当前阶段 · 下载音频", queueCardSubtitleForUiTest(state))
-        assertEquals("0%", queueCardStatusForUiTest(state))
+        assertEquals("下载音频", queueCardStatusForUiTest(state))
+    }
+
+    @Test
+    fun unknownProgressShowsStageAndKnownEtaUsesElapsedFormat() {
+        val waiting = RuntimeDownloadState().withPipelineStateForUiTest(
+            DownloadTaskState(DownloadStage.WaitingForNetwork),
+        )
+        assertEquals("等待网络", queueCardStatusForUiTest(waiting))
+        val unknown = RuntimeDownloadState(isDownloading = true, activeStage = DownloadStage.DownloadingFile,
+            downloadStatus = "下载文件", downloadedBytes = 100L)
+        assertEquals("下载文件", queueCardStatusForUiTest(unknown))
     }
 
     @Test
@@ -620,7 +632,7 @@ class DownloadUiBridgeTest {
 
         assertEquals(null, progress.fraction)
         assertTrue(progress.isIndeterminate)
-        assertEquals("33%", queueCardStatusForUiTest(state))
+        assertEquals("下载音频", queueCardStatusForUiTest(state))
     }
 
     @Test
@@ -712,7 +724,8 @@ class DownloadUiBridgeTest {
             QueueProgressMeta(
                 speed = "400.0 B/s",
                 transferred = "300.0 B/1000.0 B",
-                contentDescription = "下载速度 400.0 B/s，已下载 300.0 B，总容量 1000.0 B",
+                contentDescription = "下载速度 400.0 B/s，已下载 300.0 B，总容量 1000.0 B，剩余 00:03",
+                eta = "剩余 00:03",
             ),
             queueCardMetaForUiTest(updated),
         )
@@ -836,7 +849,8 @@ class DownloadUiBridgeTest {
             QueueProgressMeta(
                 speed = "100.0 B/s",
                 transferred = "50.0 B/200.0 B",
-                contentDescription = "下载速度 100.0 B/s，已下载 50.0 B，总容量 200.0 B",
+                contentDescription = "下载速度 100.0 B/s，已下载 50.0 B，总容量 200.0 B，剩余 00:02",
+                eta = "剩余 00:02",
             ),
             queueCardMetaForUiTest(audio),
         )
@@ -919,7 +933,7 @@ class DownloadUiBridgeTest {
 
         assertEquals("下载失败", state.downloadStatus)
         assertEquals(null, state.progressPercent)
-        assertFalse(state.userMessage.contains("下载完成"))
+        assertFalse(state.taskMessage.contains("下载完成"))
     }
 
     @Test
@@ -974,19 +988,19 @@ class DownloadUiBridgeTest {
             assertFalse("source still hard-binds UI to reference palette: $forbidden", source.contains(forbidden))
         }
         assertTrue(source.contains("LocalYtdlAppPalette.current"))
-        assertTrue(source.contains("ytdl-settings-color-preset"))
+        assertTrue(source.contains("ytdl-settings-theme-mode"))
     }
     @Test
-    fun startDownloadGateRequiresAnalysisAndUserAuthorization() {
+    fun startDownloadGateRequiresAnalysisWithoutExtraAcknowledgment() {
         val analyzed = RuntimeDownloadState(
             analysis = analysisWith(progressiveFormat(id = "18", height = 360)),
         )
 
-        assertFalse(canStartDownloadForUiTest(RuntimeDownloadState(), hasUserConfirmed = true))
-        assertFalse(canStartDownloadForUiTest(analyzed, hasUserConfirmed = false))
-        assertFalse(canStartDownloadForUiTest(analyzed.copy(isAnalyzing = true), hasUserConfirmed = true))
-        assertTrue(canStartDownloadForUiTest(analyzed.copy(isDownloading = true), hasUserConfirmed = true))
-        assertTrue(canStartDownloadForUiTest(analyzed, hasUserConfirmed = true))
+        assertFalse(canStartDownloadForUiTest(RuntimeDownloadState()))
+        assertTrue(canStartDownloadForUiTest(analyzed))
+        assertFalse(canStartDownloadForUiTest(analyzed.copy(isAnalyzing = true)))
+        assertTrue(canStartDownloadForUiTest(analyzed.copy(isDownloading = true)))
+        assertTrue(canStartDownloadForUiTest(analyzed))
     }
 
     @Test
@@ -1009,7 +1023,7 @@ class DownloadUiBridgeTest {
         assertEquals(1_000L, accepted.totalBytes)
         assertEquals("", accepted.url)
         assertEquals(null, accepted.analysis)
-        assertTrue(accepted.userMessage.contains("等待队列"))
+        assertTrue(accepted.taskMessage.contains("等待队列"))
     }
 
     @Test
@@ -1105,14 +1119,7 @@ class DownloadUiBridgeTest {
         assertTrue(historyEntityFields.contains("thumbnailUrl"))
         assertTrue(historyUiFields.contains("thumbnailUrl"))
         assertTrue(historyUiFields.contains("formatBadge"))
-        assertTrue(source.contains("ytdl-history-thumbnail-image"))
-        assertTrue(source.contains("\"ytdl-history-status-badge\""))
-        assertTrue(source.contains("\"ytdl-history-format-badge\""))
-        assertTrue(source.contains("verticalArrangement = Arrangement.spacedBy(4.dp)"))
-        assertTrue(source.contains("defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)"))
-        assertTrue(source.contains("private val CardPillBadgeMinWidth = 60.dp"))
-        assertTrue(source.contains("private val CardPillBadgeMinHeight = 28.dp"))
-        assertTrue(source.contains("HistoryThumbnailLoader.load(item.thumbnailUrl.orEmpty())"))
+        assertTrue(source.contains("kind = item.outputType"))
     }
 
     @Test
@@ -1133,22 +1140,16 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun historyActionsRenderAsIconTextChipsWithoutLosingCallbacks() {
+    fun historyActionsRenderAsDirectIconsWithoutLosingCallbacks() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("HistoryActionChip("))
-        assertTrue(source.contains("icon = historyActionIcon(action)"))
-        assertTrue(source.contains("contentDescription = action"))
-        assertTrue(source.contains("testTag(\"ytdl-history-action-${'$'}{item.id}-${'$'}action\")"))
-        assertTrue(source.contains("\"打开\" -> onOpen"))
-        assertTrue(source.contains("\"分享\" -> onShare"))
-        assertFalse(source.contains("\"导出\" -> onExport"))
-        assertTrue(source.contains("else -> onDelete"))
+        assertTrue(source.contains("TaskIconAction(action, historyActionIcon(action)"))
         assertTrue(source.contains("actions.forEach { action ->"))
-        assertFalse(source.contains("filterNot { it == \"删除\" }"))
+        assertFalse(source.contains("ytdl-history-more-"))
+        assertTrue(source.contains("else -> onDelete()"))
     }
 
     @Test
@@ -1158,12 +1159,7 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("HistoryThumbnailLoader"))
-        assertTrue(source.contains("LruCache<String, Bitmap>(HistoryThumbnailCacheMaxItems)"))
-        assertTrue(source.contains("Executors.newFixedThreadPool(2)"))
-        assertTrue(source.contains("AtomicBoolean(false)"))
-        assertTrue(source.contains("historyThumbnailCache"))
-        assertTrue(source.contains("loadThumbnailBitmap(thumbnailUrl, targetSizePx = HistoryThumbnailTargetPx)"))
+        assertTrue(source.contains("TaskPreviewLoader"))
         assertTrue(source.contains("BitmapFactory.Options"))
         assertTrue(source.contains("calculateInSampleSize"))
         assertFalse(source.contains("Thread {\n            val bitmap = loadThumbnailBitmap(item.thumbnailUrl.orEmpty())"))
@@ -1244,10 +1240,10 @@ class DownloadUiBridgeTest {
         assertFalse(items[0].meta.contains("字幕"))
         assertFalse(items[0].meta.contains("merged-299-140.mp4"))
         assertFalse(items[0].meta.contains("captions.en.vtt"))
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[0]))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(items[0]))
         assertFalse(items[1].meta.contains("独立字幕文件"))
         assertFalse(items[1].meta.contains("video.mp4"))
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[1]))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(items[1]))
     }
 
     @Test
@@ -1433,20 +1429,15 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertTrue(source.contains("formatBadge = queueCardFormatBadge(state)"))
-        assertTrue(source.contains("\"ytdl-queue-status-badge\""))
-        assertTrue(source.contains("\"ytdl-queue-format-badge\""))
-        assertTrue(source.contains("verticalArrangement = Arrangement.spacedBy(4.dp)"))
-        assertTrue(source.contains("defaultMinSize(minWidth = CardPillBadgeMinWidth, minHeight = CardPillBadgeMinHeight)"))
-        assertTrue(source.contains("private val CardPillBadgeMinWidth = 60.dp"))
-        assertTrue(source.contains("private val CardPillBadgeMinHeight = 28.dp"))
+        assertTrue(source.contains("listOf(queueCardFormatBadge(state), queueCardCodecBadge(state), meta.transferred)"))
+        assertTrue(source.contains("ytdl-task-type-icon"))
         assertTrue(source.contains("style = MaterialTheme.typography.labelSmall"))
         assertFalse(source.contains("\"下载失败\", \"已取消\" -> palette.downloadAccent"))
         assertTrue(source.contains("\"下载失败\" -> HistoryFailureRed"))
     }
 
     @Test
-    fun failedSubtitleRecordWithMediaOutputKeepsMediaActionsOnly() {
+    fun failedSubtitleRecordKeepsRedactedReasonAndMediaActions() {
         val mediaSavedSubtitleFailed = HistoryItemEntity.createSafe(
             "媒体已保存字幕失败",
             60,
@@ -1468,9 +1459,9 @@ class DownloadUiBridgeTest {
         val item = historyUiItemsFromRows(listOf(mediaSavedSubtitleFailed)).single()
 
         assertFalse(item.meta.contains("媒体文件"))
-        assertFalse(item.meta.contains("字幕"))
+        assertTrue(item.meta.contains("所选字幕 zh-Hans 不可用"))
         assertFalse(item.meta.contains("merged-299-140.mp4"))
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(item))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(item))
     }
 
     @Test
@@ -1508,11 +1499,11 @@ class DownloadUiBridgeTest {
         assertFalse(meta.toString().contains("媒体文件"))
         assertFalse(meta.toString().contains("merged-299-140.mp4"))
         assertFalse(meta.toString().contains("captions.en.vtt"))
-        assertEquals("下载完成", state.userMessage)
-        assertFalse(state.userMessage.contains("字幕"))
-        assertFalse(state.userMessage.contains("媒体文件"))
-        assertFalse(state.userMessage.contains("merged-299-140.mp4"))
-        assertFalse(state.userMessage.contains("captions.en.vtt"))
+        assertEquals("下载完成", state.taskMessage)
+        assertFalse(state.taskMessage.contains("字幕"))
+        assertFalse(state.taskMessage.contains("媒体文件"))
+        assertFalse(state.taskMessage.contains("merged-299-140.mp4"))
+        assertFalse(state.taskMessage.contains("captions.en.vtt"))
     }
 
     @Test
@@ -1546,14 +1537,14 @@ class DownloadUiBridgeTest {
             ),
         )
 
-        assertFalse(failed.userMessage.contains("字幕"))
-        assertTrue(failed.userMessage.contains("文件处理失败"))
-        assertFalse(mediaSaved.userMessage.contains("字幕"))
-        assertTrue(mediaSaved.userMessage.contains("文件已保存"))
-        assertFalse(mediaSaved.userMessage.contains("媒体文件"))
-        assertTrue(rawFailure.userMessage.contains("文件处理失败"))
+        assertFalse(failed.taskMessage.contains("字幕"))
+        assertTrue(failed.taskMessage.contains("文件处理失败"))
+        assertFalse(mediaSaved.taskMessage.contains("字幕"))
+        assertTrue(mediaSaved.taskMessage.contains("文件已保存"))
+        assertFalse(mediaSaved.taskMessage.contains("媒体文件"))
+        assertTrue(rawFailure.taskMessage.contains("文件处理失败"))
         listOf("https://", "raw-secret", "Authorization", "raw-token").forEach { forbidden ->
-            assertFalse(rawFailure.userMessage.contains(forbidden))
+            assertFalse(rawFailure.taskMessage.contains(forbidden))
         }
     }
 

@@ -154,7 +154,7 @@ internal class HistoryFileDeletion(
     }
 
     private fun privateIdentity(uri: URI): Pair<String, List<String>> {
-        check(uri.rawAuthority == "outputs" && uri.rawQuery == null && uri.rawFragment == null &&
+        check(uri.rawAuthority == "outputs" && (uri.rawQuery == null || uri.rawQuery == "kind=file") && uri.rawFragment == null &&
             uri.rawUserInfo == null && uri.port == -1) { "私有输出引用不可用。" }
         val raw = uri.rawPath ?: error("私有输出引用不可用。")
         check(raw.startsWith('/') && !raw.startsWith("//")) { "私有输出引用不可用。" }

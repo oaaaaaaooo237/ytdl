@@ -23,6 +23,18 @@ class HistoryFileDeletionTest {
     }
     private fun uri(name: String) = "app-private://outputs/task-$taskId/$name"
 
+    @Test fun zeroByteFileKindUriCanBeDeletedWithoutAllowingArbitraryQueries() {
+        val (files, cache) = roots()
+        val output = files.resolve("task-$taskId/outputs/empty.pdf").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf()) }
+        val deletion = HistoryFileDeletion(files, cache, FakeSaf())
+        val selected = row(1, "${uri("outputs/empty.pdf")}?kind=file")
+        assertEquals(1, deletion.delete(selected, listOf(selected), emptySet()).getOrThrow())
+        assertFalse(output.exists())
+        output.writeBytes(byteArrayOf())
+        assertTrue(deletion.delete(row(2, "${uri("outputs/empty.pdf")}?kind=media"), emptyList(), emptySet()).isFailure)
+        assertTrue(output.isFile)
+    }
+
     @Test fun unrelatedPrivateHistoryCanBeDeletedWhileAnotherTaskRuns() {
         val (files, cache) = roots()
         DownloadCoordinator.resetForTests()

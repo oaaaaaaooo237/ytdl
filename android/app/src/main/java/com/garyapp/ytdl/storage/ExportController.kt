@@ -12,6 +12,7 @@ import java.nio.file.Path
 import java.util.concurrent.CancellationException
 
 object ExportController {
+    class NameConflictException : IllegalStateException("文件名已存在，请选择其他名称。")
     class AppPrivateOutput internal constructor(
         val displayName: String,
         val mimeType: String,
@@ -19,6 +20,7 @@ object ExportController {
         val appPrivateUri: String,
         internal val sourceFile: File,
         internal val appPrivateRoot: File,
+        internal val askOnConflict: Boolean = false,
     ) {
         override fun toString(): String {
             return "AppPrivateOutput(displayName=$displayName, mimeType=$mimeType, bytesWritten=$bytesWritten, appPrivateUri=$appPrivateUri)"
@@ -33,23 +35,28 @@ object ExportController {
     fun discoverAppPrivateOutput(
         outputFile: File,
         appPrivateRoot: File,
+        allowEmptyFile: Boolean = false,
+        mimeType: String? = null,
+        askOnConflict: Boolean = false,
+        displayName: String? = null,
     ): Result<AppPrivateOutput> {
         return runCatching {
             val canonicalRoot = appPrivateRoot.canonicalFile
             val canonicalOutput = outputFile.canonicalFile
-            require(canonicalOutput.isFile && canonicalOutput.length() > 0L) {
+            require(canonicalOutput.isFile && (canonicalOutput.length() > 0L || allowEmptyFile)) {
                 "输出文件不存在或为空，无法继续操作。"
             }
             require(isInside(canonicalOutput, canonicalRoot)) {
                 "只能访问 App 私有目录内的输出文件。"
             }
 
-            val displayName = canonicalOutput.name.safeDisplayName()
+            val outputName = (displayName ?: canonicalOutput.name).safeDisplayName(preserveLeading = allowEmptyFile || displayName != null)
             AppPrivateOutput(
-                displayName = displayName,
-                mimeType = mimeTypeFor(displayName),
+                displayName = outputName,
+                askOnConflict = askOnConflict,
+                mimeType = mimeType?.takeIf { it.matches(Regex("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) } ?: mimeTypeFor(outputName),
                 bytesWritten = canonicalOutput.length(),
-                appPrivateUri = appPrivateOutputUri(canonicalOutput.absolutePath, canonicalRoot.absolutePath),
+                appPrivateUri = appPrivateOutputUri(canonicalOutput.absolutePath, canonicalRoot.absolutePath, allowEmptyFile),
                 sourceFile = canonicalOutput,
                 appPrivateRoot = canonicalRoot,
             )
@@ -70,7 +77,7 @@ object ExportController {
                 .trimStart('/')
                 .split('/')
                 .filter { it.isNotBlank() }
-                .map { decodeSegment(it).safeDisplayName() }
+                .map { decodeSegment(it).safeOutputPathSegment() }
                 .filter { it.isNotBlank() }
             require(relativeSegments.isNotEmpty()) {
                 "历史记录没有可用的本地输出。"
@@ -78,12 +85,13 @@ object ExportController {
             val relativePath = relativeSegments.fold(File("")) { current, segment ->
                 File(current, segment)
             }
-            val primary = discoverAppPrivateOutput(File(appPrivateRoot, relativePath.path), appPrivateRoot)
+            val allowEmptyFile = uri.rawQuery == "kind=file"
+            val primary = discoverAppPrivateOutput(File(appPrivateRoot, relativePath.path), appPrivateRoot, allowEmptyFile)
             if (primary.isSuccess) {
                 return@runCatching primary.getOrThrow()
             }
             legacyRoots.firstNotNullOfOrNull { legacyRoot ->
-                discoverAppPrivateOutput(File(legacyRoot, relativePath.path), legacyRoot).getOrNull()
+                discoverAppPrivateOutput(File(legacyRoot, relativePath.path), legacyRoot, allowEmptyFile).getOrNull()
             } ?: primary.getOrThrow()
         }
     }
@@ -95,13 +103,24 @@ object ExportController {
         openOutputStream: (documentUri: String) -> OutputStream?,
         deleteDocument: (documentUri: String) -> Unit,
         isCancellationRequested: () -> Boolean,
+        existingDisplayNames: (parentDocumentUri: String) -> Set<String> = { emptySet() },
     ): SafTreeExportResult {
         val createdDocuments = mutableListOf<String>()
         return try {
             val parentDocumentUri = treeDocumentUri(treeUri)
+            val names = existingDisplayNames(parentDocumentUri).map { it.lowercase(java.util.Locale.ROOT) }.toMutableSet()
             val bytesWritten = outputs.sumOf { output ->
                 throwIfExportCanceled(isCancellationRequested)
-                val documentUri = createDocument(parentDocumentUri, output.mimeType, output.displayName)
+                var displayName = output.displayName
+                var index = 1
+                while (displayName.lowercase(java.util.Locale.ROOT) in names) {
+                    if (output.askOnConflict) throw NameConflictException()
+                    val extension = output.displayName.substringAfterLast('.', "")
+                    val base = if (extension.isEmpty()) output.displayName else output.displayName.dropLast(extension.length + 1)
+                    displayName = "$base (${index++})${if (extension.isEmpty()) "" else ".$extension"}"
+                }
+                names += displayName.lowercase(java.util.Locale.ROOT)
+                val documentUri = createDocument(parentDocumentUri, output.mimeType, displayName)
                     ?: throw IllegalStateException("无法创建保存文件。")
                 createdDocuments += documentUri
                 val destination = openOutputStream(documentUri)
@@ -118,7 +137,7 @@ object ExportController {
             createdDocuments.asReversed().forEach { documentUri ->
                 runCatching { deleteDocument(documentUri) }
             }
-            if (error is CancellationException) throw error
+            if (error is CancellationException || error is NameConflictException) throw error
             throw IllegalStateException(treeExportFailureMessage())
         }
     }
@@ -148,6 +167,12 @@ object ExportController {
                     DocumentsContract.deleteDocument(contentResolver, Uri.parse(documentUri))
                 },
                 isCancellationRequested = isCancellationRequested,
+                existingDisplayNames = {
+                    val tree = Uri.parse(treeUri)
+                    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+                    requireNotNull(contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null))
+                        .use { cursor -> buildSet { while (cursor.moveToNext()) add(cursor.getString(0)) } }
+                },
             )
         }
     }
@@ -204,16 +229,16 @@ object ExportController {
         require(roots.size == 1) { "私有输出文件不属于同一受控目录。" }
         val root = roots.single()
         val taskDirectories = outputs.map { output ->
-            requireNotNull(output.sourceFile.canonicalFile.parentFile) {
-                "私有输出文件缺少任务父目录。"
-            }
+            val parent = requireNotNull(output.sourceFile.canonicalFile.parentFile) { "私有输出文件缺少任务父目录。" }
+            if (parent.name == "outputs" && parent.parentFile?.parentFile == root) requireNotNull(parent.parentFile) else parent
         }.distinctBy { it.path }
         require(taskDirectories.size == 1) { "私有输出文件不属于同一任务目录。" }
         val taskDirectory = taskDirectories.single()
         require(taskDirectory.parentFile == root && taskDirectory.name.startsWith("task-")) {
             "只能处理受控私有目录中的任务子目录。"
         }
-        require(outputs.all { it.sourceFile.canonicalFile.parentFile == taskDirectory }) {
+        require(outputs.all { it.sourceFile.canonicalFile.parentFile == taskDirectory ||
+            it.sourceFile.canonicalFile.parentFile == File(taskDirectory, "outputs") }) {
             "私有输出文件路径不安全。"
         }
         require(taskDirectory.isDirectory) { "私有任务目录不存在。" }
@@ -226,10 +251,13 @@ object ExportController {
     }
 
     @JvmStatic
-    fun appPrivateOutputUri(path: String?, appPrivateRootPath: String?): String {
+    fun appPrivateOutputUri(path: String?, appPrivateRootPath: String?): String = appPrivateOutputUri(path, appPrivateRootPath, false)
+
+    @JvmStatic
+    fun appPrivateOutputUri(path: String?, appPrivateRootPath: String?, allowEmptyFile: Boolean): String {
         val relativeSegments = relativeSegments(path, appPrivateRootPath)
         if (relativeSegments.isNotEmpty()) {
-            return "app-private://outputs/${relativeSegments.joinToString("/") { encodeSegment(it.safeDisplayName()) }}"
+            return "app-private://outputs/${relativeSegments.joinToString("/") { encodeSegment(it.safeOutputPathSegment()) }}${if (allowEmptyFile) "?kind=file" else ""}"
         }
         val displayName = path
             ?.takeIf { it.isNotBlank() }
@@ -288,10 +316,17 @@ object ExportController {
         }
     }
 
-    private fun String.safeDisplayName(): String {
-        val normalized = replace(Regex("""[\\/:*?"<>|\r\n\t]"""), "_")
-            .trim('.', ' ')
+    private fun String.safeDisplayName(preserveLeading: Boolean = false): String {
+        val cleaned = replace(Regex("""[\\/:*?"<>|\r\n\t]"""), "_")
+        val normalized = if (preserveLeading) cleaned.trimEnd('.', ' ') else cleaned.trim('.', ' ')
         return normalized.ifBlank { "output" }
+    }
+
+    private fun String.safeOutputPathSegment(): String {
+        require(isNotEmpty() && this !in setOf(".", "..") && none { it in "/\\:" || it.isISOControl() }) {
+            "私有输出路径不可用。"
+        }
+        return this
     }
 
     private fun relativeSegments(path: String?, appPrivateRootPath: String?): List<String> {
@@ -307,7 +342,7 @@ object ExportController {
             root.toPath()
                 .relativize(output.toPath())
                 .safePathSegments()
-                .map { it.safeDisplayName() }
+                .map { it.safeOutputPathSegment() }
                 .filter { it.isNotBlank() }
         }.getOrDefault(emptyList())
     }
@@ -328,15 +363,30 @@ object ExportController {
         }.getOrDefault(segment)
     }
 
-    private fun mimeTypeFor(displayName: String): String {
+    internal fun mimeTypeFor(displayName: String, audioOnly: Boolean = false): String {
         return when (displayName.substringAfterLast('.', "").lowercase()) {
-            "mp4" -> "video/mp4"
+            "mp4" -> if (audioOnly) "audio/mp4" else "video/mp4"
             "m4a" -> "audio/mp4"
-            "webm" -> "video/webm"
+            "webm" -> if (audioOnly) "audio/webm" else "video/webm"
+            "mkv" -> "video/x-matroska"
+            "mov" -> "video/quicktime"
+            "avi" -> "video/x-msvideo"
+            "flv" -> "video/x-flv"
+            "3gp" -> if (audioOnly) "audio/3gpp" else "video/3gpp"
+            "aac" -> "audio/aac"
+            "flac" -> "audio/flac"
+            "wav" -> "audio/wav"
+            "ogg", "oga", "opus" -> "audio/ogg"
             "mp3" -> "audio/mpeg"
             "vtt" -> "text/vtt"
             "srt" -> "application/x-subrip"
             "txt" -> "text/plain"
+            "pdf" -> "application/pdf"
+            "zip" -> "application/zip"
+            "json" -> "application/json"
+            "apk" -> "application/vnd.android.package-archive"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
             else -> "application/octet-stream"
         }
     }

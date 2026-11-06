@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.core.storage.StorageTargets
+import com.garyapp.ytdl.download.HttpFileConflictPolicy
+import org.json.JSONArray
+import org.json.JSONObject
 
 class SettingsRepository(
     initialSettings: AppSettings = AppSettings(),
@@ -23,8 +26,16 @@ class SettingsRepository(
         it.copy(cookiesReference = reference)
     }
 
+    fun setSiteCookies(name: String, domain: String, reference: CookiesReference?): AppSettings {
+        val normalized = CookieSites.normalizeDomain(domain)
+            ?: throw IllegalArgumentException("请输入有效域名，例如 x.com，不含路径。")
+        val label = name.trim().take(60).ifBlank { normalized }
+        require(!label.contains('\n') && !label.contains('\r')) { "网站名称不可换行。" }
+        return update { it.copy(siteCookies = it.siteCookies + (normalized to SiteCookies(label, normalized, reference))) }
+    }
+
     fun setDefaultStorageTarget(target: StorageTarget): AppSettings = update {
-        it.copy(defaultStorageTarget = target)
+        it.copy(defaultStorageTarget = target, storageChoiceConfirmed = true)
     }
 
     fun setThemeMode(modeId: String): AppSettings = update {
@@ -39,10 +50,27 @@ class SettingsRepository(
         val prefs = preferences ?: return
         val target = StorageTargets.sanitizeDefault(settings.defaultStorageTarget)
         val editor = prefs.edit()
+            .putString("app_language", settings.language.id)
+            .putBoolean("permission_guide_completed", settings.permissionGuideCompleted)
+            .putBoolean("storage_choice_confirmed", settings.storageChoiceConfirmed)
             .putString(KeyCookiesReference, settings.cookiesReference?.value)
             .putString(KeyCookiesDisplayName, settings.cookiesReference?.displayName)
+            .putString(KeySiteCookies, JSONArray().apply {
+                settings.siteCookies.values.forEach { site ->
+                    put(JSONObject().put("name", site.name).put("domain", site.domain)
+                        .put("reference", site.reference?.value).put("displayName", site.reference?.displayName))
+                }
+            }.toString())
             .putString(KeyThemeMode, settings.themeModeId)
             .putString(KeyColorPreset, settings.colorPresetId)
+            .putInt(KeyMaxConcurrentDownloads, settings.maxConcurrentDownloads)
+            .putInt("max_waiting_downloads", settings.maxWaitingDownloads ?: -1)
+            .putBoolean("jump_to_download_task", settings.jumpToDownloadTask)
+            .putBoolean("resume_downloads", settings.resumeDownloads)
+            .putBoolean("download_detected_subtitles", settings.downloadDetectedSubtitles)
+            .putString(KeyFileConflictPolicy, settings.fileConflictPolicy.name)
+            .putBoolean(KeyNotifyDownloadCompleted, settings.notifyDownloadCompleted)
+            .putBoolean(KeyNotifyDownloadFailed, settings.notifyDownloadFailed)
             .putString(KeyStorageTargetType, StorageTargets.persistedType(target))
         if (target is StorageTarget.SafTree) {
             editor
@@ -60,22 +88,42 @@ class SettingsRepository(
         defaultStorageTarget = StorageTargets.sanitizeDefault(defaultStorageTarget),
         themeModeId = AppearanceSettings.normalizeThemeModeId(themeModeId),
         colorPresetId = AppearanceSettings.normalizeColorPresetId(colorPresetId),
+        maxWaitingDownloads = maxWaitingDownloads?.takeIf { it >= 0 }?.coerceAtMost(50) ?: 5,
+        maxConcurrentDownloads = maxConcurrentDownloads.takeIf { it in 1..5 } ?: AppSettings.DefaultMaxConcurrentDownloads,
     )
 
     companion object {
         private const val PreferencesName = "ytdl-settings"
         private const val KeyCookiesReference = "cookies_reference"
+        private const val KeySiteCookies = "site_cookies"
         private const val KeyCookiesDisplayName = "cookies_display_name"
         private const val KeyThemeMode = "theme_mode"
         private const val KeyColorPreset = "color_preset"
+        private const val KeyMaxConcurrentDownloads = "max_concurrent_downloads"
+        private const val KeyFileConflictPolicy = "file_conflict_policy"
+        private const val KeyNotifyDownloadCompleted = "notify_download_completed"
+        private const val KeyNotifyDownloadFailed = "notify_download_failed"
         private const val KeyStorageTargetType = "storage_target_type"
         private const val KeyStorageTreeUri = "storage_tree_uri"
         private const val KeyStorageDisplayName = "storage_display_name"
 
+        internal fun observeConcurrency(context: Context, onChange: () -> Unit): AutoCloseable {
+            val prefs = context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KeyMaxConcurrentDownloads || key == null) onChange()
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            return AutoCloseable { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+
         fun fromContext(context: Context): SettingsRepository {
             val prefs = context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
+            val saved = prefs.all
             return SettingsRepository(
                 initialSettings = AppSettings(
+                    language = AppLanguage.fromId(saved["app_language"] as? String ?: "system"),
+                    permissionGuideCompleted = saved["permission_guide_completed"] as? Boolean ?: false,
+                    storageChoiceConfirmed = saved["storage_choice_confirmed"] as? Boolean ?: prefs.contains(KeyStorageTargetType),
                     defaultStorageTarget = StorageTargets.restoreDefault(
                         type = prefs.getString(KeyStorageTargetType, null),
                         treeUri = prefs.getString(KeyStorageTreeUri, null),
@@ -87,9 +135,32 @@ class SettingsRepository(
                     ),
                     themeModeId = prefs.getString(KeyThemeMode, null).orEmpty(),
                     colorPresetId = prefs.getString(KeyColorPreset, null).orEmpty(),
+                    siteCookies = readSites(prefs.getString(KeySiteCookies, null)),
+                    maxWaitingDownloads = saved["max_waiting_downloads"] as? Int,
+                    jumpToDownloadTask = saved["jump_to_download_task"] as? Boolean ?: false,
+                    resumeDownloads = saved["resume_downloads"] as? Boolean ?: true,
+                    downloadDetectedSubtitles = saved["download_detected_subtitles"] as? Boolean ?: false,
+                    maxConcurrentDownloads = saved[KeyMaxConcurrentDownloads] as? Int ?: AppSettings.DefaultMaxConcurrentDownloads,
+                    fileConflictPolicy = HttpFileConflictPolicy.entries.firstOrNull { it.name == saved[KeyFileConflictPolicy] }
+                        ?: HttpFileConflictPolicy.AutoRename,
+                    notifyDownloadCompleted = saved[KeyNotifyDownloadCompleted] as? Boolean ?: true,
+                    notifyDownloadFailed = saved[KeyNotifyDownloadFailed] as? Boolean ?: true,
                 ),
                 preferences = prefs,
             )
+        }
+
+        private fun readSites(raw: String?): Map<String, SiteCookies> {
+            val entries = runCatching { JSONArray(raw ?: "[]") }.getOrElse { JSONArray() }
+            return buildMap {
+                for (i in 0 until entries.length()) {
+                    val item = entries.optJSONObject(i) ?: continue
+                    val domain = CookieSites.normalizeDomain(item.optString("domain")) ?: continue
+                    val name = item.optString("name").take(60).ifBlank { domain }
+                    val reference = CookiesReference.fromUserReference(item.optString("reference"), item.optString("displayName"))
+                    put(domain, SiteCookies(name, domain, reference))
+                }
+            }
         }
     }
 }

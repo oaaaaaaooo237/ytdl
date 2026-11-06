@@ -1,19 +1,37 @@
 package com.garyapp.ytdl.core.settings
 
 import com.garyapp.ytdl.core.storage.StorageTarget
+import com.garyapp.ytdl.download.HttpFileConflictPolicy
 
 data class AppSettings(
+    val storageChoiceConfirmed: Boolean = false,
     val defaultStorageTarget: StorageTarget = StorageTarget.AppPrivate,
     val cookiesReference: CookiesReference? = null,
     val themeModeId: String = AppearanceSettings.ThemeModeSystem,
-    val colorPresetId: String = AppearanceSettings.ColorPresetReferenceV3,
-)
+    val colorPresetId: String = AppearanceSettings.ColorPresetMorandi,
+    val siteCookies: Map<String, SiteCookies> = emptyMap(),
+    val maxConcurrentDownloads: Int = DefaultMaxConcurrentDownloads,
+    val fileConflictPolicy: HttpFileConflictPolicy = HttpFileConflictPolicy.AutoRename,
+    val notifyDownloadCompleted: Boolean = true,
+    val notifyDownloadFailed: Boolean = true,
+    val maxWaitingDownloads: Int? = 5,
+    val jumpToDownloadTask: Boolean = false,
+    val resumeDownloads: Boolean = true,
+    val downloadDetectedSubtitles: Boolean = false,
+    val permissionGuideCompleted: Boolean = false,
+    val language: AppLanguage = AppLanguage.System,
+) {
+    companion object {
+        const val DefaultMaxConcurrentDownloads = 2
+    }
+}
 
 object AppearanceSettings {
     const val ThemeModeSystem = "system"
     const val ThemeModeLight = "light"
     const val ThemeModeDark = "dark"
 
+    const val ColorPresetMorandi = "morandi"
     const val ColorPresetReferenceV3 = "reference_v3"
     const val ColorPresetCodex = "codex"
 
@@ -24,7 +42,7 @@ object AppearanceSettings {
     )
 
     val colorPresetIds: Set<String> = setOf(
-        ColorPresetReferenceV3,
+        ColorPresetMorandi,
         ColorPresetCodex,
     )
 
@@ -35,7 +53,7 @@ object AppearanceSettings {
 
     fun normalizeColorPresetId(presetId: String?): String {
         val normalized = presetId?.trim()?.lowercase()
-        return if (normalized in colorPresetIds) normalized.orEmpty() else ColorPresetReferenceV3
+        return if (normalized in colorPresetIds) normalized.orEmpty() else ColorPresetMorandi
     }
 }
 
