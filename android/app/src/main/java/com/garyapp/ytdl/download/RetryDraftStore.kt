@@ -3,6 +3,8 @@ package com.garyapp.ytdl.download
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.garyapp.ytdl.core.ytdlp.SubtitleInfo
+import com.garyapp.ytdl.core.ytdlp.SubtitleSource
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -24,10 +26,11 @@ internal interface RetryPayloadCipher {
 internal data class RetryDownloadDraft(
     val url: String,
     val route: DownloadRoute,
+    val selectedSubtitles: List<SubtitleInfo> = emptyList(),
 ) {
     companion object {
         fun fromRequest(request: DownloadRequest): RetryDownloadDraft {
-            return RetryDownloadDraft(url = request.url, route = request.route)
+            return RetryDownloadDraft(request.url, request.route, request.selectedSubtitles)
         }
     }
 }
@@ -196,6 +199,13 @@ internal class FileRetryDraftStore(
                     output.writeString(route.audioFormatId)
                 }
             }
+            require(draft.selectedSubtitles.size <= 256) { "重试信息不可保存。" }
+            output.writeInt(draft.selectedSubtitles.size)
+            draft.selectedSubtitles.forEach { subtitle ->
+                output.writeString(subtitle.language)
+                output.writeString(subtitle.ext)
+                output.writeString(subtitle.source.name)
+            }
         }
         return buffer.toByteArray().also { payload ->
             require(payload.size <= MaxPayloadBytes) { "重试信息不可保存。" }
@@ -219,8 +229,15 @@ internal class FileRetryDraftStore(
                 5 -> { require(version >= 3); input.readHttpFileRoute() }
                 else -> throw IllegalArgumentException("重试信息不可用。")
             }
+            val subtitles = if (version >= 4) {
+                val count = input.readInt()
+                require(count in 0..256) { "重试信息不可用。" }
+                List(count) {
+                    SubtitleInfo(input.readString(), input.readString(), SubtitleSource.valueOf(input.readString()))
+                }
+            } else emptyList()
             require(input.available() == 0) { "重试信息不可用。" }
-            RetryDownloadDraft(url = url, route = route)
+            RetryDownloadDraft(url, route, subtitles)
         }
     }
 
@@ -247,7 +264,7 @@ internal class FileRetryDraftStore(
 
         private const val RetryDirectoryName = "retry-requests"
         private const val PayloadMagic = 0x5954444C
-        private const val PayloadVersion = 3
+        private const val PayloadVersion = 4
         private const val RouteDirect = 1
         private const val RouteVideoOnly = 2
         private const val RouteAudioOnly = 3

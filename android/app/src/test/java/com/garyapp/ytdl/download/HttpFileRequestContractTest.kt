@@ -28,6 +28,14 @@ class HttpFileRequestContractTest {
         retry.save(1, draft).getOrThrow(); assertEquals(draft, retry.load(1).getOrThrow())
         root.walkTopDown().filter { it.isFile }.forEach { assertFalse(it.readBytes().toString(Charsets.ISO_8859_1).contains("secret=token")) }
     }
+    @Test fun scheduledTimeSurvivesEncryptedRequestReload() {
+        val request = DownloadRequest(metadata.sourceUrl, "file", route(), scheduledAtMillis = 1_800_000_000_000L)
+        val directory = File(root, "scheduled")
+        val cipher = cipher()
+        FileResumeRequestStore(directory, cipher).save(request).getOrThrow()
+        assertEquals(request, FileResumeRequestStore(directory, cipher).load(request.taskId).getOrThrow())
+    }
+
     @Test fun oldResumeVersionsStillRead() {
         for (version in 1..2) {
             val request = DownloadRequest("https://example/video", "旧任务", DownloadRoute.AudioOnly("a"), usesCookies = false)

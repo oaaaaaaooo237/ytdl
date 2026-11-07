@@ -11,6 +11,7 @@ object DownloadFailureMessages {
     }
 
     fun missingSubtitle(language: String? = null, detail: String? = null): String {
+        if (detail == "字幕下载请求过多，请稍后重试。") return detail
         val safeLanguage = language?.takeIf { it.matches(Regex("""^[A-Za-z0-9._-]{1,24}$""")) }
         return if (safeLanguage.isNullOrBlank()) {
             "所选字幕不可用，请取消字幕或重新分析后再试。"

@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.Executor
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class SettingsCacheUiTest {
     @get:Rule
     val composeRule = createComposeRule()

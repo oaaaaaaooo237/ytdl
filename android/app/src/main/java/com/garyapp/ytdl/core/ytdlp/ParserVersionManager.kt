@@ -1,6 +1,11 @@
 package com.garyapp.ytdl.core.ytdlp
 
 import android.content.Context
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
@@ -88,8 +93,7 @@ interface ParserVersionControl {
 }
 
 object ParserRuntimeState {
-    @Volatile
-    var activeVersion: String = YtdlpBridge.PINNED_YTDLP_VERSION
+    var activeVersion: String by mutableStateOf(YtdlpBridge.PINNED_YTDLP_VERSION)
         internal set
 
     @Volatile
@@ -98,6 +102,33 @@ object ParserRuntimeState {
 }
 
 object ParserRuntimeBootstrap {
+    fun python(context: Context): Python {
+        initializeOnce {
+            if (!Python.isStarted()) {
+                Python.start(AndroidPlatform(context.applicationContext))
+            }
+            val parserVersionManager = ParserVersionManager.fromContext(context)
+            val runtimeWheel = parserVersionManager.prepareSelectedRuntimeWheel(
+                File(context.noBackupFilesDir, ParserVersionManager.RuntimeDirectoryName),
+            )
+            if (runtimeWheel != null) {
+                val inserted = runCatching {
+                    requireNotNull(Python.getInstance().getModule("sys")["path"])
+                        .callAttr("insert", 0, runtimeWheel.absolutePath)
+                }.isSuccess
+                if (inserted) {
+                    ParserRuntimeState.activeRuntimeWheelPath = runtimeWheel.absolutePath
+                } else {
+                    parserVersionManager.select(YtdlpBridge.PINNED_YTDLP_VERSION)
+                }
+            }
+            ParserRuntimeState.activeVersion = parserVersionManager.listVersions()
+                .first { it.isSelected }
+                .version
+        }
+        return Python.getInstance()
+    }
+
     private var initialized = false
 
     @Synchronized

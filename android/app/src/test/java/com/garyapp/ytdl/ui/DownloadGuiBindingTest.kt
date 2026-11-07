@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsEqualTo
@@ -64,10 +65,24 @@ import org.robolectric.RobolectricTestRunner
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class DownloadGuiBindingTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun languageChoiceUpdatesNavigationAndPersists() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        composeRule.setContent { YtdlApp() }
+
+        composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-settings-category-appearance").performClick()
+        composeRule.onNodeWithText("English").performClick()
+        composeRule.onNodeWithText("Back to settings").assertIsDisplayed()
+        composeRule.onNodeWithText("Tasks").assertIsDisplayed()
+        assertEquals(com.garyapp.ytdl.core.settings.AppLanguage.English,
+            SettingsRepository.fromContext(context).getSettings().language)
+    }
 
     @Test
     fun appRootMigratesReferencePaletteToApprovedMorandiAccent() {
@@ -827,8 +842,8 @@ class DownloadGuiBindingTest {
         assertFalse(cards.first().meta.contains("%20"))
         assertFalse(cards.first().meta.contains("媒体文件"))
         assertFalse(cards.first().meta.contains("测试 video.mp4"))
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(cards.first()))
-        assertEquals(listOf("删除"), historyActionLabelsForUiTest(cards.last()))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(cards.first()))
+        assertEquals(listOf("再次下载", "删除"), historyActionLabelsForUiTest(cards.last()))
         listOf("SID=secret", "--cookies", "raw-token", "Authorization").forEach {
             assertFalse("history UI leaked $it", serialized.contains(it))
         }
@@ -909,8 +924,8 @@ class DownloadGuiBindingTest {
         assertEquals("等待中", state.downloadStatus)
         assertTrue(shouldShowCurrentTaskForUiTest(state))
         assertEquals("当前阶段 · 等待中", queueCardSubtitleForUiTest(state))
-        assertTrue(state.userMessage.contains("已加入队列"))
-        assertTrue(state.userMessage.contains("当前阶段：等待中"))
+        assertTrue(state.taskMessage.contains("已加入队列"))
+        assertTrue(state.taskMessage.contains("当前阶段：等待中"))
     }
 
     @Test
@@ -1089,10 +1104,10 @@ class DownloadGuiBindingTest {
             composeRule.waitUntil(5_000) {
                 composeRule.onAllNodes(card).fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithTag("ytdl-history-more-$id").performClick()
             listOf("打开", "分享", "导出").forEach { action ->
                 composeRule.onNodeWithTag("ytdl-history-action-$id-$action").assertDoesNotExist()
             }
+            composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-action-$id-删除"))
             composeRule.onNodeWithTag("ytdl-history-action-$id-删除").assertExists()
             composeRule.onNodeWithTag("ytdl-history-action-$id-删除").performClick()
             composeRule.onNodeWithText("取消").performClick()
@@ -1116,7 +1131,6 @@ class DownloadGuiBindingTest {
                 composeRule.onAllNodesWithTag("ytdl-history-action-50-打开").fetchSemanticsNodes().isNotEmpty()
             }
             listOf("打开", "分享", "导出").forEach { action ->
-                if (action != "打开") composeRule.onNodeWithTag("ytdl-history-more-50").performClick()
                 composeRule.onNodeWithTag("ytdl-history-action-50-$action").performClick()
                 composeRule.onNodeWithText("主文件 · main.mp4").assertExists()
                 composeRule.onNodeWithText("字幕 1 · captions.vtt").assertExists()
@@ -1127,6 +1141,19 @@ class DownloadGuiBindingTest {
             subtitle.delete()
             folder.delete()
         }
+    }
+
+    @Test
+    fun downloadPageKeepsInputFeedbackSeparateFromRunningTasks() {
+        val feedback = "剪贴板中没有链接文本。"
+        val running = RuntimeDownloadState(userMessage = feedback).withPipelineStateForUiTest(
+            DownloadTaskState(stage = DownloadStage.DownloadingVideo),
+        )
+        assertEquals(feedback, running.userMessage)
+        val accepted = running.withAcceptedDownloadForUiTest(
+            DownloadTaskState(stage = DownloadStage.Waiting),
+        )
+        assertFalse(shouldShowRuntimeMessageForUiTest(accepted.userMessage))
     }
 
     @Test
@@ -1181,6 +1208,21 @@ class DownloadGuiBindingTest {
         assertEquals(request.taskId, resumed)
     }
 
+    @Test fun failedTaskHasOnlyOneRedownloadAction() {
+        val request = requestFor(progressiveFormat(id = "18", height = 360))
+        val task = com.garyapp.ytdl.download.ResumeTaskItem(
+            request.taskId, "失败的测试任务",
+            DownloadTaskState(DownloadStage.Failed, request,
+                fileRecoveryAction = com.garyapp.ytdl.download.FileRecoveryAction.Retry),
+        )
+        renderTasksPage(RuntimeDownloadState(), emptyList(), emptyList(), savedTasks = listOf(task))
+        composeRule.onNodeWithTag("test-tasks-list")
+            .performScrollToNode(hasTestTag("ytdl-saved-task-${request.taskId}"))
+        composeRule.onNodeWithTag("ytdl-saved-redownload-${request.taskId}").assertExists()
+        composeRule.onNodeWithTag("ytdl-saved-task-recover-${request.taskId}").assertDoesNotExist()
+        composeRule.onNodeWithText("已下载 0 B").assertDoesNotExist()
+    }
+
     @Test
     fun tasksScrollbarAppearsForOverflowAndTracksScroll() {
         val historyItems = (1L..20L).map { id ->
@@ -1217,7 +1259,7 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    @Config(sdk = [35], qualifiers = "w411dp-h891dp")
+    @Config(sdk = [35], qualifiers = "zh-rCN-w411dp-h891dp")
     fun tasksScrollbarStaysHiddenWhenHistoryFits() {
         val historyItem = HistoryUiItem(
             id = 1L,
@@ -1289,8 +1331,6 @@ class DownloadGuiBindingTest {
 
         composeRule.onNodeWithTag("ytdl-history-action-101-打开").assertExists()
         composeRule.onNodeWithTag("ytdl-history-action-102-再次下载").assertExists()
-        composeRule.onNodeWithTag("ytdl-history-action-101-分享").assertDoesNotExist()
-        composeRule.onNodeWithTag("ytdl-history-more-101").performClick()
         composeRule.onNodeWithTag("ytdl-history-action-101-分享").assertExists()
         composeRule.onNodeWithTag("ytdl-history-action-101-删除").assertExists()
     }

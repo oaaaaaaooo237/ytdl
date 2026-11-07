@@ -548,7 +548,7 @@ class DownloadRequestRoutingTest {
         val engine = RecordingDownloadEngine(temp.root).apply {
             subtitleFailure = YtdlpDownloadException(
                 AnalysisErrorCategory.Unsupported,
-                "Unable to download video subtitles for 'zh-Hans': HTTP Error 429: Too Many Requests",
+                "字幕下载请求过多，请稍后重试。",
             )
         }
         val result = DownloadPipeline(engine, RecordingMediaProcessor()).run(request, temp.root)
@@ -556,7 +556,7 @@ class DownloadRequestRoutingTest {
         assertEquals(DownloadStage.Failed, result.state.stage)
         assertEquals(1, result.state.outputs.count { it.kind == DownloadOutputKind.Media })
         assertEquals(0, result.state.outputs.count { it.kind == DownloadOutputKind.Subtitle })
-        assertTrue(result.state.errorMessage.orEmpty().contains("所选字幕 zh-Hans 不可用"))
+        assertEquals("字幕下载请求过多，请稍后重试。", result.state.errorMessage)
     }
 
     @Test

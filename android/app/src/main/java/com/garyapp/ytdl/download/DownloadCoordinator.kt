@@ -47,6 +47,38 @@ object DownloadCoordinator {
         synchronized(lock) { if (restored) return }
         restore(ResumeTaskRepository.fromContext(context))
     }
+    internal fun wakeScheduledDownloads(context: Context) {
+        restoreScheduledDownloads(context, fromAlarm = true)
+    }
+
+    internal fun restoreScheduledDownloads(context: Context, fromAlarm: Boolean = false) {
+        restore(context)
+        val output = File(context.filesDir, "gui-downloads")
+        val recovered = synchronized(lock) {
+            val scheduled = saved.values.filter { it.queuedScheduleTime() != null }
+            scheduled.forEach { item ->
+                val request = requireNotNull(item.state.request)
+                queuedLaunches.addLast(DownloadLaunch(request, output))
+                saved.remove(item.taskId)
+            }
+            scheduled.map { it.taskId }
+        }
+        if (recovered.isEmpty()) {
+            if (!fromAlarm || !synchronized(lock) {
+                    queuedLaunches.any { it.request.scheduledAtMillis != null }
+                }) return
+        } else {
+            notifySavedListeners()
+            notifyPendingListeners()
+        }
+        try {
+            startService(context)
+        } catch (error: Exception) {
+            recovered.forEach { parkPending(it, "预约下载暂时无法启动，点击继续重试。") }
+            throw error
+        }
+    }
+
     internal fun restore(repo: ResumeTaskRepository) {
         synchronized(lock) {
             if (restored) return
@@ -282,12 +314,21 @@ object DownloadCoordinator {
             IdleDownloadActionResult.ActiveDownload
         } else IdleDownloadActionResult.Executed(action())
     }
-    internal fun claimPendingLaunch(limit: Int = 1): DownloadLaunch? = synchronized(lock) {
+    internal fun claimPendingLaunch(
+        limit: Int = 1,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): DownloadLaunch? = synchronized(lock) {
         if (workers.size >= limit.coerceIn(1, 5)) return@synchronized null
-        queuedLaunches.pollFirst()?.also { launch ->
+        val iterator = queuedLaunches.iterator()
+        while (iterator.hasNext()) {
+            val launch = iterator.next()
+            if ((launch.request.scheduledAtMillis ?: 0L) > nowMillis) continue
+            iterator.remove()
             val id = launch.request.taskId
             workers[id] = Worker(launch).apply { requestedStop = earlyStops.remove(id) }
+            return@synchronized launch
         }
+        null
     }
 
     internal fun activateLaunch(launch: DownloadLaunch) {
@@ -472,6 +513,17 @@ object DownloadCoordinator {
     internal fun currentState(): DownloadTaskState? = synchronized(lock) { currentState }
     internal fun <T> withCurrentState(action: (DownloadTaskState?) -> T): T = synchronized(lock) { action(currentState) }
     internal fun hasPendingLaunch(): Boolean = synchronized(lock) { queuedLaunches.isNotEmpty() }
+
+    internal fun hasRunnableLaunch(nowMillis: Long): Boolean = synchronized(lock) {
+        queuedLaunches.any { (it.request.scheduledAtMillis ?: 0L) <= nowMillis }
+    }
+
+    internal fun nextScheduledLaunch(nowMillis: Long): Long? = synchronized(lock) {
+        queuedLaunches.asSequence()
+            .mapNotNull { it.request.scheduledAtMillis }
+            .filter { it > nowMillis }
+            .minOrNull()
+    }
     internal fun clearNetworkStop(taskId: String) {
         synchronized(lock) {
             workers[taskId]?.let { if (it.requestedStop == DownloadStopReason.NetworkUnavailable) it.requestedStop = null }

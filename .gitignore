@@ -51,3 +51,6 @@ worktrees/
 
 # Download helper temporary files
 tools/yt-dlp.tmp.exe
+
+# Generated Android packages and local QA evidence
+/artifacts/

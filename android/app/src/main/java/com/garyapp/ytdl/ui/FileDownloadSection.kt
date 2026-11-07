@@ -86,11 +86,11 @@ internal fun FileDownloadSection(
 ) {
     val palette = LocalYtdlAppPalette.current
     val metadata = selection.metadata
-    val size = metadata.totalBytes?.let(::formatBytes) ?: "大小未知"
+    val size = metadata.totalBytes?.let(::formatBytes) ?: appText("大小未知", "Unknown size")
     val resume = when (metadata.resumeSupport) {
-        ResumeSupport.Supported -> "支持断点续传"
-        ResumeSupport.Unknown -> "继续下载时验证服务器是否支持续传"
-        ResumeSupport.Unavailable -> "服务器未提供可用于续传的验证信息"
+        ResumeSupport.Supported -> appText("支持断点续传", "Resume supported")
+        ResumeSupport.Unknown -> appText("继续下载时验证服务器是否支持续传", "Resume support will be checked when you resume")
+        ResumeSupport.Unavailable -> appText("服务器未提供可用于续传的验证信息", "This server did not provide the information needed to resume")
     }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(color = palette.cardBackground, shape = RoundedCornerShape(9.dp), modifier = Modifier.fillMaxWidth()) {
@@ -102,7 +102,7 @@ internal fun FileDownloadSection(
         }
         if (metadata.kind == FileKind.Other) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("保存文件名", color = palette.softText, style = MaterialTheme.typography.labelMedium)
+                Text(appText("保存文件名", "File name"), color = palette.softText, style = MaterialTheme.typography.labelMedium)
                 OutlinedTextField(
                     value = selection.fileName,
                     onValueChange = { onSelectionChange(selection.copy(fileName = it)) },
@@ -112,9 +112,9 @@ internal fun FileDownloadSection(
                     isError = selection.route == null || selection.extensionChanged,
                 )
                 when {
-                    selection.route == null -> Text("请输入有效的文件名。", color = MaterialTheme.colorScheme.error)
+                    selection.route == null -> Text(appText("请输入有效的文件名。", "Enter a valid file name."), color = MaterialTheme.colorScheme.error)
                     selection.extensionChanged -> Text(
-                        "扩展名已更改，可能影响打开方式。",
+                        appText("扩展名已更改，可能影响打开方式。", "Changing the extension can affect how the file opens."),
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.testTag("ytdl-download-extension-warning"),
                     )
@@ -132,9 +132,9 @@ internal fun FileConflictChoice(
     selection: FileDownloadSelection,
     onSelectionChange: (FileDownloadSelection) -> Unit,
 ) {
-    val labels = listOf("自动编号，保留两个文件", "每次询问")
+    val labels = listOf(appText("自动编号，保留两个文件", "Auto-rename and keep both files"), appText("每次询问", "Ask each time"))
     val policies = HttpFileConflictPolicy.entries
-    DownloadChoice("重名处理", labels[policies.indexOf(selection.conflictPolicy)], "ytdl-download-conflict") { dismiss ->
+    DownloadChoice(appText("重名处理", "If the file already exists"), labels[policies.indexOf(selection.conflictPolicy)], "ytdl-download-conflict") { dismiss ->
         policies.forEachIndexed { index, policy ->
             ChoiceItem(labels[index], "ytdl-file-conflict-${policy.name}") {
                 dismiss()
@@ -151,6 +151,7 @@ internal fun DownloadControl(
     tag: String,
     modifier: Modifier = Modifier,
     actionLabel: String = "",
+    selected: Boolean = false,
     onClick: () -> Unit,
 ) {
     val palette = LocalYtdlAppPalette.current
@@ -161,12 +162,15 @@ internal fun DownloadControl(
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag),
             shape = RectangleShape,
             border = BorderStroke(1.dp, palette.borderColor),
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.cardBackground, contentColor = palette.titleText),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = if (selected) palette.downloadAccent else palette.cardBackground,
+                contentColor = if (selected) palette.primaryActionText else palette.titleText,
+            ),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                if (actionLabel.isNotBlank()) Text(actionLabel, color = palette.formatAccent, style = MaterialTheme.typography.labelMedium)
+                if (actionLabel.isNotBlank()) Text(actionLabel, color = if (selected) palette.primaryActionText else palette.formatAccent, style = MaterialTheme.typography.labelMedium)
             }
         }
     }
@@ -182,8 +186,13 @@ internal fun DownloadChoice(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier) {
-        DownloadControl(label, value, tag, actionLabel = "▾", onClick = { expanded = true })
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DownloadControl(label, value, tag, actionLabel = "▾", selected = expanded, onClick = { expanded = true })
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = RectangleShape,
+            containerColor = LocalYtdlAppPalette.current.cardBackground,
+        ) {
             items { expanded = false }
         }
     }

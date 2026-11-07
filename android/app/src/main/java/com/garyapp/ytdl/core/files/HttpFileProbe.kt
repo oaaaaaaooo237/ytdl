@@ -80,7 +80,7 @@ class HttpFileProbe {
     }
 }
 
-internal fun openFileConnection(source: String, range: Long? = null, validator: String? = null): HttpURLConnection {
+internal fun openFileConnection(source: String, range: Long? = null, validator: String? = null, rangeEnd: Long? = null): HttpURLConnection {
     var current = URL(source)
     repeat(6) { attempt ->
         require(current.protocol == "http" || current.protocol == "https")
@@ -91,7 +91,7 @@ internal fun openFileConnection(source: String, range: Long? = null, validator: 
         connection.readTimeout = 3000
         connection.setRequestProperty("Accept-Encoding", "identity")
         if (range != null) {
-            connection.setRequestProperty("Range", "bytes=$range-")
+            connection.setRequestProperty("Range", "bytes=$range-${rangeEnd ?: ""}")
             connection.setRequestProperty("If-Range", validator)
         }
         try {

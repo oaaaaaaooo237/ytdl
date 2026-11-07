@@ -30,6 +30,28 @@ class DownloadResumeTest {
         assertEquals("task-${request.taskId}", File(second.outputs.single().path).parentFile!!.name)
     }
 
+    @Test fun singleFileWithTransportPacketsIsRemuxedBeforePublication() {
+        val engine = Engine()
+        engine.duringDownload = { directory, _ ->
+            engine.returnedFile = File(directory, "transport.mp4").apply {
+                writeBytes(ByteArray(188 * 4) { if (it % 188 == 0) 0x47 else 0 })
+            }
+        }
+        val processor = object : MediaProcessor by Merger() {
+            override fun remuxTransportStream(input: File, output: File, ensureActive: () -> Unit): Result<Unit> =
+                runCatching {
+                    ensureActive()
+                    assertEquals("transport.mp4", input.name)
+                    output.writeText("remuxed")
+                }
+        }
+        val result = DownloadPipeline(engine, processor).run(request(), temp.root)
+        assertEquals(DownloadStage.Completed, result.state.stage)
+        val output = File(result.outputs.single().path)
+        assertEquals("mp4", output.extension)
+        assertEquals("remuxed", output.readText())
+    }
+
     @Test fun exportedReceiptSurvivesFullPipelineResumeWithoutRedownloading() {
         val engine = Engine()
         val pipeline = DownloadPipeline(engine, Merger())
@@ -52,6 +74,17 @@ class DownloadResumeTest {
         assertEquals(1, engine.calls.size)
         assertEquals("partial", File(temp.root, "task-${request().taskId}/video.part").readText())
         assertEquals("NetworkUnavailable", TaskWorkspace(temp.root).loadCheckpoint(request().taskId).getOrThrow().stopReason)
+    }
+
+    @Test fun unclassifiedDownloaderFailureWhileOfflineRetainsPart() {
+        val engine = Engine().apply { duringDownload = { directory, _ ->
+            File(directory, "video.part").writeText("partial")
+            throw YtdlpDownloadException(AnalysisErrorCategory.Unknown, "analysis failed")
+        } }
+        val result = DownloadPipeline(engine, Merger(), isNetworkAvailable = { false }).run(request(), temp.root)
+        assertEquals(DownloadStage.WaitingForNetwork, result.state.stage)
+        assertEquals(1, engine.calls.size)
+        assertEquals("partial", File(temp.root, "task-${request().taskId}/video.part").readText())
     }
 
     @Test fun permanentSiteErrorIsNotHiddenByConcurrentNetworkLoss() {

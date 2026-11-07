@@ -21,10 +21,17 @@ class DownloadSettingsTest {
         assertEquals(HttpFileConflictPolicy.AutoRename, settings.fileConflictPolicy)
         assertTrue(settings.notifyDownloadCompleted)
         assertTrue(settings.notifyDownloadFailed)
-        assertNull(settings.maxWaitingDownloads)
+        assertEquals(5, settings.maxWaitingDownloads)
         assertFalse(settings.jumpToDownloadTask)
         assertTrue(settings.resumeDownloads)
         assertFalse(settings.downloadDetectedSubtitles)
+    }
+
+    @Test fun waitingLimitMigratesUnlimitedAndClampsOversizedValues() {
+        val repo = SettingsRepository()
+        assertEquals(5, repo.update { it.copy(maxWaitingDownloads = null) }.maxWaitingDownloads)
+        assertEquals(5, repo.update { it.copy(maxWaitingDownloads = -1) }.maxWaitingDownloads)
+        assertEquals(50, repo.update { it.copy(maxWaitingDownloads = 100) }.maxWaitingDownloads)
     }
 
     @Test fun downloadPreferencesSurviveRecreationAndInvalidConcurrencyUsesDefault() {

@@ -97,7 +97,7 @@ class DownloadUiBridgeTest {
         )
 
         assertTrue(contentItem.hasOutput)
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(contentItem))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(contentItem))
     }
 
     @Test
@@ -126,7 +126,7 @@ class DownloadUiBridgeTest {
         assertTrue(retryable.retryAvailable)
         assertEquals(listOf("再次下载", "删除"), historyActionLabelsForUiTest(retryable))
         assertFalse(unavailable.retryAvailable)
-        assertEquals(listOf("删除"), historyActionLabelsForUiTest(unavailable))
+        assertEquals(listOf("再次下载", "删除"), historyActionLabelsForUiTest(unavailable))
     }
 
     @Test
@@ -371,7 +371,7 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText().replace("\r\n", "\n")
 
-        assertTrue(source.contains("userMessage = runtimeState.userMessage"))
+        assertTrue(source.contains("userMessage = runtimeState.taskActionMessage"))
         assertTrue(source.contains("userMessage: String,\n    onHistoryQueryChange"))
         assertTrue(source.contains("if (shouldShowRuntimeMessage(userMessage))"))
     }
@@ -933,7 +933,7 @@ class DownloadUiBridgeTest {
 
         assertEquals("下载失败", state.downloadStatus)
         assertEquals(null, state.progressPercent)
-        assertFalse(state.userMessage.contains("下载完成"))
+        assertFalse(state.taskMessage.contains("下载完成"))
     }
 
     @Test
@@ -1023,7 +1023,7 @@ class DownloadUiBridgeTest {
         assertEquals(1_000L, accepted.totalBytes)
         assertEquals("", accepted.url)
         assertEquals(null, accepted.analysis)
-        assertTrue(accepted.userMessage.contains("等待队列"))
+        assertTrue(accepted.taskMessage.contains("等待队列"))
     }
 
     @Test
@@ -1140,14 +1140,15 @@ class DownloadUiBridgeTest {
     }
 
     @Test
-    fun historyActionsRenderAsIconTextChipsWithoutLosingCallbacks() {
+    fun historyActionsRenderAsDirectIconsWithoutLosingCallbacks() {
         val source = sourceFile(
             "app/src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
         assertTrue(source.contains("TaskIconAction(action, historyActionIcon(action)"))
-        assertTrue(source.contains("extras.forEach { action ->"))
+        assertTrue(source.contains("actions.forEach { action ->"))
+        assertFalse(source.contains("ytdl-history-more-"))
         assertTrue(source.contains("else -> onDelete()"))
     }
 
@@ -1158,7 +1159,7 @@ class DownloadUiBridgeTest {
             "src/main/java/com/garyapp/ytdl/ui/YtdlApp.kt",
         ).readText()
 
-        assertFalse(source.contains("HistoryThumbnailLoader"))
+        assertTrue(source.contains("TaskPreviewLoader"))
         assertTrue(source.contains("BitmapFactory.Options"))
         assertTrue(source.contains("calculateInSampleSize"))
         assertFalse(source.contains("Thread {\n            val bitmap = loadThumbnailBitmap(item.thumbnailUrl.orEmpty())"))
@@ -1239,10 +1240,10 @@ class DownloadUiBridgeTest {
         assertFalse(items[0].meta.contains("字幕"))
         assertFalse(items[0].meta.contains("merged-299-140.mp4"))
         assertFalse(items[0].meta.contains("captions.en.vtt"))
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[0]))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(items[0]))
         assertFalse(items[1].meta.contains("独立字幕文件"))
         assertFalse(items[1].meta.contains("video.mp4"))
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(items[1]))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(items[1]))
     }
 
     @Test
@@ -1460,7 +1461,7 @@ class DownloadUiBridgeTest {
         assertFalse(item.meta.contains("媒体文件"))
         assertTrue(item.meta.contains("所选字幕 zh-Hans 不可用"))
         assertFalse(item.meta.contains("merged-299-140.mp4"))
-        assertEquals(listOf("打开", "分享", "删除"), historyActionLabelsForUiTest(item))
+        assertEquals(listOf("打开", "分享", "再次下载", "删除"), historyActionLabelsForUiTest(item))
     }
 
     @Test
@@ -1498,11 +1499,11 @@ class DownloadUiBridgeTest {
         assertFalse(meta.toString().contains("媒体文件"))
         assertFalse(meta.toString().contains("merged-299-140.mp4"))
         assertFalse(meta.toString().contains("captions.en.vtt"))
-        assertEquals("下载完成", state.userMessage)
-        assertFalse(state.userMessage.contains("字幕"))
-        assertFalse(state.userMessage.contains("媒体文件"))
-        assertFalse(state.userMessage.contains("merged-299-140.mp4"))
-        assertFalse(state.userMessage.contains("captions.en.vtt"))
+        assertEquals("下载完成", state.taskMessage)
+        assertFalse(state.taskMessage.contains("字幕"))
+        assertFalse(state.taskMessage.contains("媒体文件"))
+        assertFalse(state.taskMessage.contains("merged-299-140.mp4"))
+        assertFalse(state.taskMessage.contains("captions.en.vtt"))
     }
 
     @Test
@@ -1536,14 +1537,14 @@ class DownloadUiBridgeTest {
             ),
         )
 
-        assertFalse(failed.userMessage.contains("字幕"))
-        assertTrue(failed.userMessage.contains("文件处理失败"))
-        assertFalse(mediaSaved.userMessage.contains("字幕"))
-        assertTrue(mediaSaved.userMessage.contains("文件已保存"))
-        assertFalse(mediaSaved.userMessage.contains("媒体文件"))
-        assertTrue(rawFailure.userMessage.contains("文件处理失败"))
+        assertFalse(failed.taskMessage.contains("字幕"))
+        assertTrue(failed.taskMessage.contains("文件处理失败"))
+        assertFalse(mediaSaved.taskMessage.contains("字幕"))
+        assertTrue(mediaSaved.taskMessage.contains("文件已保存"))
+        assertFalse(mediaSaved.taskMessage.contains("媒体文件"))
+        assertTrue(rawFailure.taskMessage.contains("文件处理失败"))
         listOf("https://", "raw-secret", "Authorization", "raw-token").forEach { forbidden ->
-            assertFalse(rawFailure.userMessage.contains(forbidden))
+            assertFalse(rawFailure.taskMessage.contains(forbidden))
         }
     }
 

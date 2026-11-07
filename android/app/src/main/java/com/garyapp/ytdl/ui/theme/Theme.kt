@@ -14,6 +14,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import com.garyapp.ytdl.core.settings.AppLanguage
+import com.garyapp.ytdl.ui.LocalAppLanguage
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -324,6 +326,7 @@ private val YtdlCodexDarkPalette = YtdlAppPalette(
 @Composable
 fun YtdlTheme(
     config: YtdlThemeConfig = defaultYtdlThemeConfig(),
+    appLanguage: AppLanguage = AppLanguage.Chinese,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (config.mode) {
@@ -348,11 +351,13 @@ fun YtdlTheme(
         }
     }
     val square = RoundedCornerShape(0)
+    val palette = ytdlAppPaletteForPreset(config.colorPreset.id, darkTheme)
     CompositionLocalProvider(
-        LocalYtdlAppPalette provides ytdlAppPaletteForPreset(config.colorPreset.id, darkTheme),
+        LocalYtdlAppPalette provides palette,
+        LocalAppLanguage provides appLanguage,
     ) {
         MaterialTheme(
-            colorScheme = colorScheme,
+            colorScheme = colorScheme.copy(surfaceContainerHigh = palette.cardBackground),
             typography = YtdlCompactTypography,
             shapes = Shapes(square, square, square, square, square),
             content = content,

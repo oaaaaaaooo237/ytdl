@@ -1,50 +1,44 @@
 package com.garyapp.ytdl
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
-import com.garyapp.ytdl.core.ytdlp.ParserRuntimeState
-import com.garyapp.ytdl.core.ytdlp.ParserRuntimeBootstrap
-import com.garyapp.ytdl.core.ytdlp.ParserVersionManager
-import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
+import androidx.compose.runtime.mutableStateOf
+import com.garyapp.ytdl.core.policy.sharedDownloadUrl
 import com.garyapp.ytdl.ui.YtdlApp
-import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private val sharedUrl = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
-        ParserRuntimeBootstrap.initializeOnce {
-            val parserVersionManager = ParserVersionManager.fromContext(this)
-            val runtimeWheel = parserVersionManager.prepareSelectedRuntimeWheel(
-                File(noBackupFilesDir, ParserVersionManager.RuntimeDirectoryName),
-            )
-            if (runtimeWheel != null) {
-                val inserted = runCatching {
-                    requireNotNull(Python.getInstance().getModule("sys")["path"])
-                        .callAttr("insert", 0, runtimeWheel.absolutePath)
-                }.isSuccess
-                if (inserted) {
-                    ParserRuntimeState.activeRuntimeWheelPath = runtimeWheel.absolutePath
-                } else {
-                    parserVersionManager.select(YtdlpBridge.PINNED_YTDLP_VERSION)
-                }
-            }
-            ParserRuntimeState.activeVersion = parserVersionManager.listVersions()
-                .first { it.isSelected }
-                .version
-        }
+        sharedUrl.value = readSharedUrl(intent)
         configureLightSystemBars()
         setContent {
-            YtdlApp()
+            YtdlApp(
+                showFirstRunGuide = true,
+                sharedUrl = sharedUrl.value,
+                onSharedUrlConsumed = {
+                    sharedUrl.value = null
+                    intent.removeExtra(Intent.EXTRA_TEXT)
+                },
+            )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedUrl.value = readSharedUrl(intent)
+    }
+
+    private fun readSharedUrl(intent: Intent): String? {
+        if (intent.action != Intent.ACTION_SEND || intent.type != "text/plain") return null
+        return sharedDownloadUrl(intent.getCharSequenceExtra(Intent.EXTRA_TEXT))
     }
 
     private fun configureLightSystemBars() {

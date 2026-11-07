@@ -35,7 +35,7 @@ class SettingsRepository(
     }
 
     fun setDefaultStorageTarget(target: StorageTarget): AppSettings = update {
-        it.copy(defaultStorageTarget = target)
+        it.copy(defaultStorageTarget = target, storageChoiceConfirmed = true)
     }
 
     fun setThemeMode(modeId: String): AppSettings = update {
@@ -50,6 +50,9 @@ class SettingsRepository(
         val prefs = preferences ?: return
         val target = StorageTargets.sanitizeDefault(settings.defaultStorageTarget)
         val editor = prefs.edit()
+            .putString("app_language", settings.language.id)
+            .putBoolean("permission_guide_completed", settings.permissionGuideCompleted)
+            .putBoolean("storage_choice_confirmed", settings.storageChoiceConfirmed)
             .putString(KeyCookiesReference, settings.cookiesReference?.value)
             .putString(KeyCookiesDisplayName, settings.cookiesReference?.displayName)
             .putString(KeySiteCookies, JSONArray().apply {
@@ -60,6 +63,7 @@ class SettingsRepository(
             }.toString())
             .putString(KeyThemeMode, settings.themeModeId)
             .putString(KeyColorPreset, settings.colorPresetId)
+            .putInt("http_limit_kib", settings.httpLimitKib)
             .putInt(KeyMaxConcurrentDownloads, settings.maxConcurrentDownloads)
             .putInt("max_waiting_downloads", settings.maxWaitingDownloads ?: -1)
             .putBoolean("jump_to_download_task", settings.jumpToDownloadTask)
@@ -85,7 +89,8 @@ class SettingsRepository(
         defaultStorageTarget = StorageTargets.sanitizeDefault(defaultStorageTarget),
         themeModeId = AppearanceSettings.normalizeThemeModeId(themeModeId),
         colorPresetId = AppearanceSettings.normalizeColorPresetId(colorPresetId),
-        maxWaitingDownloads = maxWaitingDownloads?.takeIf { it >= 0 },
+        maxWaitingDownloads = maxWaitingDownloads?.takeIf { it >= 0 }?.coerceAtMost(50) ?: 5,
+        httpLimitKib = httpLimitKib.coerceIn(0, 50_000),
         maxConcurrentDownloads = maxConcurrentDownloads.takeIf { it in 1..5 } ?: AppSettings.DefaultMaxConcurrentDownloads,
     )
 
@@ -107,7 +112,7 @@ class SettingsRepository(
         internal fun observeConcurrency(context: Context, onChange: () -> Unit): AutoCloseable {
             val prefs = context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == KeyMaxConcurrentDownloads || key == null) onChange()
+                if (key == KeyMaxConcurrentDownloads || key == "http_limit_kib" || key == null) onChange()
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
             return AutoCloseable { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -118,6 +123,9 @@ class SettingsRepository(
             val saved = prefs.all
             return SettingsRepository(
                 initialSettings = AppSettings(
+                    language = AppLanguage.fromId(saved["app_language"] as? String ?: "system"),
+                    permissionGuideCompleted = saved["permission_guide_completed"] as? Boolean ?: false,
+                    storageChoiceConfirmed = saved["storage_choice_confirmed"] as? Boolean ?: prefs.contains(KeyStorageTargetType),
                     defaultStorageTarget = StorageTargets.restoreDefault(
                         type = prefs.getString(KeyStorageTargetType, null),
                         treeUri = prefs.getString(KeyStorageTreeUri, null),
@@ -134,6 +142,7 @@ class SettingsRepository(
                     jumpToDownloadTask = saved["jump_to_download_task"] as? Boolean ?: false,
                     resumeDownloads = saved["resume_downloads"] as? Boolean ?: true,
                     downloadDetectedSubtitles = saved["download_detected_subtitles"] as? Boolean ?: false,
+                    httpLimitKib = saved["http_limit_kib"] as? Int ?: 0,
                     maxConcurrentDownloads = saved[KeyMaxConcurrentDownloads] as? Int ?: AppSettings.DefaultMaxConcurrentDownloads,
                     fileConflictPolicy = HttpFileConflictPolicy.entries.firstOrNull { it.name == saved[KeyFileConflictPolicy] }
                         ?: HttpFileConflictPolicy.AutoRename,

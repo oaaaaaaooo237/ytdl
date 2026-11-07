@@ -23,6 +23,7 @@ internal class ResumeTaskRepository(
     private val database: YtdlDatabase,
     private val requests: ResumeRequestStore,
     val workspace: TaskWorkspace,
+    private val retryDrafts: RetryDraftStore? = null,
 ) {
     private val queue get() = database.queueDao()
 
@@ -72,7 +73,7 @@ internal class ResumeTaskRepository(
                     if (checkpoint.fileRecoveryAction != null) DownloadStage.Failed else DownloadStage.Paused, request, progress = checkpoint.progress(), stopReason = reason,
                     fileRecoveryAction = checkpoint.fileRecoveryAction,
                     statusMessage = when (checkpoint.fileRecoveryAction) {
-                        FileRecoveryAction.Retry -> "下载中断，点击重试。"
+                        FileRecoveryAction.Retry -> "下载中断，可重新下载。"
                         FileRecoveryAction.ConfirmRestart -> "无法安全续传，请确认重新下载。"
                         FileRecoveryAction.ChooseFileName -> "文件名已存在，请选择其他名称。"
                         null -> if (reason == DownloadStopReason.UserPause) "点击继续下载。" else "应用曾退出，点击继续。"
@@ -164,6 +165,7 @@ internal class ResumeTaskRepository(
                 val row = checkNotNull(queue.getByTaskId(request.taskId))
                 if (row.status !in TerminalStatuses) {
                     historyId = recorder.recordTerminal(state).getOrThrow()
+                    retryDrafts?.save(requireNotNull(historyId), RetryDownloadDraft.fromRequest(request))?.getOrThrow()
                     row.status = state.stage.name.lowercase()
                     row.phase = state.stage.name
                     row.stopReason = state.stopReason?.name
@@ -202,6 +204,7 @@ internal class ResumeTaskRepository(
         private val TerminalStatuses = setOf("completed", "failed", "canceled", "network_failed", "permission_failed")
         private fun safeTitle(value: String?) = SensitiveText.redact(value.orEmpty()).ifBlank { "下载任务" }
         fun fromContext(context: Context) = ResumeTaskRepository(YtdlDatabaseProvider.get(context),
-            FileResumeRequestStore.fromContext(context), TaskWorkspace(File(context.filesDir, "gui-downloads")))
+            FileResumeRequestStore.fromContext(context), TaskWorkspace(File(context.filesDir, "gui-downloads")),
+            FileRetryDraftStore.fromContext(context))
     }
 }

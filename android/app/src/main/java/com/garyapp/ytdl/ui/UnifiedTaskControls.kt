@@ -11,7 +11,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.garyapp.ytdl.core.settings.AppLanguage
 import com.garyapp.ytdl.download.DownloadRoute
 import com.garyapp.ytdl.download.FileRecoveryAction
 import com.garyapp.ytdl.download.ResumeTaskItem
@@ -52,28 +52,44 @@ private val TaskOutputType.label: String
         TaskOutputType.Other -> "其他文件"
     }
 
+internal fun TaskStatus.localized(language: AppLanguage): String = language.pick(label, when (this) {
+    TaskStatus.InProgress -> "In progress"
+    TaskStatus.Waiting -> "Queued"
+    TaskStatus.Paused -> "Paused"
+    TaskStatus.Completed -> "Completed"
+    TaskStatus.Failed -> "Failed"
+    TaskStatus.Canceled -> "Canceled"
+})
+
+private fun TaskOutputType.localized(language: AppLanguage): String = language.pick(label, when (this) {
+    TaskOutputType.Video -> "Video"
+    TaskOutputType.Audio -> "Audio"
+    TaskOutputType.Other -> "Other files"
+})
+
 @Composable
 internal fun TaskFilterBar(filters: TaskFilters, onChange: (TaskFilters) -> Unit) {
+    val language = LocalAppLanguage.current
     Column {
         Row(Modifier.horizontalScroll(rememberScrollState()).testTag("ytdl-task-filters"),
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            TaskFilterChip("全部", "all", filters == TaskFilters()) { onChange(TaskFilters()) }
+            TaskFilterChip(appText("全部", "All"), "all", filters == TaskFilters()) { onChange(TaskFilters()) }
             TaskStatus.entries.forEach { status ->
-                TaskFilterChip(status.label, status.name, status in filters.statuses) {
+                TaskFilterChip(status.localized(language), status.name, status in filters.statuses) {
                     val selected = filters.statuses
                     onChange(filters.copy(statuses = if (status in selected) selected - status else selected + status))
                 }
             }
             TaskOutputType.entries.forEach { type ->
-                TaskFilterChip(type.label, type.name, type in filters.types) {
+                TaskFilterChip(type.localized(language), type.name, type in filters.types) {
                     val selected = filters.types
                     onChange(filters.copy(types = if (type in selected) selected - type else selected + type))
                 }
             }
         }
         Text(
-            filters.statuses.joinToString("、") { it.label }.ifEmpty { "全部状态" } + " · " +
-                filters.types.joinToString("、") { it.label }.ifEmpty { "全部类型" } + " · 左右滑动筛选",
+            filters.statuses.joinToString(language.pick("、", ", ")) { it.localized(language) }.ifEmpty { language.pick("全部状态", "All statuses") } + " · " +
+                filters.types.joinToString(language.pick("、", ", ")) { it.localized(language) }.ifEmpty { language.pick("全部类型", "All types") } + language.pick(" · 左右滑动筛选", " · Swipe to see filters"),
             style = MaterialTheme.typography.bodySmall,
         )
     }
@@ -93,21 +109,21 @@ internal fun FileRecoveryDialog(task: ResumeTaskItem, onDismiss: () -> Unit, onC
     val valid = !rename || (name != route.fileName && runCatching { route.copy(fileName = name) }.isSuccess)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (rename) "文件名已存在" else "确认重新下载") },
+        title = { Text(if (rename) appText("文件名已存在", "File name already exists") else appText("确认重新下载", "Download again?")) },
         text = {
             if (rename) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("新的文件名") },
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(appText("新的文件名", "New file name")) },
                     modifier = Modifier.width(300.dp).testTag("ytdl-recovery-filename"), singleLine = true,
                     shape = RectangleShape)
             } else {
-                Text("当前无法安全续传。确认后会重新识别源文件，识别成功后从头下载，原进度将被清除。")
+                Text(appText("当前无法安全续传。确认后会重新识别源文件，识别成功后从头下载，原进度将被清除。", "This download cannot safely resume. The app will check the source again and restart the download if the check succeeds."))
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = { onConfirm(name.takeIf { rename }) },
-                modifier = Modifier.testTag("ytdl-recovery-confirm")) { Text(if (rename) "保存并继续" else "重新下载") }
+            SettingsActionButton(enabled = valid, onClick = { onConfirm(name.takeIf { rename }) },
+                modifier = Modifier.testTag("ytdl-recovery-confirm")) { Text(if (rename) appText("保存并继续", "Save and resume") else appText("重新下载", "Download again")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("返回") } },
+        dismissButton = { SettingsActionButton(onClick = onDismiss) { Text(appText("返回", "Back")) } },
     )
 }
 

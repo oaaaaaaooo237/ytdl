@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class ResumeTaskRepositoryTest {
     private lateinit var database: YtdlDatabase
     private lateinit var root: File
@@ -40,6 +40,25 @@ class ResumeTaskRepositoryTest {
             com.garyapp.ytdl.core.files.ResumeSupport.Supported)
         return DownloadRequest(metadata.sourceUrl, "文件", DownloadRoute.HttpFile(metadata, "用户.pdf"))
     }
+    @Test fun retrySaveFailureKeepsOriginalRequestAndRollsBackHistory() {
+        val failingRetryStore = object : RetryDraftStore {
+            override fun save(historyId: Long, draft: RetryDownloadDraft): Result<Unit> =
+                Result.failure(IllegalStateException("storage unavailable"))
+            override fun load(historyId: Long): Result<RetryDownloadDraft> =
+                Result.failure(IllegalStateException("missing"))
+            override fun isAvailable(historyId: Long) = false
+            override fun delete(historyId: Long) = Result.success(true)
+        }
+        val guarded = ResumeTaskRepository(database, store, workspace, failingRetryStore)
+        val request = fileRequest()
+        guarded.create(request).getOrThrow()
+        val outcome = guarded.recordTerminal(DownloadTaskState(DownloadStage.Canceled, request))
+        assertTrue(outcome.isFailure)
+        assertEquals(request, store.load(request.taskId).getOrThrow())
+        assertTrue(database.historyDao().listAll().isEmpty())
+        assertEquals(1, guarded.recover().size)
+    }
+
     @Test fun fileFailureRetainsEncryptedRequestAndRestoresDistinctRecoveryAction() {
         val request = fileRequest(); repository.create(request).getOrThrow()
         for (action in listOf(FileRecoveryAction.Retry, FileRecoveryAction.ConfirmRestart)) {

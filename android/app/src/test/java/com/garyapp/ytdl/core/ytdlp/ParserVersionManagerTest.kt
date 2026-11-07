@@ -471,25 +471,29 @@ class ParserVersionManagerTest {
     }
 
     @Test
-    fun mainActivityPreparesAndInsertsRuntimeWheelBeforeUiCanImportBridge() {
+    fun mediaRuntimePreparesAndInsertsSelectedWheelWithoutBlockingActivityStartup() {
         val source = ProjectTestPaths.repositoryRoot
-            .resolve("android/app/src/main/java/com/garyapp/ytdl/MainActivity.kt")
+            .resolve("android/app/src/main/java/com/garyapp/ytdl/core/ytdlp/ParserVersionManager.kt")
             .toFile()
             .readText()
 
-        val pythonStart = source.indexOf("Python.start(AndroidPlatform(this))")
+        val pythonStart = source.indexOf("Python.start(AndroidPlatform(context.applicationContext))")
         val prepare = source.indexOf("prepareSelectedRuntimeWheel")
         val sysPath = source.indexOf("getModule(\"sys\")")
-        val setContent = source.indexOf("setContent {")
+        val activity = ProjectTestPaths.repositoryRoot
+            .resolve("android/app/src/main/java/com/garyapp/ytdl/MainActivity.kt")
+            .toFile()
+            .readText()
+        val runtimeSource = source.substring(source.indexOf("object ParserRuntimeBootstrap"), source.indexOf("internal object ActiveParserVersionParts"))
 
         assertTrue(pythonStart >= 0)
         assertTrue(prepare > pythonStart)
         assertTrue(sysPath > prepare)
-        assertTrue(setContent > sysPath)
-        assertFalse(source.substring(0, sysPath).contains("ytdl_bridge"))
-        assertFalse(source.substring(0, sysPath).contains("yt_dlp"))
+        assertFalse(activity.contains("ParserRuntimeBootstrap"))
+        assertFalse(runtimeSource.contains("ytdl_bridge"))
+        assertFalse(runtimeSource.contains("yt_dlp"))
         assertFalse(source.contains("sys.modules"))
-        assertTrue(source.contains("ParserRuntimeBootstrap.initializeOnce"))
+        assertTrue(runtimeSource.contains("initializeOnce {"))
         assertTrue(source.contains("ParserRuntimeState.activeRuntimeWheelPath = runtimeWheel.absolutePath"))
     }
 

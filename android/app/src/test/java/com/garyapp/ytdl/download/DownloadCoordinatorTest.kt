@@ -40,6 +40,18 @@ class DownloadCoordinatorTest {
     }
 
     @Test
+    fun futureTaskWaitsWithoutBlockingImmediateTask() {
+        val scheduled = request().copy(scheduledAtMillis = 2_000)
+        val immediate = request()
+        DownloadCoordinator.enqueueForServiceStart(scheduled, tempRoot).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(immediate, tempRoot).getOrThrow()
+
+        assertEquals(immediate.taskId, DownloadCoordinator.claimPendingLaunch(2, 1_999)?.request?.taskId)
+        assertNull(DownloadCoordinator.claimPendingLaunch(2, 1_999))
+        assertEquals(scheduled.taskId, DownloadCoordinator.claimPendingLaunch(2, 2_000)?.request?.taskId)
+    }
+
+    @Test
     fun earlyUserPauseSurvivesLaterOfflineAndLifecycleSignals() {
         DownloadCoordinator.enqueueForServiceStart(request(), tempRoot).getOrThrow()
         DownloadCoordinator.pauseActive()

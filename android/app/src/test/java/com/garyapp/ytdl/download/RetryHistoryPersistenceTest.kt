@@ -55,7 +55,7 @@ class RetryHistoryPersistenceTest {
     }
 
     @Test
-    fun completedOrUnrecordedHistoryNeverCreatesRetryPayload() {
+    fun completedHistoryKeepsRetryPayloadOnlyAfterRecording() {
         val request = DownloadRequest(
             url = "https://example.com/completed",
             title = "completed",
@@ -69,8 +69,9 @@ class RetryHistoryPersistenceTest {
                 retryStore = store,
             ).isSuccess,
         )
-        assertNull(store.savedDraft)
-        assertEquals(1L, store.deletedHistoryId)
+        assertEquals(RetryDownloadDraft(request.url, request.route), store.savedDraft)
+        assertEquals(1L, store.savedHistoryId)
+        assertNull(store.deletedHistoryId)
 
         val failedInsert = RecordingRetryDraftStore()
         assertTrue(

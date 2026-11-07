@@ -16,7 +16,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class NotificationControllerTest {
     private val application = ApplicationProvider.getApplicationContext<Application>()
     private val controller = NotificationController(application)

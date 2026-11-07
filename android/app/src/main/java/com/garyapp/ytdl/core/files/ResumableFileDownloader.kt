@@ -27,6 +27,22 @@ class ResumableFileDownloader {
             if (metadata.etag == null && metadata.lastModified == null) return restart("源文件缺少可靠身份，无法安全续传")
         }
         if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
+        if (!existing) {
+            val parallelResult = try {
+                ParallelHttpFileDownload.tryDownload(metadata, partialFile, shouldStop, onProgress)
+            } catch (_: java.io.IOException) {
+                if (shouldStop()) FileDownloadResult.Stopped(0) else null
+            }
+            if (parallelResult is FileDownloadResult.Completed) {
+                writeCheckpoint(checkpointFile, binding, parallelResult.bytes)
+                onProgress(parallelResult.bytes, metadata.totalBytes)
+            }
+            if (parallelResult is FileDownloadResult.Stopped && parallelResult.bytes > 0) {
+                writeCheckpoint(checkpointFile, binding, parallelResult.bytes)
+                onProgress(parallelResult.bytes, metadata.totalBytes)
+            }
+            if (parallelResult != null) return parallelResult
+        }
         var connection: HttpURLConnection? = null
         return try {
             connection = openFileConnection(metadata.finalUrl, if (existing) downloaded else null, metadata.etag ?: metadata.lastModified)
@@ -79,6 +95,7 @@ class ResumableFileDownloader {
                         if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
                         if (count > 0) {
                             if (expectedEnd != null && downloaded + count > expectedEnd) return FileDownloadResult.Failed("服务器数据超过声明长度")
+                            if (!HttpTransferLimit.account(count, shouldStop)) return FileDownloadResult.Stopped(downloaded)
                             output.write(buffer, 0, count)
                             output.fd.sync()
                             downloaded += count

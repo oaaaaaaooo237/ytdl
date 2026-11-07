@@ -43,7 +43,7 @@ internal fun updateRetryDraftForHistory(
 ): Result<Unit> {
     val historyId = historyRecordResult.getOrNull() ?: return Result.success(Unit)
     val request = state.request
-    return if (state.stage in setOf(DownloadStage.Failed, DownloadStage.Canceled) && request != null) {
+    return if (request != null && state.stage in setOf(DownloadStage.Completed, DownloadStage.Failed, DownloadStage.Canceled)) {
         retryStore.save(historyId, RetryDownloadDraft.fromRequest(request))
     } else {
         retryStore.delete(historyId).map { Unit }

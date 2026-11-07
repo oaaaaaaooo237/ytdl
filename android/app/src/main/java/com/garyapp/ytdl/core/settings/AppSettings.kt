@@ -4,19 +4,23 @@ import com.garyapp.ytdl.core.storage.StorageTarget
 import com.garyapp.ytdl.download.HttpFileConflictPolicy
 
 data class AppSettings(
+    val storageChoiceConfirmed: Boolean = false,
     val defaultStorageTarget: StorageTarget = StorageTarget.AppPrivate,
     val cookiesReference: CookiesReference? = null,
     val themeModeId: String = AppearanceSettings.ThemeModeSystem,
     val colorPresetId: String = AppearanceSettings.ColorPresetMorandi,
     val siteCookies: Map<String, SiteCookies> = emptyMap(),
+    val httpLimitKib: Int = 0,
     val maxConcurrentDownloads: Int = DefaultMaxConcurrentDownloads,
     val fileConflictPolicy: HttpFileConflictPolicy = HttpFileConflictPolicy.AutoRename,
     val notifyDownloadCompleted: Boolean = true,
     val notifyDownloadFailed: Boolean = true,
-    val maxWaitingDownloads: Int? = null,
+    val maxWaitingDownloads: Int? = 5,
     val jumpToDownloadTask: Boolean = false,
     val resumeDownloads: Boolean = true,
     val downloadDetectedSubtitles: Boolean = false,
+    val permissionGuideCompleted: Boolean = false,
+    val language: AppLanguage = AppLanguage.System,
 ) {
     companion object {
         const val DefaultMaxConcurrentDownloads = 2

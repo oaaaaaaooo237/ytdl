@@ -201,6 +201,7 @@ class HttpFilePipelineTest {
         val before = partial.readBytes(); ignoreRange = true
         val result = HttpFilePipeline().run(req, root)
         assertEquals(FileRecoveryAction.ConfirmRestart, result.state.fileRecoveryAction)
+        assertEquals(before.size.toLong(), result.state.progress?.downloadedBytes)
         assertArrayEquals(before, partial.readBytes())
         HttpFilePipeline.confirmRestart(TaskWorkspace(root), req).getOrThrow()
         assertEquals(DownloadStage.Completed, HttpFilePipeline().run(req, root).state.stage)

@@ -17,7 +17,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class DownloadServiceResumeTest {
     private lateinit var database: YtdlDatabase
     private lateinit var service: DownloadService
@@ -45,6 +45,16 @@ class DownloadServiceResumeTest {
         DownloadCoordinator.restore(repository)
     }
     @After fun cleanup() { service.onDestroy(); DownloadCoordinator.resetForTests(); database.close(); root.deleteRecursively() }
+    @Test fun foregroundTimeoutStopsServiceWithoutStartingWaitingTasks() {
+        val waiting = request()
+        repository.create(waiting).getOrThrow()
+        DownloadCoordinator.enqueueForServiceStart(waiting, root).getOrThrow()
+        service.onTimeout(1, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        assertTrue(org.robolectric.Shadows.shadowOf(service).isStoppedBySelf)
+        assertTrue(DownloadCoordinator.activeStates().isEmpty())
+        assertTrue(DownloadCoordinator.hasPendingLaunch())
+    }
+
     private fun request() = DownloadRequest("https://example.test/page", "测试", DownloadRoute.DirectSingleFile("18"))
     private fun enqueue(request: DownloadRequest): DownloadLaunch {
         repository.create(request).getOrThrow()

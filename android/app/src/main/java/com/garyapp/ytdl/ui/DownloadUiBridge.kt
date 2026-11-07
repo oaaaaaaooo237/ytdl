@@ -102,6 +102,7 @@ fun historyUiItemsFromRows(
                 .filter(::isHistoryOutputUri).distinct().toList(),
             outputType = row.taskOutputType(),
             retryAvailable = row.status in setOf(
+                HistoryItemEntity.STATUS_COMPLETED,
                 HistoryItemEntity.STATUS_FAILED,
                 HistoryItemEntity.STATUS_CANCELED,
             ) && retryDraftAvailable(row.id),
@@ -212,13 +213,11 @@ fun historyActionLabels(item: HistoryUiItem): List<String> {
         buildList {
             add("打开")
             add("分享")
-            if (item.retryAvailable) {
-                add("再次下载")
-            }
+            add("再次下载")
             add("删除")
         }
     } else {
-        if (item.retryAvailable) listOf("再次下载", "删除") else listOf("删除")
+        listOf("再次下载", "删除")
     }
 }
 

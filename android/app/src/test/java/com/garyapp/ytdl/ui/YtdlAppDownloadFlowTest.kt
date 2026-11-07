@@ -60,13 +60,16 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "zh-rCN")
 class YtdlAppDownloadFlowTest {
     @get:Rule
     val composeRule = createComposeRule()
 
     @Before
     fun setUp() {
+        com.garyapp.ytdl.core.settings.SettingsRepository.fromContext(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        ).setDefaultStorageTarget(com.garyapp.ytdl.core.storage.StorageTarget.AppPrivate)
         DownloadCoordinator.resetForTests()
     }
 
@@ -325,7 +328,9 @@ class YtdlAppDownloadFlowTest {
         }
         composeRule.onNodeWithTag("ytdl-analyze-button").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithTag("ytdl-download-mode").fetchSemanticsNodes().isNotEmpty()
+            runCatching {
+                composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-download-mode"))
+            }.isSuccess
         }
         composeRule.onNodeWithTag("ytdl-download-filename").assertDoesNotExist()
         composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-format-subtitle-toggle"))
@@ -364,7 +369,9 @@ class YtdlAppDownloadFlowTest {
             }
             composeRule.onNodeWithTag("ytdl-analyze-button").performClick()
             composeRule.waitUntil(timeoutMillis = 5_000) {
-                composeRule.onAllNodesWithTag("ytdl-download-mode").fetchSemanticsNodes().isNotEmpty()
+                runCatching {
+                    composeRule.onNodeWithTag("ytdl-screen-download").performScrollToNode(hasTestTag("ytdl-download-mode"))
+                }.isSuccess
             }
             composeRule.onNodeWithTag("ytdl-download-start").performClick()
             composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -438,7 +445,7 @@ class YtdlAppDownloadFlowTest {
             composeRule.waitUntil(timeoutMillis = 5_000) { captured.get() != null }
             assertEquals(DownloadRoute.DirectSingleFile("coast-720"), captured.getAndSet(null).route)
             composeRule.waitUntil(timeoutMillis = 5_000) {
-                composeRule.onAllNodesWithText("识别后可下载").fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithTag("ytdl-download-start").fetchSemanticsNodes().isEmpty()
             }
 
             identify("unavailable")
@@ -451,7 +458,7 @@ class YtdlAppDownloadFlowTest {
             composeRule.waitUntil(timeoutMillis = 5_000) { captured.get() != null }
             assertEquals(FileKind.Video, (captured.getAndSet(null).route as DownloadRoute.HttpFile).metadata.kind)
             composeRule.waitUntil(timeoutMillis = 5_000) {
-                composeRule.onAllNodesWithText("识别后可下载").fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithTag("ytdl-download-start").fetchSemanticsNodes().isEmpty()
             }
 
             identify("private")

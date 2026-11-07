@@ -16,6 +16,9 @@ interface MediaProcessor {
     val supportsSubtitleBurn: Boolean
         get() = false
 
+    fun remuxTransportStream(input: File, output: File, ensureActive: () -> Unit): Result<Unit> =
+        Result.failure(UnsupportedOperationException("无法封装为 MP4。"))
+
     fun mergeVideoAndAudio(request: MediaMergeRequest): Result<MediaProcessingResult>
 
     fun embedSubtitles(

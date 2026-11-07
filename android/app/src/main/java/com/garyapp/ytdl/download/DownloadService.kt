@@ -1,6 +1,7 @@
 package com.garyapp.ytdl.download
 
 import android.app.Service
+import com.garyapp.ytdl.core.files.HttpTransferLimit
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -9,8 +10,9 @@ import android.os.IBinder
 import android.os.Looper
 import com.garyapp.ytdl.core.settings.SettingsRepository
 import com.garyapp.ytdl.core.storage.StorageTarget
+import com.garyapp.ytdl.core.ytdlp.ParserRuntimeBootstrap
 import com.garyapp.ytdl.core.ytdlp.YtdlpBridge
-import com.garyapp.ytdl.media.NativeMuxerMediaProcessor
+import com.garyapp.ytdl.media.TransportStreamMediaProcessor
 import com.garyapp.ytdl.storage.ExportController
 import com.garyapp.ytdl.ui.prepareTemporaryCookiesForDownload
 import java.io.File
@@ -20,10 +22,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 class DownloadService : Service() {
     private lateinit var notificationController: NotificationController
-    private lateinit var retryDraftStore: RetryDraftStore
     internal lateinit var repository: ResumeTaskRepository
     internal lateinit var network: DownloadNetwork
-    internal var engineFactory: (Boolean) -> DownloadEngine = { resume -> YtdlpDownloadEngine(YtdlpBridge(), resume) }
+    internal var engineFactory: (Boolean) -> DownloadEngine = { resume -> YtdlpDownloadEngine(YtdlpBridge(pythonProvider = { ParserRuntimeBootstrap.python(applicationContext) }), resume) }
     internal var exportToTree: (String, List<ExportController.AppPrivateOutput>, DownloadCancellation) -> List<String> = { uri, outputs, token ->
         synchronized(SafExportLock) {
             ExportController.copyToSafTreeWithDocuments(contentResolver, uri, outputs,
@@ -34,6 +35,7 @@ class DownloadService : Service() {
     private val controlExecutor = Executors.newSingleThreadExecutor()
     private val running = ConcurrentHashMap.newKeySet<DownloadLaunch>()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val scheduledDrain = Runnable { drain() }
     @Volatile private var destroyed = false
     private var latestStartId = 0
     private var foregroundStarted = false
@@ -46,7 +48,6 @@ class DownloadService : Service() {
         super.onCreate()
         notificationController = NotificationController(this)
         notificationController.ensureChannel()
-        retryDraftStore = FileRetryDraftStore.fromContext(this)
         repository = ResumeTaskRepository.fromContext(this)
         network = NetworkMonitor(this) {
             running.forEach(DownloadCoordinator::waitForNetwork)
@@ -55,7 +56,11 @@ class DownloadService : Service() {
         stateSubscription = DownloadCoordinator.addActiveListener {
             mainHandler.post { if (!destroyed && foregroundStarted) refreshForeground() }
         }
-        settingsSubscription = SettingsRepository.observeConcurrency(this) { mainHandler.post { drain() } }
+        HttpTransferLimit.update(SettingsRepository.fromContext(this).getSettings().httpLimitKib)
+        settingsSubscription = SettingsRepository.observeConcurrency(this) {
+            HttpTransferLimit.update(SettingsRepository.fromContext(this).getSettings().httpLimitKib)
+            mainHandler.post { drain() }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -96,9 +101,11 @@ class DownloadService : Service() {
     // All claims and shutdown are serialized on the service's main thread.
     private fun drain() {
         if (destroyed || !foregroundStarted || pendingControls != 0) return
+        mainHandler.removeCallbacks(scheduledDrain)
         val limit = SettingsRepository.fromContext(this).getSettings().maxConcurrentDownloads
+        val now = System.currentTimeMillis()
         while (true) {
-            val launch = DownloadCoordinator.claimPendingLaunch(limit) ?: break
+            val launch = DownloadCoordinator.claimPendingLaunch(limit, now) ?: break
             running += launch
             DownloadCoordinator.activateLaunch(launch)
             launchExecutor.execute {
@@ -114,12 +121,30 @@ class DownloadService : Service() {
                 }
             }
         }
+        val next = DownloadCoordinator.nextScheduledLaunch(now)
+        val alarmArmed = next != null && ScheduledDownloadAlarm.arm(this, next)
+        if (next != null) {
+            // Recheck periodically so wall-clock changes don't leave a stale uptime timer.
+            mainHandler.postDelayed(scheduledDrain, (next - System.currentTimeMillis()).coerceIn(0L, 60_000L))
+        } else {
+            ScheduledDownloadAlarm.cancel(this)
+        }
         refreshForeground()
-        if (!DownloadCoordinator.hasWorker() && !DownloadCoordinator.hasPendingLaunch()) {
+        val waitingForAlarm = alarmArmed && !DownloadCoordinator.hasRunnableLaunch(now)
+        if (!DownloadCoordinator.hasWorker() && (!DownloadCoordinator.hasPendingLaunch() || waitingForAlarm)) {
+            mainHandler.removeCallbacks(scheduledDrain)
             foregroundStarted = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(latestStartId)
         }
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        foregroundStarted = false
+        mainHandler.removeCallbacks(scheduledDrain)
+        running.forEach(DownloadCoordinator::stopForLifecycle)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -182,7 +207,9 @@ class DownloadService : Service() {
                 val result = if (request.route is DownloadRoute.HttpFile) {
                     HttpFilePipeline().run(request, launch.outputDirectory, token, onState)
                 } else {
-                    DownloadPipeline(engineFactory(request.resumeTransfers), NativeMuxerMediaProcessor(launch.outputDirectory),
+                    DownloadPipeline(engineFactory(request.resumeTransfers), TransportStreamMediaProcessor(
+                        launch.outputDirectory, File(applicationInfo.nativeLibraryDir, "libcaptainflash_remux.so"),
+                    ),
                         isNetworkAvailable = network::isAvailable).run(request, launch.outputDirectory, token, onState)
                 }
                 state = exportCompletedOutputs(result, request.storageTarget ?: StorageTarget.AppPrivate, token)
@@ -218,8 +245,6 @@ class DownloadService : Service() {
             } else state
             if (finalState.stage in ResumeTaskRepository.TerminalStages && finalState.fileRecoveryAction == null) {
                 val recorded = repository.recordTerminal(finalState)
-                val historyId = recorded.getOrNull()
-                if (historyId != null) updateRetryDraftForHistory(finalState, Result.success(historyId), retryDraftStore)
                 if (recorded.isFailure) {
                     return@finalizeLaunch finalState.copy(stage = DownloadStage.Paused,
                         statusMessage = "历史保存失败，任务文件已保留，请继续重试。")

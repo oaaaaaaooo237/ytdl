@@ -189,12 +189,36 @@ class DownloadPipeline(
             fun output(file: File, kind: DownloadOutputKind = DownloadOutputKind.Media) = DownloadOutputFile(
                 kind, file.absolutePath, file.length(), appPrivateRoot.absolutePath,
             )
+            fun publishSingleStream(downloaded: DownloadResult): File {
+                val raw = downloaded.requireExistingFile("下载输出")
+                if (!raw.extension.equals("mp4", ignoreCase = true) || !raw.hasTransportStreamPackets()) {
+                    return File(downloaded.toTitledOutputFile(
+                        DownloadOutputKind.Media, "下载输出", request.title, appPrivateRoot, ::ensureActive,
+                    ).path)
+                }
+                transition(DownloadStage.Merging)
+                val directory = ControlledDirectory(requireNotNull(raw.parentFile))
+                val baseName = mediaFileBaseName(request.title)
+                val titled = directory.child(directory.root, "$baseName.mp4")
+                val target = if (titled == raw) directory.child(directory.root, "$baseName-MP4.mp4") else titled
+                val temporary = directory.child(directory.root, ".remux.tmp")
+                if (temporary.exists()) check(temporary.isFile && temporary.delete())
+                try {
+                    mediaProcessor.remuxTransportStream(raw, temporary, ::ensureActive).getOrThrow()
+                    FileOutputStream(temporary, true).use { it.fd.sync() }
+                    ensureActive()
+                    check(!target.exists() || target.isFile)
+                    check(temporary.renameTo(target)) { "无法保存 MP4 文件。" }
+                    return target
+                } finally {
+                    if (temporary.exists()) temporary.delete()
+                }
+            }
+
             fun stream(formatId: String, role: DownloadFormatRole, merge: Boolean): File {
                 checkpoint.file(role.pythonValue)?.let { existing ->
                     if (merge) return existing
-                    val titled = DownloadResult(existing.path, existing.length(), request.title, formatId, role)
-                        .toTitledOutputFile(DownloadOutputKind.Media, "下载输出", request.title, appPrivateRoot, ::ensureActive)
-                    val file = File(titled.path)
+                    val file = publishSingleStream(DownloadResult(existing.path, existing.length(), request.title, formatId, role))
                     checkpoint.record(role.pythonValue, file)
                     save()
                     return file
@@ -213,8 +237,7 @@ class DownloadPipeline(
                 save()
                 if (merge) return raw
                 // Keep the recorded raw path until the titled copy is checkpointed.
-                val titled = downloaded.toTitledOutputFile(DownloadOutputKind.Media, "下载输出", request.title, appPrivateRoot, ::ensureActive)
-                val file = File(titled.path)
+                val file = publishSingleStream(downloaded)
                 checkpoint.record(role.pythonValue, file)
                 save()
                 return file
@@ -287,7 +310,8 @@ class DownloadPipeline(
                 exc.category in setOf(AnalysisErrorCategory.Permission, AnalysisErrorCategory.Unsupported, AnalysisErrorCategory.Drm)
             val requestedReason = cancellation.stopReason.takeUnless { it == DownloadStopReason.NetworkUnavailable && permanentSiteError }
             val reason = requestedReason ?: if (
-                exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Network && !isNetworkAvailable()
+                exc is YtdlpDownloadException &&
+                exc.category in setOf(AnalysisErrorCategory.Network, AnalysisErrorCategory.Unknown) && !isNetworkAvailable()
             ) DownloadStopReason.NetworkUnavailable else null
             when {
                 reason == DownloadStopReason.UserCancel -> {
@@ -310,7 +334,7 @@ class DownloadPipeline(
                 }
                 else -> {
                     taskDirectory?.let { cleanupUntrackedTaskFiles(it, finalOutputs) }
-                    val message = subtitleLanguage?.let(DownloadFailureMessages::missingSubtitle)
+                    val message = subtitleLanguage?.let { DownloadFailureMessages.missingSubtitle(it, (exc as? YtdlpDownloadException)?.safeMessage) }
                         ?: if (exc is YtdlpDownloadException && exc.category == AnalysisErrorCategory.Canceled)
                             DownloadFailureMessages.processing() else DownloadFailureMessages.fromException(exc)
                     emit(state.failed(message, finalOutputs.toList()))
@@ -593,3 +617,10 @@ private val WindowsReservedFileNames = buildSet {
 }
 
 private class DownloadPipelineStoppedException : RuntimeException()
+
+private fun File.hasTransportStreamPackets(): Boolean = inputStream().buffered().use { input ->
+    (0 until 4).all { packet ->
+        if (packet > 0 && input.skip(187) != 187L) false
+        else input.read() == 0x47
+    }
+}

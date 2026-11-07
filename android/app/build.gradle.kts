@@ -1,7 +1,36 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.chaquo.python")
+}
+
+val supportedApkAbis = listOf("arm64-v8a", "x86_64")
+val requestedApkAbi = providers.gradleProperty("apkAbi").orNull
+require(requestedApkAbi == null || requestedApkAbi in supportedApkAbis) {
+    "apkAbi must be arm64-v8a or x86_64."
+}
+
+val torrentEngineAar = providers.gradleProperty("torrentEngineAar").orNull?.let { file(it) }
+require(torrentEngineAar == null || torrentEngineAar.isFile) {
+    "torrentEngineAar must point to the verified jlibtorrent Android AAR."
+}
+
+if (torrentEngineAar != null) {
+    val digest = MessageDigest.getInstance("SHA-256")
+    torrentEngineAar.inputStream().buffered().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            digest.update(buffer, 0, count)
+        }
+    }
+    val checksum = digest.digest().joinToString("") { "%02x".format(it) }
+    require(checksum == "9f14e44e27389ae1fbefa9f7e2ef6853b57387aa829cde4d5170722b8ae8382e") {
+        "torrentEngineAar does not match the pinned jlibtorrent Android 2.0.15.3 checksum."
+    }
 }
 
 android {
@@ -15,27 +44,50 @@ android {
 
     defaultConfig {
         applicationId = "com.garyapp.ytdl"
-        minSdk = 24
+        minSdk = if (torrentEngineAar == null) 24 else 26
+        buildConfigField("boolean", "TORRENT_ENABLED", (torrentEngineAar != null).toString())
+        manifestPlaceholders["torrentEnabled"] = (torrentEngineAar != null).toString()
+        manifestPlaceholders["appDisplayName"] = if (torrentEngineAar == null) "CaptainFlash" else "CaptainFlash Torrent"
         targetSdk = 37
-        versionCode = 12
-        versionName = "1.1.0"
+        versionCode = 18
+        versionName = "1.11.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += requestedApkAbi?.let { listOf(it) } ?: supportedApkAbis
+        }
+    }
+
+    sourceSets["main"].kotlin.directories.add(if (torrentEngineAar == null) "src/standard/java" else "src/torrent/java")
+    if (torrentEngineAar != null) sourceSets["test"].kotlin.directories.add("src/torrentTest/java")
+
+    packaging.jniLibs.useLegacyPackaging = true
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        if (torrentEngineAar != null) {
+            unitTests.all {
+                // These API 24 cases exercise the standard APK. Torrent requires API 26.
+                it.filter.excludeTestsMatching("com.garyapp.ytdl.download.HistoryFileDeletionTest.api24DeletesOrdinaryPrivateFileWithoutNio26")
+                it.filter.excludeTestsMatching("com.garyapp.ytdl.ui.CookiesDocumentPickerTest.olderAndroidUsesSystemStorageNavigation")
+            }
+        }
     }
 }
 
 chaquopy {
     defaultConfig {
         version = "3.12"
-        buildPython("D:/garyapp/ytdl/.venv/Scripts/python.exe")
+        buildPython(providers.environmentVariable("YTDL_BUILD_PYTHON").orElse("python3").get())
         pip {
             install("yt-dlp==2026.3.17")
         }
@@ -43,6 +95,7 @@ chaquopy {
 }
 
 dependencies {
+    if (torrentEngineAar != null) implementation(files(torrentEngineAar))
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core:1.17.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")

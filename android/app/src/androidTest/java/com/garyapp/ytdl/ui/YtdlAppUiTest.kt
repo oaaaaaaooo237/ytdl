@@ -42,6 +42,10 @@ class YtdlAppUiTest {
     private fun openAppToDownloadPage() {
         device.pressHome()
         device.executeShellCommand("am start -W -n $packageName/.MainActivity")
+        if (device.wait(Until.hasObject(By.res("ytdl-first-run-guide")), 800)) {
+            val continueButton = device.findObject(By.res("ytdl-first-run-continue"))
+            checkNotNull(continueButton).click()
+        }
         if (findTag("ytdl-screen-download", timeoutMs = 5_000) == null) {
             findTag("ytdl-tab-download", timeoutMs = 5_000)?.click()
         }
@@ -230,7 +234,6 @@ class YtdlAppUiTest {
             tapTag("ytdl-tab-tasks")
             assertTextContains(title, timeoutMs = 5_000)
 
-            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-删除")
             assertTagVisible("ytdl-history-delete-confirm")
             assertTextContains(title, timeoutMs = 1_000)
@@ -239,7 +242,6 @@ class YtdlAppUiTest {
             tapTag("ytdl-history-delete-cancel")
             assertTrue("取消删除后测试记录必须保留", historyContains(id))
 
-            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-删除")
             assertTagVisible("ytdl-history-delete-confirm")
             assertTextContains(title, timeoutMs = 1_000)
@@ -288,11 +290,9 @@ class YtdlAppUiTest {
             assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
             assertTextContains("重新下载", timeoutMs = 1_000)
 
-            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-分享")
             assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
 
-            tapTag("ytdl-history-more-$id")
             tapTag("ytdl-history-action-$id-导出")
             assertTextContains("本地文件不存在或为空", timeoutMs = 2_000)
             saveScreen("12-history-missing-output-recovery.png")

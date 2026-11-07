@@ -797,7 +797,10 @@ def _safe_error_message(exc):
         return "网站本次未返回可下载的视频格式，请稍后重新分析。"
     if category == "canceled":
         return "下载已取消。"
-    if "subtitle" in str(exc).lower() or "subtitles" in str(exc).lower():
+    subtitle_error = re.sub(r"https?://\S+", "", str(exc).lower())
+    if "subtitle" in subtitle_error:
+        if re.search(r"\bhttp error 429\b", subtitle_error):
+            return "字幕下载请求过多，请稍后重试。"
         return "没有可用的匹配字幕文件，请选择分析结果中的语言和格式。"
     if category == "network":
         return "网络连接失败，请稍后重试。"

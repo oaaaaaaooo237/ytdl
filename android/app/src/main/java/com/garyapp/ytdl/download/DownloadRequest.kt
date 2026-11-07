@@ -27,12 +27,14 @@ data class DownloadRequest(
     val pinnedCookiesReference: CookiesReference? = null,
     val cookiesSelectionPinned: Boolean = false,
     val resumeTransfers: Boolean = true,
+    val scheduledAtMillis: Long? = null,
 ) {
     fun cookiesReferenceFor(settings: AppSettings): CookiesReference? {
         if (!usesCookies) return null
         return if (cookiesSelectionPinned) pinnedCookiesReference else settings.cookiesForUrl(url)
     }
     init {
+        require(scheduledAtMillis == null || scheduledAtMillis > 0)
         require(taskId.matches(Regex("^[0-9a-f]{32}$"))) { "任务标识不可用。" }
     }
 

@@ -5,12 +5,15 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 
 internal val CaptainFlashOpenSourceNotices = """
+FFmpeg 8.0.1
+LGPL 2.1 或更新版本 · HLS 无重编码封装
+https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz
+
 yt-dlp
 Unlicense；部分附带代码遵循各自许可证
 https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE
@@ -37,12 +40,17 @@ internal fun OpenSourceNoticesDialog(onDismiss: () -> Unit) {
     AlertDialog(
         modifier = Modifier.testTag("captainflash-open-source-dialog"),
         onDismissRequest = onDismiss,
-        title = { Text("开源声明") },
+        title = { Text(appText("第三方开源许可", "Open-source licenses")) },
         text = {
             SelectionContainer(Modifier.verticalScroll(rememberScrollState())) {
-                Text(CaptainFlashOpenSourceNotices)
+                Text(appText(CaptainFlashOpenSourceNotices,
+                    CaptainFlashOpenSourceNotices
+                        .replace("LGPL 2.1 或更新版本 · HLS 无重编码封装", "LGPL 2.1 or later · HLS remuxing")
+                        .replace("Unlicense；部分附带代码遵循各自许可证", "Unlicense. Some bundled code has separate licenses.")
+                        .replace("AndroidX（Compose、Room、Activity、Core、Lifecycle）", "AndroidX (Compose, Room, Activity, Core, Lifecycle)")
+                        .replace("Kotlin 标准库", "Kotlin standard library")))
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+        confirmButton = { SettingsActionButton(onClick = onDismiss) { Text(appText("关闭", "Close")) } },
     )
 }

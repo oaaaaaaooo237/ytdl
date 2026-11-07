@@ -68,7 +68,7 @@ internal class FileResumeRequestStore(
         return ByteArrayOutputStream().also { buffer ->
             DataOutputStream(buffer).use { output ->
                 output.writeInt(PayloadMagic)
-                output.writeInt(4)
+                output.writeInt(5)
                 output.writeSafeString(request.taskId)
                 output.writeSafeString(request.url)
                 output.writeSafeString(request.title)
@@ -108,6 +108,7 @@ internal class FileResumeRequestStore(
                     output.writeSafeString(it.displayName.orEmpty())
                 }
                 output.writeBoolean(request.resumeTransfers)
+                output.writeLong(request.scheduledAtMillis ?: 0L)
             }
         }.toByteArray().also { require(it.size <= MaxPayloadBytes) { "恢复信息过大。" } }
     }
@@ -117,7 +118,7 @@ internal class FileResumeRequestStore(
         return DataInputStream(ByteArrayInputStream(payload)).use { input ->
             require(input.readInt() == PayloadMagic) { "恢复信息不可用。" }
             val version = input.readInt()
-            require(version in 1..4) { "恢复信息不可用。" }
+            require(version in 1..5) { "恢复信息不可用。" }
             val id = input.readUTF()
             val url = input.readUTF()
             val title = input.readUTF()
@@ -148,10 +149,12 @@ internal class FileResumeRequestStore(
                     ?: error("恢复授权引用不可用。")
             } else null
             val resumeTransfers = version < 4 || input.readBoolean()
+            val scheduledAt = if (version >= 5) input.readLong().takeUnless { it == 0L } else null
             require(input.available() == 0) { "恢复信息不可用。" }
             DownloadRequest(url, title, route, selectedSubtitles = subtitles, formatSummary = summary,
                 taskId = id, usesCookies = usesCookies, storageTarget = target,
-                cookiesSelectionPinned = pinned, pinnedCookiesReference = reference, resumeTransfers = resumeTransfers)
+                cookiesSelectionPinned = pinned, pinnedCookiesReference = reference, resumeTransfers = resumeTransfers,
+                scheduledAtMillis = scheduledAt)
         }
     }
 

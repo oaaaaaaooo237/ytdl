@@ -81,6 +81,72 @@ class HttpFilesTest {
         return File(dir, "body.part").readBytes()
     }
 
+    @Test fun parallelTransferAndFallbackProduceIdenticalBytes() {
+        val payload = ByteArray(8 * 1024 * 1024 + 1) { (it % 251).toByte() }
+        val ranges = mutableListOf<String>()
+        var ignoreRange = false
+        var wrongLength = false
+        server.createContext("/large.bin") { exchange ->
+            exchange.use {
+                val range = exchange.requestHeaders.getFirst("Range")
+                if (range != null) ranges.add(range)
+                exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+                exchange.responseHeaders.add("ETag", tag)
+                val bounds = range?.removePrefix("bytes=")?.split("-")
+                val start = if (ignoreRange) 0 else bounds?.first()?.toInt() ?: 0
+                val end = if (ignoreRange) payload.lastIndex else bounds?.last()?.toIntOrNull() ?: payload.lastIndex
+                val length = end - start + 1
+                val partial = range != null && !ignoreRange
+                if (partial) exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${payload.size}")
+                val declaredLength = if (partial && wrongLength) length + 1L else length.toLong()
+                exchange.sendResponseHeaders(if (partial) 206 else 200, declaredLength)
+                exchange.responseBody.write(payload, start, length)
+            }
+        }
+        url = url.replace("file.bin", "large.bin")
+        val metadata = metadata()
+        assertTrue(download(metadata) is FileDownloadResult.Completed)
+        assertEquals(2, ranges.size)
+        assertArrayEquals(payload, File(dir, "body.part").readBytes())
+        assertTrue(File(dir, "checkpoint").isFile)
+        assertFalse(File(dir, "body.part.segments").exists())
+
+        File(dir, "body.part").delete()
+        File(dir, "checkpoint").delete()
+        ignoreRange = true
+        assertTrue(download(metadata) is FileDownloadResult.Completed)
+        assertArrayEquals(payload, File(dir, "body.part").readBytes())
+        assertFalse(File(dir, "body.part.segments").exists())
+
+        File(dir, "body.part").delete()
+        File(dir, "checkpoint").delete()
+        ignoreRange = false
+        wrongLength = true
+        assertTrue(download(metadata) is FileDownloadResult.Completed)
+        assertArrayEquals(payload, File(dir, "body.part").readBytes())
+        assertFalse(File(dir, "body.part.segments").exists())
+
+        File(dir, "body.part").delete()
+        File(dir, "checkpoint").delete()
+        wrongLength = false
+        val paused = AtomicBoolean()
+        val stopped = try {
+            HttpTransferLimit.update(1024)
+            download(metadata, stop = paused::get) { count, _ ->
+                if (count > (payload.size + 1L) / 2 && count < payload.size) paused.set(true)
+            }
+        } finally {
+            HttpTransferLimit.update(0)
+        }
+        assertTrue(stopped is FileDownloadResult.Stopped)
+        val prefix = (stopped as FileDownloadResult.Stopped).bytes
+        assertTrue(prefix in 1 until payload.size.toLong())
+        assertArrayEquals(payload.copyOf(prefix.toInt()), File(dir, "body.part").readBytes())
+        assertTrue(download(metadata) is FileDownloadResult.Completed)
+        assertEquals("bytes=$prefix-", ranges.last())
+        assertArrayEquals(payload, File(dir, "body.part").readBytes())
+    }
+
     @Test fun filenameUsesExtendedUnicodeAndStripsPaths() {
         disposition = "attachment; filename=ignored.bin; filename*=UTF-8''..%2F%E4%B8%AD%E6%96%87%3A%00.zip"
         assertEquals("中文__.zip", metadata().fileName)

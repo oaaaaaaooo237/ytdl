@@ -149,7 +149,12 @@ class HttpFilePipeline {
                     emit(state)
                 }
                 is FileDownloadResult.RestartRequired -> {
-                    state = state.failed(result.reason).copy(fileRecoveryAction = FileRecoveryAction.ConfirmRestart)
+                    state = state.copy(
+                        stage = DownloadStage.Failed,
+                        errorMessage = result.reason,
+                        statusMessage = "无法安全续传，请确认重新下载。",
+                        fileRecoveryAction = FileRecoveryAction.ConfirmRestart,
+                    )
                     save(); emit(state)
                 }
                 is FileDownloadResult.Failed -> {
