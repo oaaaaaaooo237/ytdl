@@ -190,7 +190,7 @@ class DownloadService : Service() {
             if (destroyed) token.stopForLifecycle()
             try {
                 if (!network.isAvailable() && token.stopReason == null) token.waitForNetwork()
-                val temporaryCookies = if (launch.request.usesCookies && launch.request.route !is DownloadRoute.HttpFile && token.stopReason == null) {
+                val temporaryCookies = if (launch.request.usesCookies && launch.request.route !is DownloadRoute.HttpFile && launch.request.route !is DownloadRoute.Torrent && token.stopReason == null) {
                     prepareTemporaryCookiesForDownload(launch.request.cookiesReferenceFor(SettingsRepository.fromContext(this).getSettings()),
                         this, "resume-${launch.request.taskId}").getOrNull()
                         ?: run {
@@ -204,8 +204,11 @@ class DownloadService : Service() {
                 val onState: (DownloadTaskState) -> Unit = { next ->
                     if (next.stage !in ResumeTaskRepository.TerminalStages) publishForegroundState(next)
                 }
-                val result = if (request.route is DownloadRoute.HttpFile) {
-                    HttpFilePipeline().run(request, launch.outputDirectory, token, onState)
+                val result = if (request.route is DownloadRoute.Torrent) {
+                    TorrentDownloadPipeline(this).run(request, launch.outputDirectory, token, onState)
+                } else if (request.route is DownloadRoute.HttpFile) {
+                    HttpFilePipeline(SettingsRepository.fromContext(this).getSettings().httpMaxConnections)
+                        .run(request, launch.outputDirectory, token, onState)
                 } else {
                     DownloadPipeline(engineFactory(request.resumeTransfers), TransportStreamMediaProcessor(
                         launch.outputDirectory, File(applicationInfo.nativeLibraryDir, "libcaptainflash_remux.so"),

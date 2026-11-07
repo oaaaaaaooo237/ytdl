@@ -15,10 +15,11 @@ internal object ParallelHttpFileDownload {
         target: File,
         shouldStop: () -> Boolean,
         onProgress: (Long, Long?) -> Unit,
+        maxConnections: Int = 4,
     ): FileDownloadResult? {
         val total = metadata.totalBytes?.takeIf { it > 0 } ?: return null
         val etag = metadata.etag ?: return null
-        val ranges = HttpDownloadRanges.plan(total, 4)
+        val ranges = HttpDownloadRanges.plan(total, maxConnections)
         if (ranges.size == 1) return null
 
         val temp = File(target.parentFile, target.name + ".segments")

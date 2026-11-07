@@ -142,5 +142,7 @@ internal data class VerifiedHistoryOutput(val reference: HistoryOutputReference,
 
 internal fun HistoryUiItem.outputReferences(): List<HistoryOutputReference> = buildList {
     if (hasOutput) add(HistoryOutputReference(outputUri, "主文件", outputMimeType))
-    subtitleOutputUris.forEachIndexed { index, uri -> add(HistoryOutputReference(uri, "字幕 ${index + 1}", isSubtitle = true)) }
+    subtitleOutputUris.forEachIndexed { index, uri ->
+        add(HistoryOutputReference(uri, if (isTorrent) "文件 ${index + 2}" else "字幕 ${index + 1}", isSubtitle = !isTorrent))
+    }
 }.distinctBy { it.uri }

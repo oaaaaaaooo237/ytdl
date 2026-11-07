@@ -445,8 +445,11 @@ public class HistoryItemEntity {
 
     private static String safeSubtitleOutputUris(List<DownloadOutputFile> outputs) {
         StringBuilder builder = new StringBuilder();
+        boolean primarySeen = false;
         for (DownloadOutputFile output : outputs) {
-            if (output.getKind() == DownloadOutputKind.Subtitle) {
+            boolean additionalFile = output.getKind() == DownloadOutputKind.File && primarySeen;
+            if (output.getKind() == DownloadOutputKind.File || output.getKind() == DownloadOutputKind.Media) primarySeen = true;
+            if (output.getKind() == DownloadOutputKind.Subtitle || additionalFile) {
                 String uri = preferredOutputUri(output);
                 if (uri != null && !uri.isEmpty()) {
                     if (builder.length() > 0) {

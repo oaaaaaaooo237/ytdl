@@ -7,7 +7,7 @@ import java.security.MessageDigest
 import java.util.Properties
 
 /** Owns only the supplied task workspace. Restart confirmation and workspace deletion belong to the caller. */
-class ResumableFileDownloader {
+class ResumableFileDownloader(private val maxConnections: Int = 4) {
     fun download(metadata: FileMetadata, partialFile: File, checkpointFile: File,
                  shouldStop: () -> Boolean = { false },
                  onProgress: (Long, Long?) -> Unit = { _, _ -> }): FileDownloadResult {
@@ -29,7 +29,7 @@ class ResumableFileDownloader {
         if (shouldStop()) return FileDownloadResult.Stopped(downloaded)
         if (!existing) {
             val parallelResult = try {
-                ParallelHttpFileDownload.tryDownload(metadata, partialFile, shouldStop, onProgress)
+                ParallelHttpFileDownload.tryDownload(metadata, partialFile, shouldStop, onProgress, maxConnections)
             } catch (_: java.io.IOException) {
                 if (shouldStop()) FileDownloadResult.Stopped(0) else null
             }

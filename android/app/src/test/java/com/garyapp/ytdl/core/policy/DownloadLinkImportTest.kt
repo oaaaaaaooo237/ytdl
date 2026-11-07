@@ -5,6 +5,13 @@ import org.junit.Test
 
 class DownloadLinkImportTest {
     @Test
+    fun importsUppercaseMagnetWithEncodedNameAndMultipleTrackersWithoutChangingIt() {
+        val link = "magnet:?xt=urn:btih:27DB34AE33365674C0F982EB7FD0E312B8703E8F&dn=Runner+2026+1080p+V2+%28USA%29&tr=http%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.auctor.tv%3A6969%2Fannounce"
+        assertEquals(link, DownloadLinkImport.read(link.reader()).urls.single())
+        assertEquals(link, sharedDownloadUrl(link))
+    }
+
+    @Test
     fun importsMarkdownLinksAndListsWithoutTurningTheirLabelsIntoAddresses() {
         val batch = DownloadLinkImport.read("""
             # Downloads

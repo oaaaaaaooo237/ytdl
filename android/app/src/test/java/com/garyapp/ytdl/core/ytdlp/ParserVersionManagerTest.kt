@@ -489,9 +489,9 @@ class ParserVersionManagerTest {
         assertTrue(pythonStart >= 0)
         assertTrue(prepare > pythonStart)
         assertTrue(sysPath > prepare)
-        assertFalse(activity.contains("ParserRuntimeBootstrap"))
+        assertTrue(activity.contains("prepareSelectedVersionAsync(applicationContext)"))
         assertFalse(runtimeSource.contains("ytdl_bridge"))
-        assertFalse(runtimeSource.contains("yt_dlp"))
+        assertTrue(runtimeSource.contains("getModule(\"yt_dlp.version\")"))
         assertFalse(source.contains("sys.modules"))
         assertTrue(runtimeSource.contains("initializeOnce {"))
         assertTrue(source.contains("ParserRuntimeState.activeRuntimeWheelPath = runtimeWheel.absolutePath"))
@@ -514,6 +514,8 @@ class ParserVersionManagerTest {
             File(directory, "$filename.sha256").writeText(sha256(bytes))
 
             ParserVersionManager.fromContext(context).select("2026.4.1").getOrThrow()
+            ParserRuntimeBootstrap.restoreSelection(context)
+            assertEquals("2026.4.1", ParserRuntimeState.configuredVersion)
 
             assertTrue(
                 ParserVersionManager.fromContext(context).listVersions()

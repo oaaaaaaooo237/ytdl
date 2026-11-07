@@ -72,6 +72,7 @@ data class HistoryUiItem(
     val outputMimeType: String? = null,
     val taskId: String? = null,
     val subtitleOutputUris: List<String> = emptyList(),
+    val isTorrent: Boolean = false,
     val outputType: TaskOutputType = if (isAudioOnly) TaskOutputType.Audio else legacyTaskOutputType(outputUri, meta),
 ) {
     val hasOutput: Boolean
@@ -97,6 +98,7 @@ fun historyUiItemsFromRows(
             codecBadge = formatCodecBadgeForSummary(row.formatSummary.orEmpty()),
             isAudioOnly = row.taskOutputType() == TaskOutputType.Audio,
             outputMimeType = row.outputMimeType,
+            isTorrent = row.formatSummary == "Torrent",
             taskId = row.taskId?.takeIf { it.isNotBlank() },
             subtitleOutputUris = row.subtitleOutputUris.orEmpty().lineSequence().map(String::trim)
                 .filter(::isHistoryOutputUri).distinct().toList(),

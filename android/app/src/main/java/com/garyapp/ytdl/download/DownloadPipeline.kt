@@ -244,6 +244,7 @@ class DownloadPipeline(
             }
 
             when (val route = request.route) {
+                is DownloadRoute.Torrent -> error("种子请求应由种子管线处理。")
                 is DownloadRoute.HttpFile -> error("文件请求应由文件管线处理。")
                 is DownloadRoute.DirectSingleFile -> finalOutputs += output(stream(route.formatId, DownloadFormatRole.Media, false))
                 is DownloadRoute.VideoOnly -> finalOutputs += output(stream(route.videoFormatId, DownloadFormatRole.Video, false))

@@ -106,8 +106,14 @@ internal fun DownloadBrowser(initialUrl: String, onClose: () -> Unit, onSelect: 
                             UrlPolicy.evaluate(url).rawUrlForExecution?.let(currentOnSelect.value)
                         }
                         webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) =
-                                !UrlPolicy.evaluate(request.url.toString()).isAllowed
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                val link = request.url.toString()
+                                if (com.garyapp.ytdl.core.policy.isMagnetDownloadAddress(link)) {
+                                    currentOnSelect.value(link)
+                                    return true
+                                }
+                                return !UrlPolicy.evaluate(link).isAllowed
+                            }
 
                             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                                 pageError = false

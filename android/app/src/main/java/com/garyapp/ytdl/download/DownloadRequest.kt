@@ -159,6 +159,9 @@ data class DownloadRequest(
 enum class HttpFileConflictPolicy { AutoRename, Ask }
 
 sealed interface DownloadRoute {
+    data class Torrent(val source: String) : DownloadRoute {
+        init { require(source.isNotBlank() && source.length <= 16_384) }
+    }
     data class HttpFile(
         val metadata: com.garyapp.ytdl.core.files.FileMetadata,
         val fileName: String = metadata.fileName,

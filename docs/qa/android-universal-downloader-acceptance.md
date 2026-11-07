@@ -247,3 +247,22 @@ API37 模拟器上 adb install -r 从标准版 1.11.5 成功更新为 Torrent 1.
 在网页文件链接上用物理鼠标保持按下进行长按，前台弹出“链接操作”，显示对应 qa-one.bin 网址以及“下载”“取消”。点击“下载”后，Android 显示已复制链接，首页自动回填同一地址并呈现普通文件名、保存位置与下载操作。提交后，任务页新记录 qa-one.bin 显示已完成。证据为 artifacts/1.11.6-longpress-menu.png、artifacts/1.11.6-longpress-handoff.png、artifacts/1.11.6-longpress-completed.png。
 
 布局前台检查覆盖默认约411dp手机宽度，以及320dp窄屏/130%系统字体、约704dp展开宽度/130%字体。两个第二行按钮始终等宽同高，窄屏完整换行，展开时随可用宽度分配。另在应用中切换深色检查地址区和按钮。证据为 artifacts/1.11.6-layout-default.png、artifacts/1.11.6-narrow-320dp-font130.png、artifacts/1.11.6-wide-704dp-font130.png、artifacts/1.11.6-layout-dark.png。测试后恢复1080x2400物理尺寸、系统字体1.0与原“跟随系统”主题。上述为模拟器测试，不代表vivo真机实际折叠切换验收。
+
+### 1.11.7（19）问题修复与后台验证
+
+用户报告解析器更新后冷启动显示/使用内置版本，以及 Torrent 任务仅显示于独立进度弹窗，退出弹窗后无法在任务页找到。
+
+- 解析器启动恢复已保存的版本选择，已下载版本在后台异步初始化，实际版本从 yt_dlp.version 读取。更新检查使用启动配置版本。选择写入改为检查同步提交结果。已有版本目录和 selected_version=2026.10.26 均已确认保存。
+- Torrent 新增持久化 DownloadRoute.Torrent，接入 DownloadCoordinator、DownloadService、Room、恢复/重试载荷、任务历史、通知、暂停/继续/取消和成品导出。删除独立 TorrentDownloadEntry 进度对话框及 TorrentTransferService。新版首页沿用结果区和保存位置，提交后转入统一任务页。旧已保存待恢复记录与成品通过受控路径迁移。
+- 修正 Torrent 重试载荷字符串读写不一致，增加多文件成品历史及文件引用回归，附属文件不再误标为字幕。
+- 新增普通文件单任务连接上限设置，1/2/4/8/16 可选，默认4，后续新任务使用该上限。TXT、Markdown、分享入口支持带多个 tracker 的磁力地址。
+- 后台设备回归 ParserRestartDeviceTest 两次冷进程均通过，确认实际导入已保存的2026.10.26，管理器重建后选择仍一致。
+- 后台设备回归 TorrentPipelineDeviceTest 通过，使用本地HTTP web seed验证停止任务恢复后原生传输完成，输出字节与8192字节源数据完全一致。首次测试夹具因客户端提前断开而抛出Broken pipe，夹具容错修正后重跑通过。
+- 用户提供的 Runner 磁力链接已在本机原生库后台探测，45秒未获取元数据。此观察不足以判定链接无效，也不能作为该链接下载成功的证明。
+- 用户明确要求继续后台工作，前台稍后再测。用户再次明确选择后台验证后，未再操作应用界面或改变桌面焦点。前台的页面切换、真实样本入队、后台下载、重启与统一界面验收仍待用户允许后进行。后台仪器结果不替代真实GUI验收。
+
+1.11.7 最终后台回归补充。Torrent 版650项、标准版649项JVM测试均通过，失败/错误/跳过均为0。新增Robolectric Compose用例确认磁力分析呈现常规下载结果，点击统一开始按钮交给共享downloadStarter，并切到任务页；这是后台界面绑定测试，不是真实前台验收。
+
+ParserRestartDeviceTest 与加强后的 TorrentPipelineDeviceTest 合并重跑通过（2 tests，7.762秒）。加强用例使用2 MiB、多个16 KiB分片的本地Web seed，在收到部分数据后发出暂停，确认持久化暂停状态及非零进度，恢复后成品逐字节一致。解析器检查确认冷进程实际加载2026.10.26且选择不变。
+
+四个1.11.7候选包已构建，版本19、包名com.garyapp.ytdl、各自单一arm64-v8a或x86_64架构、原测试证书、SHA-256、16 KiB ZIP和42个原生ELF加载段对齐均核验通过。校验清单位于artifacts/abi-apks/SHA256SUMS-1.11.7-qa.txt。界面与真实任务生命周期的前台验收按用户要求等待后续允许，未标记整体完成。

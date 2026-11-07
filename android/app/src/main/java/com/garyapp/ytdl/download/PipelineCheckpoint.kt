@@ -47,7 +47,7 @@ internal class PipelineCheckpoint private constructor(
 
     fun record(role: String, file: File) = protect {
         ControlledDirectory(directory).checkSafe(file)
-        check(file.path.startsWith(directory.path + File.separator) && file.isFile && (file.length() > 0 || role == "file" && request.route is DownloadRoute.HttpFile &&
+        check(file.path.startsWith(directory.path + File.separator) && file.isFile && (file.length() > 0 || request.route is DownloadRoute.Torrent || role == "file" && request.route is DownloadRoute.HttpFile &&
             request.route.metadata.kind == com.garyapp.ytdl.core.files.FileKind.Other))
         val entry = CompletedTaskFile(role, identities.getValue(role), file.relativeTo(directory).invariantSeparatorsPath, file.length())
         completed.removeAll { it.role == role }
@@ -84,7 +84,7 @@ internal class PipelineCheckpoint private constructor(
             check(checkpoint.completedFiles.map { it.role }.distinct().size == checkpoint.completedFiles.size)
             checkpoint.completedFiles.forEach {
                 check(allowed[it.role] == it.formatId)
-                if (it.sizeBytes == 0L) check(it.role == "file" && request.route is DownloadRoute.HttpFile &&
+                if (it.sizeBytes == 0L) check(request.route is DownloadRoute.Torrent || it.role == "file" && request.route is DownloadRoute.HttpFile &&
                     request.route.metadata.kind == com.garyapp.ytdl.core.files.FileKind.Other)
             }
             check(checkpoint.fileRecoveryAction == null || request.route is DownloadRoute.HttpFile)
@@ -116,6 +116,8 @@ internal class PipelineCheckpoint private constructor(
 
         private fun identities(request: DownloadRequest): Map<String, String> = buildMap {
             when (val route = request.route) {
+                is DownloadRoute.Torrent -> put("torrent", java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(route.source.toByteArray()).joinToString("") { "%02x".format(it) })
                 is DownloadRoute.HttpFile -> put("file", httpFileIdentity(route))
                 is DownloadRoute.DirectSingleFile -> put("media", route.formatId)
                 is DownloadRoute.VideoOnly -> put("video", route.videoFormatId)

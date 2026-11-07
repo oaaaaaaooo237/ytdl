@@ -85,6 +85,7 @@ internal class FileResumeRequestStore(
                     }
                 }
                 when (val route = request.route) {
+                    is DownloadRoute.Torrent -> { output.writeInt(6); output.writeSafeString(route.source) }
                     is DownloadRoute.HttpFile -> { output.writeInt(5); output.writeHttpFileRoute(route) }
                     is DownloadRoute.DirectSingleFile -> { output.writeInt(1); output.writeSafeString(route.formatId) }
                     is DownloadRoute.VideoOnly -> { output.writeInt(2); output.writeSafeString(route.videoFormatId) }
@@ -131,6 +132,7 @@ internal class FileResumeRequestStore(
                 else -> error("恢复保存位置不可用。")
             }
             val route = when (input.readInt()) {
+                6 -> DownloadRoute.Torrent(input.readUTF())
                 1 -> DownloadRoute.DirectSingleFile(input.readUTF())
                 2 -> DownloadRoute.VideoOnly(input.readUTF())
                 3 -> DownloadRoute.AudioOnly(input.readUTF())

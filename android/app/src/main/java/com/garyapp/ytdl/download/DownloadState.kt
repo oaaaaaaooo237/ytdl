@@ -106,6 +106,16 @@ data class DownloadTaskState(
         request: DownloadRequest,
         outputs: List<DownloadOutputFile>,
     ) {
+        if (request.route is DownloadRoute.Torrent) {
+            require(request.selectedSubtitles.isEmpty() && outputs.isNotEmpty()) { "种子文件尚未下载完成。" }
+            outputs.forEach { output ->
+                val file = File(output.path)
+                require(output.kind == DownloadOutputKind.File && file.isFile && output.bytesWritten >= 0 && file.length() == output.bytesWritten) {
+                    "种子输出不存在或长度不正确。"
+                }
+            }
+            return
+        }
         if (request.route is DownloadRoute.HttpFile) {
             val expectedKind = if (request.route.metadata.kind == com.garyapp.ytdl.core.files.FileKind.Other)
                 DownloadOutputKind.File else DownloadOutputKind.Media

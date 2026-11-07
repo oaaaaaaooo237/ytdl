@@ -64,6 +64,7 @@ class SettingsRepository(
             .putString(KeyThemeMode, settings.themeModeId)
             .putString(KeyColorPreset, settings.colorPresetId)
             .putInt("http_limit_kib", settings.httpLimitKib)
+            .putInt("http_max_connections", settings.httpMaxConnections)
             .putInt(KeyMaxConcurrentDownloads, settings.maxConcurrentDownloads)
             .putInt("max_waiting_downloads", settings.maxWaitingDownloads ?: -1)
             .putBoolean("jump_to_download_task", settings.jumpToDownloadTask)
@@ -91,6 +92,7 @@ class SettingsRepository(
         colorPresetId = AppearanceSettings.normalizeColorPresetId(colorPresetId),
         maxWaitingDownloads = maxWaitingDownloads?.takeIf { it >= 0 }?.coerceAtMost(50) ?: 5,
         httpLimitKib = httpLimitKib.coerceIn(0, 50_000),
+        httpMaxConnections = httpMaxConnections.coerceIn(1, 16),
         maxConcurrentDownloads = maxConcurrentDownloads.takeIf { it in 1..5 } ?: AppSettings.DefaultMaxConcurrentDownloads,
     )
 
@@ -143,6 +145,7 @@ class SettingsRepository(
                     resumeDownloads = saved["resume_downloads"] as? Boolean ?: true,
                     downloadDetectedSubtitles = saved["download_detected_subtitles"] as? Boolean ?: false,
                     httpLimitKib = saved["http_limit_kib"] as? Int ?: 0,
+                    httpMaxConnections = saved["http_max_connections"] as? Int ?: 4,
                     maxConcurrentDownloads = saved[KeyMaxConcurrentDownloads] as? Int ?: AppSettings.DefaultMaxConcurrentDownloads,
                     fileConflictPolicy = HttpFileConflictPolicy.entries.firstOrNull { it.name == saved[KeyFileConflictPolicy] }
                         ?: HttpFileConflictPolicy.AutoRename,

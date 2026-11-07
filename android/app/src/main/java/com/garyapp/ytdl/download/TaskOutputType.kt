@@ -15,6 +15,7 @@ internal fun taskOutputTypeFromStored(value: String?): TaskOutputType? =
     TaskOutputType.entries.firstOrNull { it.name == value }
 
 internal fun DownloadRequest.outputType(): TaskOutputType = when (val selectedRoute = route) {
+    is DownloadRoute.Torrent -> TaskOutputType.Other
     is DownloadRoute.HttpFile -> selectedRoute.metadata.kind
     is DownloadRoute.AudioOnly -> TaskOutputType.Audio
     is DownloadRoute.DirectSingleFile, is DownloadRoute.VideoOnly, is DownloadRoute.MergeRequired -> TaskOutputType.Video

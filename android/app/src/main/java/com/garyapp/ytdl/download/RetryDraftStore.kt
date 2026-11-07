@@ -180,6 +180,7 @@ internal class FileRetryDraftStore(
             output.writeInt(PayloadVersion)
             output.writeString(draft.url)
             when (val route = draft.route) {
+                is DownloadRoute.Torrent -> { output.writeInt(6); output.writeString(route.source) }
                 is DownloadRoute.HttpFile -> { output.writeInt(5); output.writeHttpFileRoute(route) }
                 is DownloadRoute.DirectSingleFile -> {
                     output.writeInt(RouteDirect)
@@ -222,6 +223,7 @@ internal class FileRetryDraftStore(
             }
             val url = input.readString()
             val route = when (input.readInt()) {
+                6 -> DownloadRoute.Torrent(input.readString())
                 RouteDirect -> DownloadRoute.DirectSingleFile(input.readString())
                 RouteVideoOnly -> DownloadRoute.VideoOnly(input.readString())
                 RouteAudioOnly -> DownloadRoute.AudioOnly(input.readString())

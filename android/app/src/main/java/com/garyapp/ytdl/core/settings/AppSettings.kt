@@ -11,6 +11,7 @@ data class AppSettings(
     val colorPresetId: String = AppearanceSettings.ColorPresetMorandi,
     val siteCookies: Map<String, SiteCookies> = emptyMap(),
     val httpLimitKib: Int = 0,
+    val httpMaxConnections: Int = 4,
     val maxConcurrentDownloads: Int = DefaultMaxConcurrentDownloads,
     val fileConflictPolicy: HttpFileConflictPolicy = HttpFileConflictPolicy.AutoRename,
     val notifyDownloadCompleted: Boolean = true,

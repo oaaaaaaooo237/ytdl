@@ -93,6 +93,8 @@ interface ParserVersionControl {
 }
 
 object ParserRuntimeState {
+    var configuredVersion: String by mutableStateOf(YtdlpBridge.PINNED_YTDLP_VERSION)
+        internal set
     var activeVersion: String by mutableStateOf(YtdlpBridge.PINNED_YTDLP_VERSION)
         internal set
 
@@ -102,6 +104,19 @@ object ParserRuntimeState {
 }
 
 object ParserRuntimeBootstrap {
+    fun restoreSelection(context: Context) {
+        if (initialized) return
+        ParserRuntimeState.configuredVersion = context.applicationContext
+            .getSharedPreferences("parser-version-selection", Context.MODE_PRIVATE)
+            .getString("selected_version", null) ?: YtdlpBridge.PINNED_YTDLP_VERSION
+    }
+
+    fun prepareSelectedVersionAsync(context: Context) {
+        restoreSelection(context)
+        if (ParserRuntimeState.configuredVersion == YtdlpBridge.PINNED_YTDLP_VERSION) return
+        Thread({ runCatching { python(context.applicationContext) } }, "ytdl-parser-startup").apply { isDaemon = true }.start()
+    }
+
     fun python(context: Context): Python {
         initializeOnce {
             if (!Python.isStarted()) {
@@ -122,14 +137,13 @@ object ParserRuntimeBootstrap {
                     parserVersionManager.select(YtdlpBridge.PINNED_YTDLP_VERSION)
                 }
             }
-            ParserRuntimeState.activeVersion = parserVersionManager.listVersions()
-                .first { it.isSelected }
-                .version
+            ParserRuntimeState.activeVersion = Python.getInstance().getModule("yt_dlp.version")["__version__"].toString()
+            ParserRuntimeState.configuredVersion = ParserRuntimeState.activeVersion
         }
         return Python.getInstance()
     }
 
-    private var initialized = false
+    @Volatile private var initialized = false
 
     @Synchronized
     fun initializeOnce(initializer: () -> Unit) {
@@ -495,7 +509,9 @@ class ParserVersionManager(
                         get() = preferences.getString("selected_version", null)
                             ?: YtdlpBridge.PINNED_YTDLP_VERSION
                         set(value) {
-                            preferences.edit().putString("selected_version", value).apply()
+                            check(preferences.edit().putString("selected_version", value).commit()) {
+                                "无法保存解析器版本选择。"
+                            }
                         }
                 },
             )

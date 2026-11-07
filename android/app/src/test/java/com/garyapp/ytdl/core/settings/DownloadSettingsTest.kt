@@ -12,6 +12,16 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class DownloadSettingsTest {
+    @Test fun fileConnectionLimitPersistsAndIsBounded() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = SettingsRepository.fromContext(context)
+        assertEquals(4, repository.getSettings().httpMaxConnections)
+        repository.update { it.copy(httpMaxConnections = 16) }
+        assertEquals(16, SettingsRepository.fromContext(context).getSettings().httpMaxConnections)
+        assertEquals(1, repository.update { it.copy(httpMaxConnections = 0) }.httpMaxConnections)
+        assertEquals(16, repository.update { it.copy(httpMaxConnections = 100) }.httpMaxConnections)
+    }
+
     @Test fun legacySettingsKeepAppearanceAndGainDownloadDefaults() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.getSharedPreferences("ytdl-settings", Context.MODE_PRIVATE).edit().putString("theme_mode", "dark").commit()

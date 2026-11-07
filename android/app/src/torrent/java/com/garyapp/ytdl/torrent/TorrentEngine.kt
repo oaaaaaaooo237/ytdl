@@ -20,12 +20,14 @@ internal class TorrentEngine : Closeable {
     private var closed = false
 
     @Synchronized
-    fun loadMagnet(magnet: String, workspace: File): ByteArray {
+    fun loadMagnet(magnet: String, workspace: File, shouldStop: () -> Boolean = { false }): ByteArray {
         check(!closed)
         require(isTorrentMagnet(magnet))
-        return requireNotNull(session.fetchMagnet(magnet, 60, workspace)) {
-            "未能取得种子信息。"
+        repeat(12) {
+            check(!shouldStop()) { "种子分析已停止。" }
+            session.fetchMagnet(magnet, 5, workspace)?.let { return it }
         }
+        error("未能取得种子信息。")
     }
 
     @Synchronized
@@ -91,18 +93,4 @@ internal class TorrentEngine : Closeable {
     }
 }
 
-internal fun isTorrentMagnet(link: String): Boolean {
-    if (!link.startsWith("magnet:?") || link.length > 16_384) return false
-    return link.substringAfter('?').split('&').any { parameter ->
-        if (parameter.substringBefore('=') != "xt") return@any false
-        val topic = runCatching {
-            java.net.URLDecoder.decode(parameter.substringAfter('=', ""), "UTF-8")
-        }.getOrNull() ?: return@any false
-        TorrentExactTopic.matches(topic)
-    }
-}
-
-private val TorrentExactTopic = Regex(
-    "urn:(?:btih:(?:[0-9a-f]{40}|[a-z2-7]{32})|btmh:1220[0-9a-f]{64})",
-    RegexOption.IGNORE_CASE,
-)
+internal fun isTorrentMagnet(link: String): Boolean = com.garyapp.ytdl.core.policy.isMagnetDownloadAddress(link)

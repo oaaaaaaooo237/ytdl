@@ -9,7 +9,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 /** File transport shares task ownership and recovery with media, without invoking yt-dlp. */
-class HttpFilePipeline {
+class HttpFilePipeline(private val maxConnections: Int = 4) {
     fun run(
         request: DownloadRequest,
         outputDirectory: File,
@@ -94,7 +94,7 @@ class HttpFilePipeline {
             val result = pending?.let {
                 check(partial.isFile && partial.length() == it.sizeBytes)
                 FileDownloadResult.Completed(it.sizeBytes)
-            } ?: ResumableFileDownloader().download(route.metadata, partial, transferCheckpoint,
+            } ?: ResumableFileDownloader(maxConnections).download(route.metadata, partial, transferCheckpoint,
                 shouldStop = { cancellation.stopReason != null },
                 onProgress = { downloaded, total ->
                     val seconds = (System.nanoTime() - started) / 1_000_000_000.0

@@ -4,6 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class HttpDownloadRangesTest {
+    @Test fun connectionLimitControlsActualPartCount() {
+        val total = 64L * 1024 * 1024
+        for (limit in listOf(1, 2, 4, 8, 16)) assertEquals(limit, HttpDownloadRanges.plan(total, limit).size)
+        assertEquals(2, HttpDownloadRanges.plan(8L * 1024 * 1024, 16).size)
+    }
+
     @Test
     fun smallFilesUseOneConnection() {
         assertEquals(listOf(0L..1023L), HttpDownloadRanges.plan(1024, 16))

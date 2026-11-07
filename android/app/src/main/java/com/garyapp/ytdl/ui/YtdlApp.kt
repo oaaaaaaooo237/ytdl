@@ -221,7 +221,7 @@ private const val AnalysisCompleteRuntimeMessage = "分析完成，可以开始�
 private const val ThumbnailDecodeMaxBytes = 2 * 1024 * 1024
 private val ProcessParserUpdateCoordinator = ParserUpdateCoordinator(
     checker = ParserUpdateChecker.forCurrentVersion(
-        currentVersionProvider = { ParserRuntimeState.activeVersion },
+        currentVersionProvider = { ParserRuntimeState.configuredVersion },
     ),
     executor = Executor { command ->
         Thread(command, "ytdl-parser-update").apply { isDaemon = true }.start()
@@ -630,6 +630,8 @@ internal data class RuntimeDownloadState(
     val url: String = "",
     val analysis: VideoAnalysis? = null,
     val fileSelection: FileDownloadSelection? = null,
+    val torrentSource: String? = null,
+    val torrentTitle: String = "",
     val selectedSubtitles: List<SubtitleInfo> = emptyList(),
     val isStarting: Boolean = false,
     val activeRequest: DownloadRequest? = null,
@@ -1254,6 +1256,11 @@ internal fun YtdlApp(
         onTorrentFound: ((String) -> Unit)? = null,
     ) {
         val url = requestedUrl.trim()
+        if (com.garyapp.ytdl.core.policy.isMagnetDownloadAddress(url)) {
+            if (onTorrentFound != null) onTorrentFound(url)
+            else runtimeState = runtimeState.copy(userMessage = appLanguage.pick("请使用 Torrent 版分析磁力链接。", "Use CaptainFlash Torrent for magnet links."))
+            return
+        }
         val policy = UrlPolicy.evaluate(url)
         if (!policy.isAllowed) {
             val error = if (url.isBlank()) "请先输入下载链接。" else "请输入有效的 HTTP 或 HTTPS 下载链接。"
@@ -1401,14 +1408,18 @@ internal fun YtdlApp(
         runtimeState = runtimeState.copy(isStarting = true, userMessage = DefaultRuntimeMessage)
         Thread {
             val url = captured.url.trim()
-            val selectedCookies = if (fileSelection == null) settings.cookiesForUrl(url) else null
+            val selectedCookies = if (fileSelection == null && captured.torrentSource == null) settings.cookiesForUrl(url) else null
             val cookiesResult = prepareTemporaryCookiesForDownload(
                 settingsReference = selectedCookies,
                 context = context.applicationContext,
                 taskId = "download-${System.nanoTime()}",
             )
             val temporaryCookies = cookiesResult.getOrNull()
-            val requestResult = if (fileSelection != null) {
+            val requestResult = if (captured.torrentSource != null) {
+                Result.success(DownloadRequest(url = captured.torrentSource, title = captured.torrentTitle,
+                    route = DownloadRoute.Torrent(captured.torrentSource), formatSummary = "Torrent",
+                    usesCookies = false, storageTarget = target))
+            } else if (fileSelection != null) {
                 runCatching { requireNotNull(fileSelection.request(target)) }
             } else {
                 cookiesResult.mapCatching {
@@ -1440,7 +1451,7 @@ internal fun YtdlApp(
                     startResult?.isSuccess == true -> {
                         scheduledAtMillis = null
                         val accepted = startResult.getOrThrow()
-                        if (settings.jumpToDownloadTask) {
+                        if (settings.jumpToDownloadTask || captured.torrentSource != null) {
                             focusedDownloadTaskId = accepted.request?.taskId ?: requestResult.getOrNull()?.taskId
                             historyQuery = ""
                             taskStatusNames = arrayListOf()
@@ -1464,6 +1475,11 @@ internal fun YtdlApp(
 
     fun redownload(draft: RetryDownloadDraft) {
         val route = draft.route
+        if (route is DownloadRoute.Torrent) {
+            selectRoute("download")
+            runtimeState = runtimeState.withNewUrl(route.source).copy(torrentSource = route.source, torrentTitle = "Torrent")
+            return
+        }
         if (route !is DownloadRoute.HttpFile) {
             selectRoute("download")
             analyzeUrl(requestedUrl = draft.url, retryDraft = draft)
@@ -1723,7 +1739,16 @@ internal fun YtdlApp(
 
     val themeConfig = themeConfigForSettings(appSettings)
     YtdlTheme(config = themeConfig, appLanguage = appLanguage) {
-        val openTorrentDownload = rememberTorrentDownloadAction()
+        val openTorrentDownload: ((String) -> Unit)? = if (BuildConfig.TORRENT_ENABLED) { source ->
+            val uri = Uri.parse(source)
+            val magnetName = source.substringAfter('?', "").split('&').firstOrNull { it.startsWith("dn=") }
+                ?.substringAfter('=')?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }
+            val title = if (uri.scheme == "content") displayNameForUri(context, uri, "Torrent")
+                else if (uri.scheme == "magnet") magnetName?.takeIf { it.isNotBlank() }?.take(240) ?: "Torrent"
+                else runCatching { uri.getQueryParameter("dn") }.getOrNull()?.takeIf { it.isNotBlank() }
+                    ?: uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: "Torrent"
+            runtimeState = runtimeState.withNewUrl(source).copy(torrentSource = source, torrentTitle = title)
+        } else null
         val importLinksPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null || importingLinks) return@rememberLauncherForActivityResult
             if (openTorrentDownload != null && (
@@ -1731,6 +1756,7 @@ internal fun YtdlApp(
                         displayNameForUri(context, uri, "").endsWith(".torrent", ignoreCase = true)
                     )
             ) {
+                runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 openTorrentDownload(uri.toString())
                 return@rememberLauncherForActivityResult
             }
@@ -2455,6 +2481,8 @@ private fun RuntimeDownloadState.withNewUrl(url: String): RuntimeDownloadState =
     url = url,
     analysis = null,
     fileSelection = null,
+    torrentSource = null,
+    torrentTitle = "",
     selectedSubtitles = emptyList(),
     formatSelection = FormatSelection(),
     appliedFormatSelection = FormatSelection(),
@@ -2472,6 +2500,8 @@ private fun RuntimeDownloadState.withAnalysisResult(analysis: VideoAnalysis): Ru
     return copy(
         analysis = analysis,
         fileSelection = null,
+    torrentSource = null,
+    torrentTitle = "",
         selectedSubtitles = emptyList(),
         formatSelection = freshSelection,
         appliedFormatSelection = freshSelection,
@@ -2992,6 +3022,14 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.downloadPageItems(
     val analysis = state.analysis
     val file = state.fileSelection
     when {
+        state.torrentSource != null -> item {
+            IdentificationLabel("Torrent")
+            Text(state.torrentTitle, style = MaterialTheme.typography.titleMedium, color = LocalYtdlAppPalette.current.titleText)
+            Text(appText("任务中查看进度，可暂停、继续和导出文件。", "Track progress, pause, resume, and export files in Tasks."),
+                color = LocalYtdlAppPalette.current.softText)
+            DownloadControl(appText("保存位置", "Save location"), storageTargetSummary(storageTarget, LocalAppLanguage.current),
+                "ytdl-download-storage-target", actionLabel = appText("更改", "Change"), onClick = onSelectStorageTarget)
+        }
         analysis != null -> {
             item {
                 IdentificationLabel(appText("媒体", "Media"))
@@ -3145,7 +3183,7 @@ internal fun canStartDownloadForUiTest(state: RuntimeDownloadState): Boolean = c
 
 private fun canStartDownload(state: RuntimeDownloadState): Boolean =
     !state.isAnalyzing && !state.isStarting &&
-        (state.fileSelection?.route != null || state.analysis != null)
+        (state.fileSelection?.route != null || state.analysis != null || state.torrentSource != null)
 
 internal fun shouldShowRuntimeMessageForUiTest(message: String): Boolean = shouldShowRuntimeMessage(message)
 
@@ -3723,6 +3761,7 @@ private data class QueueStageSpec(
 private fun queueStageSpecs(request: DownloadRequest?): List<QueueStageSpec> {
     if (request == null) return emptyList()
     val mediaStages = when (request.route) {
+        is DownloadRoute.Torrent -> listOf(QueueStageSpec("下载文件", DownloadStage.DownloadingFile))
         is DownloadRoute.HttpFile -> listOf(QueueStageSpec("下载文件", DownloadStage.DownloadingFile))
         is DownloadRoute.DirectSingleFile -> listOf(QueueStageSpec("下载视频", DownloadStage.DownloadingVideo))
         is DownloadRoute.VideoOnly -> listOf(QueueStageSpec("下载视频", DownloadStage.DownloadingVideo))
@@ -4390,6 +4429,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsPageItems(
         }
         "behavior" -> {
             item { BackgroundDownloadSetting() }
+            item {
+                DownloadCountSetting(
+                    appText("单文件最大连接数", "Connections per file"), settings.httpMaxConnections.toString(),
+                    listOf(1, 2, 4, 8, 16).associateWith { it.toString() }, "ytdl-settings-file-connections",
+                    appText("下次下载生效；小文件或服务器限制时自动减少", "Applies to new downloads; fewer connections for small files or server limits"),
+                ) { value -> onSettingsChange { it.copy(httpMaxConnections = requireNotNull(value)) } }
+            }
             item {
                 val unlimited = appText("不限速", "Unlimited")
                 DownloadCountSetting(
@@ -5092,7 +5138,10 @@ private fun HistoryCard(
         titleTag = "ytdl-history-title-${item.id}",
         kind = item.outputType,
         details = listOf(item.meta.split(" · ").map { appMessage(it) }.joinToString(" · "), item.formatBadge, item.codecBadge,
-            item.subtitleOutputUris.takeIf { it.isNotEmpty() }?.let { appText("${it.size} 个独立字幕文件", if (it.size == 1) "1 subtitle file" else "${it.size} subtitle files") }.orEmpty())
+            item.subtitleOutputUris.takeIf { it.isNotEmpty() }?.let {
+                if (item.isTorrent) appText("${it.size + 1} 个文件", "${it.size + 1} files")
+                else appText("${it.size} 个独立字幕文件", if (it.size == 1) "1 subtitle file" else "${it.size} subtitle files")
+            }.orEmpty())
             .filter(String::isNotBlank).joinToString(" · "),
         status = appMessage(when (item.badge) {
             "完成" -> "已完成"

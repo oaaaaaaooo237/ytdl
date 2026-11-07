@@ -54,6 +54,7 @@ private fun DownloadRequest.userVisibleHistoryFormatSummary(): String {
     formatSummary.takeIf { it.isNotBlank() }?.let { return it }
 
     val routeSummary = when (val currentRoute = route) {
+        is DownloadRoute.Torrent -> "Torrent"
         is DownloadRoute.HttpFile -> "文件下载"
         is DownloadRoute.DirectSingleFile -> "格式 ${currentRoute.formatId}"
         is DownloadRoute.VideoOnly -> "仅视频 ${currentRoute.videoFormatId}"

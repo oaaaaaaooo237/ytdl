@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.garyapp.ytdl.core.ytdlp.ParserRuntimeBootstrap.prepareSelectedVersionAsync(applicationContext)
         sharedUrl.value = readSharedUrl(intent)
         configureLightSystemBars()
         setContent {
@@ -28,6 +29,8 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+        Thread({ runCatching { com.garyapp.ytdl.download.restoreLegacyTorrentDownloads(applicationContext) } },
+            "ytdl-torrent-recovery").apply { isDaemon = true }.start()
     }
 
     override fun onNewIntent(intent: Intent) {

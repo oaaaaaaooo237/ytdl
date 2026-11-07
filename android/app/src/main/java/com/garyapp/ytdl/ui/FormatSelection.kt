@@ -230,6 +230,7 @@ internal fun retryFormatSelection(
     draft: RetryDownloadDraft,
 ): FormatSelection {
     val mode = when (draft.route) {
+        is DownloadRoute.Torrent -> error("种子下载无需媒体格式选择。")
         is DownloadRoute.HttpFile -> error("文件下载无需媒体格式选择，请从文件任务继续。")
         is DownloadRoute.MergeRequired -> FormatMode.VideoAndAudio
         is DownloadRoute.AudioOnly -> FormatMode.AudioOnly
@@ -240,6 +241,7 @@ internal fun retryFormatSelection(
     if (!isFormatModeAvailable(analysis, mode)) return defaultFormatSelection(analysis)
 
     val preferredVideoFormatId = when (val route = draft.route) {
+        is DownloadRoute.Torrent -> null
         is DownloadRoute.HttpFile -> null
         is DownloadRoute.DirectSingleFile -> route.formatId
         is DownloadRoute.VideoOnly -> route.videoFormatId
@@ -247,6 +249,7 @@ internal fun retryFormatSelection(
         is DownloadRoute.AudioOnly -> null
     }
     val preferredAudioFormatId = when (val route = draft.route) {
+        is DownloadRoute.Torrent -> null
         is DownloadRoute.HttpFile -> null
         is DownloadRoute.MergeRequired -> route.audioFormatId
         is DownloadRoute.AudioOnly -> route.audioFormatId

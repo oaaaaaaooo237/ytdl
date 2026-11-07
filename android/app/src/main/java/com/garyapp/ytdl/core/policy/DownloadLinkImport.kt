@@ -11,7 +11,7 @@ internal data class DownloadLinkBatch(
 internal object DownloadLinkImport {
     private const val MaxCharacters = 256 * 1024
     private const val MaxLinks = 500
-    private val MarkdownLink = Regex("""\[[^\]]*\]\(<?(https?://[^\s<>]+?)>?(?:\s+"[^"]*")?\)|<(https?://[^<>\s]+)>""")
+    private val MarkdownLink = Regex("""\[[^\]]*\]\(<?((?:https?://|magnet:\?)[^\s<>]+?)>?(?:\s+"[^"]*")?\)|<((?:https?://|magnet:\?)[^<>\s]+)>""")
     private val ListPrefix = Regex("""^(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)""")
 
     fun read(reader: Reader): DownloadLinkBatch {
@@ -30,18 +30,18 @@ internal object DownloadLinkImport {
         text.toString().removePrefix("\uFEFF").lineSequence().forEach { line ->
             if (line.isBlank()) return@forEach
             val trimmed = line.trim()
-            val direct = UrlPolicy.evaluate(trimmed).rawUrlForExecution
+            val direct = downloadAddress(trimmed)
             val links = if (direct != null) listOf(direct) else {
                 val markdown = MarkdownLink.findAll(trimmed)
                     .map { it.groupValues[1].ifEmpty { it.groupValues[2] } }.toList()
                 if (markdown.isNotEmpty()) markdown else {
                     val item = trimmed.replaceFirst(ListPrefix, "").trim().removeSurrounding("<", ">")
-                    listOfNotNull(UrlPolicy.evaluate(item).rawUrlForExecution)
+                    listOfNotNull(downloadAddress(item))
                 }
             }
             if (links.isEmpty() && !trimmed.startsWith("#") && trimmed !in listOf("```", "~~~")) invalid++
             links.forEach { candidate ->
-                val url = UrlPolicy.evaluate(candidate).rawUrlForExecution
+                val url = downloadAddress(candidate)
                 when {
                     url == null -> invalid++
                     !urls.add(url) -> duplicates++
@@ -56,9 +56,25 @@ internal object DownloadLinkImport {
 internal fun sharedDownloadUrl(text: CharSequence?): String? {
     if (text == null || text.length > 16_384) return null
     return text.trim().split(Regex("\\s+")).asSequence()
-        .mapNotNull { UrlPolicy.evaluate(it).rawUrlForExecution }
+        .mapNotNull(::downloadAddress)
         .distinct()
         .take(2)
         .toList()
         .singleOrNull()
 }
+
+internal fun downloadAddress(value: String): String? = value.trim().let { text ->
+    UrlPolicy.evaluate(text).rawUrlForExecution ?: text.takeIf(::isMagnetDownloadAddress)
+}
+
+internal fun isMagnetDownloadAddress(link: String): Boolean {
+    if (!link.startsWith("magnet:?") || link.length > 16_384) return false
+    return link.substringAfter('?').split('&').any { parameter ->
+        if (parameter.substringBefore('=') != "xt") return@any false
+        val topic = runCatching { java.net.URLDecoder.decode(parameter.substringAfter('=', ""), "UTF-8") }
+            .getOrNull() ?: return@any false
+        MagnetExactTopic.matches(topic)
+    }
+}
+
+private val MagnetExactTopic = Regex("urn:(?:btih:(?:[0-9a-f]{40}|[a-z2-7]{32})|btmh:1220[0-9a-f]{64})", RegexOption.IGNORE_CASE)
