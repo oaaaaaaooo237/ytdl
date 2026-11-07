@@ -1115,7 +1115,7 @@ class DownloadGuiBindingTest {
     }
 
     @Test
-    fun readablePrivateHistoryShowsSubtitleInAllThreeFileChoosers() {
+    fun readablePrivateHistoryShowsSubtitleInOpenAndShareChoosers() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val folder = File(context.filesDir, "gui-downloads/history-output-fixture").apply { mkdirs() }
         val main = File(folder, "main.mp4").apply { writeText("test media") }
@@ -1130,7 +1130,7 @@ class DownloadGuiBindingTest {
             composeRule.waitUntil(5_000) {
                 composeRule.onAllNodesWithTag("ytdl-history-action-50-打开").fetchSemanticsNodes().isNotEmpty()
             }
-            listOf("打开", "分享", "导出").forEach { action ->
+            listOf("打开", "分享").forEach { action ->
                 composeRule.onNodeWithTag("ytdl-history-action-50-$action").performClick()
                 composeRule.onNodeWithText("主文件 · main.mp4").assertExists()
                 composeRule.onNodeWithText("字幕 1 · captions.vtt").assertExists()
@@ -1141,6 +1141,32 @@ class DownloadGuiBindingTest {
             subtitle.delete()
             folder.delete()
         }
+    }
+
+    @Test
+    fun completedTaskCopiesOriginalAddressAndShowsSuccess() {
+        val original = "https://example.com/watch?id=original&list=keep"
+        val draft = RetryDownloadDraft(original, DownloadRoute.DirectSingleFile("1080p"))
+        val store = object : com.garyapp.ytdl.download.RetryDraftStore {
+            override fun save(historyId: Long, draft: RetryDownloadDraft) = Result.success(Unit)
+            override fun load(historyId: Long) = Result.success(draft)
+            override fun isAvailable(historyId: Long) = true
+            override fun delete(historyId: Long) = Result.success(true)
+        }
+        val item = HistoryUiItem(60, "原地址测试", "", "完成", "", HistoryItemEntity.STATUS_COMPLETED, 1L)
+        lateinit var hostContext: Context
+        composeRule.setContent {
+            hostContext = LocalContext.current
+            YtdlApp(historyItemsProvider = { listOf(item) }, retryDraftStoreOverride = store)
+        }
+        composeRule.onNodeWithTag("ytdl-tab-tasks").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-tasks").performScrollToNode(hasTestTag("ytdl-history-action-60-复制地址"))
+        composeRule.onNodeWithTag("ytdl-history-action-60-复制地址").performClick()
+        composeRule.waitUntil(5000) { composeRule.onAllNodesWithText("复制成功").fetchSemanticsNodes().isNotEmpty() }
+        val clipboard = hostContext.getSystemService(android.content.ClipboardManager::class.java)
+        composeRule.runOnIdle { assertEquals(original, clipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        composeRule.onNodeWithText("复制成功").assertExists()
+        composeRule.onNodeWithTag("ytdl-history-action-60-导出").assertDoesNotExist()
     }
 
     @Test

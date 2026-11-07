@@ -77,9 +77,11 @@ class TorrentPipelineDeviceTest {
                 }
             }
         }, "torrent-test-web-seed").apply { isDaemon = true; start() }
+        var descriptor: File? = null
         try {
             val source = "$address/fixture.torrent"
             val request = DownloadRequest(source, "本地测试种子", DownloadRoute.Torrent(source), usesCookies = false)
+            descriptor = File(context.filesDir, "torrent-descriptors/${request.taskId}.torrent")
             val pipeline = TorrentDownloadPipeline(context)
             val pauseRequested = AtomicBoolean(false)
             val firstDeadline = System.nanoTime() + 30_000_000_000L
@@ -103,11 +105,19 @@ class TorrentPipelineDeviceTest {
             assertEquals(result.state.errorMessage, DownloadStage.Completed, result.state.stage)
             assertArrayEquals(bytes, File(result.outputs.single().path).readBytes())
             assertEquals(request.taskId, result.state.request?.taskId)
+            val item = com.garyapp.ytdl.ui.HistoryUiItem(1L, "种子", "Torrent", "完成", "",
+                com.garyapp.ytdl.data.HistoryItemEntity.STATUS_COMPLETED, 1L, taskId = request.taskId)
+            val retained = com.garyapp.ytdl.ui.historySourceTarget(item, RetryDownloadDraft.fromRequest(request), context.filesDir)
+                as com.garyapp.ytdl.ui.HistorySourceTarget.TorrentFile
+            assertArrayEquals(seed, retained.file.readBytes())
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".fileprovider", retained.file)
+            context.contentResolver.openInputStream(uri)!!.use { assertArrayEquals(seed, it.readBytes()) }
         } finally {
             running.set(false)
             server.close()
             serving.join(2000)
             root.deleteRecursively()
+            descriptor?.delete()
         }
     }
 }

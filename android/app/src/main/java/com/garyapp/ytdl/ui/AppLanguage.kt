@@ -15,6 +15,7 @@ internal fun appMessage(message: String): String =
     if (LocalAppLanguage.current == AppLanguage.English) englishMessages[message] ?: message else message
 
 private val englishMessages = mapOf(
+    "复制地址" to "Copy download address",
     "预约时间已过，请重新选择。" to "The scheduled time has passed. Choose a new time.",
     "请选择未来的时间。" to "Choose a time in the future.",
     "下载已取消，可重新开始。" to "Download canceled. You can download it again.",

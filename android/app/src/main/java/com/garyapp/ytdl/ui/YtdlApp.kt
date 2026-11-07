@@ -4,6 +4,8 @@ import android.app.Activity
 import android.Manifest
 import com.garyapp.ytdl.core.settings.cookiesForUrl
 import android.content.ClipboardManager
+import android.content.ClipData
+import com.garyapp.ytdl.data.HistoryItemEntity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -808,6 +810,7 @@ internal fun YtdlApp(
     var pendingFileRecovery by remember { mutableStateOf<ResumeTaskItem?>(null) }
     var clearHistorySnapshot by remember { mutableStateOf<List<HistoryUiItem>?>(null) }
     var exportSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var exportIsTorrent by rememberSaveable { mutableStateOf(false) }
     BackHandler(selectedRoute == "settings" && selectedSettingsCategory != null) {
         selectedSettingsCategory = null
     }
@@ -1574,7 +1577,9 @@ internal fun YtdlApp(
 
     val historyExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val sourceUri = exportSourceUri
+        val torrentExport = exportIsTorrent
         exportSourceUri = null
+        exportIsTorrent = false
         val destination = result.data?.data
         if (sourceUri != null && destination != null && result.resultCode == Activity.RESULT_OK) {
             Thread {
@@ -1588,7 +1593,9 @@ internal fun YtdlApp(
                     }
                 }
                 mainHandler.post {
-                    runtimeState = runtimeState.copy(taskActionMessage = if (outcome.isSuccess) "已导出文件。" else "导出未完成，请检查源文件和目标位置。")
+                    runtimeState = runtimeState.copy(taskActionMessage = if (outcome.isSuccess) {
+                        if (torrentExport) appLanguage.pick("种子文件已导出。", "Torrent file exported.") else "已导出文件。"
+                    } else "导出未完成，请检查源文件和目标位置。")
                 }
             }.start()
         }
@@ -1598,6 +1605,7 @@ internal fun YtdlApp(
         val uri = Uri.parse(output.uri)
         if (action == HistoryFileAction.Export) {
             exportSourceUri = output.uri
+            exportIsTorrent = output.mimeType == "application/x-bittorrent"
             runCatching {
                 historyExportLauncher.launch(Intent(Intent.ACTION_CREATE_DOCUMENT)
                     .addCategory(Intent.CATEGORY_OPENABLE)
@@ -1621,6 +1629,38 @@ internal fun YtdlApp(
         }.onFailure {
             runtimeState = runtimeState.copy(taskActionMessage = "没有可用应用${action.label}该文件。")
         }
+    }
+
+    fun copyHistorySource(item: HistoryUiItem) {
+        Thread {
+            val result = runCatching {
+                historySourceTarget(item, retryDraftStore.load(item.id).getOrThrow(), context.filesDir)
+            }
+            mainHandler.post {
+                result.fold(onSuccess = { target ->
+                    when (target) {
+                        is HistorySourceTarget.Address -> {
+                            val copied = runCatching {
+                                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
+                                    ClipData.newPlainText(appLanguage.pick("下载地址", "Download address"), target.value),
+                                )
+                            }
+                            runtimeState = runtimeState.copy(taskActionMessage = if (copied.isSuccess)
+                                appLanguage.pick("复制成功", "Copied") else appLanguage.pick("复制失败，请重试。", "Could not copy. Try again."))
+                            if (copied.isSuccess) android.widget.Toast.makeText(context,
+                                appLanguage.pick("复制成功", "Copied"), android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        is HistorySourceTarget.TorrentFile -> launchHistoryOutputAction(HistoryFileAction.Export,
+                            HistoryOutputTarget(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", target.file).toString(),
+                                "application/x-bittorrent", "torrent-${item.id}.torrent", target.file))
+                    }
+                }, onFailure = {
+                    runtimeState = runtimeState.copy(taskActionMessage = appLanguage.pick(
+                        "原下载地址或种子文件不可用。", "The original address or torrent file is unavailable.",
+                    ))
+                })
+            }
+        }.start()
     }
 
     fun performHistoryOutputAction(action: HistoryFileAction, output: HistoryOutputTarget) {
@@ -1972,6 +2012,7 @@ internal fun YtdlApp(
                             onDelete = ::requestDeleteHistoryItem,
                             resolveOutput = ::readableHistoryOutput,
                             onOutputAction = ::performHistoryOutputAction,
+                            onCopySource = ::copyHistorySource,
                             historyAvailabilityRevision = historyAvailabilityRevision,
                             filters = TaskFilters(taskStatusNames.map(TaskStatus::valueOf).toSet(),
                                 taskTypeNames.map(TaskOutputType::valueOf).toSet()),
@@ -4061,6 +4102,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
     resolveOutput: ((HistoryOutputReference) -> HistoryOutputTarget?)? = null,
     onOutputAction: ((HistoryFileAction, HistoryOutputTarget) -> Unit)? = null,
     historyAvailabilityRevision: Int = 0,
+    onCopySource: (HistoryUiItem) -> Unit = {},
     filters: TaskFilters = TaskFilters(),
     onFiltersChange: (TaskFilters) -> Unit = {},
     focusedTaskId: String? = null,
@@ -4228,6 +4270,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.tasksPageItems(
             onDelete = { onDelete(item) },
             resolveOutput = resolveOutput,
             onOutputAction = onOutputAction,
+            onCopySource = { onCopySource(item) },
             availabilityRevision = historyAvailabilityRevision,
             modifier = Modifier.testTag("ytdl-history-real-card"),
         )
@@ -4888,6 +4931,13 @@ private val CancelTaskIcon = tabIcon("CancelTask") {
     moveTo(5f, 6f); lineTo(6f, 5f); lineTo(19f, 18f); lineTo(18f, 19f); close()
     moveTo(18f, 5f); lineTo(19f, 6f); lineTo(6f, 19f); lineTo(5f, 18f); close()
 }
+private val CopySourceIcon = tabIcon("CopySource") {
+    moveTo(7f, 7f); lineTo(21f, 7f); lineTo(21f, 21f); lineTo(7f, 21f); close()
+    moveTo(9f, 9f); lineTo(9f, 19f); lineTo(19f, 19f); lineTo(19f, 9f); close()
+    moveTo(3f, 3f); lineTo(17f, 3f); lineTo(17f, 5f); lineTo(5f, 5f)
+    lineTo(5f, 17f); lineTo(3f, 17f); close()
+}
+
 private val ExportTaskIcon = tabIcon("ExportTask") {
     moveTo(4f, 3f); lineTo(12f, 3f); lineTo(16f, 7f); lineTo(16f, 9f)
     lineTo(14f, 9f); lineTo(14f, 8f); lineTo(11f, 5f); lineTo(6f, 5f)
@@ -5039,6 +5089,7 @@ private fun HistoryCard(
     resolveOutput: ((HistoryOutputReference) -> HistoryOutputTarget?)? = null,
     onOutputAction: ((HistoryFileAction, HistoryOutputTarget) -> Unit)? = null,
     availabilityRevision: Int = 0,
+    onCopySource: (() -> Unit)? = null,
 ) {
     val palette = LocalYtdlAppPalette.current
     val references = remember(item.outputUri, item.outputMimeType, item.subtitleOutputUris) { item.outputReferences() }
@@ -5088,13 +5139,15 @@ private fun HistoryCard(
         else -> null
     }
     val actions = if (resolveOutput == null) historyActionLabels(item) else buildList {
-        if (usableOutputs.isNotEmpty()) addAll(HistoryFileAction.entries.map { it.label })
+        if (usableOutputs.isNotEmpty()) addAll(HistoryFileAction.entries.filter { it != HistoryFileAction.Export }.map { it.label })
         add("再次下载")
+        if (onCopySource != null && item.status == HistoryItemEntity.STATUS_COMPLETED) add("复制地址")
         add("删除")
     }
     fun runAction(action: String) {
         val fileAction = HistoryFileAction.entries.firstOrNull { it.label == action }
         when {
+            action == "复制地址" -> onCopySource?.invoke()
             fileAction != null && onOutputAction != null -> {
                 if (chooseOutput) pendingAction = fileAction
                 else onOutputAction(fileAction, usableOutputs.single().target)
@@ -5161,6 +5214,7 @@ private fun HistoryCard(
 }
 
 private fun historyActionIcon(action: String): ImageVector = when (action) {
+    "复制地址" -> CopySourceIcon
     "打开" -> HistoryOpenIcon
     "分享" -> HistoryShareIcon
     "导出" -> ExportTaskIcon

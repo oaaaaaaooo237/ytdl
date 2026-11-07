@@ -43,8 +43,8 @@ internal class TorrentDownloadPipeline(private val context: Context) {
             val payload = guard.child(task, "payload").also { check(it.mkdirs() || it.isDirectory) }
             val legacySource = if (Uri.parse(route.source).scheme == "file") {
                 val root = File(context.filesDir, "torrents").canonicalFile
-                val file = File(requireNotNull(Uri.parse(route.source).path))
-                require(file.absoluteFile == file.canonicalFile && file.name == "source.torrent" && file.path.startsWith(root.path + File.separator))
+                val file = File(requireNotNull(Uri.parse(route.source).path)).canonicalFile
+                require(file.name == "source.torrent" && file.path.startsWith(root.path + File.separator))
                 file
             } else null
             TorrentEngine().use { engine ->
@@ -68,6 +68,8 @@ internal class TorrentDownloadPipeline(private val context: Context) {
                     AtomicSnapshotWriter().write(metadataFile, bytes, guard)
                     bytes
                 }
+                val descriptors = ControlledDirectory(File(context.filesDir, "torrent-descriptors"))
+                AtomicSnapshotWriter().write(descriptors.child(descriptors.directory(true), "${request.taskId}.torrent"), metadata, descriptors)
                 if (cancellation.isCancellationRequested) return stopped()
                 if (legacySource != null) {
                     val oldPayload = File(legacySource.parentFile, "payload")
@@ -160,7 +162,7 @@ internal fun restoreLegacyTorrentDownloads(context: Context) {
     }
     for (id in ids) {
         if (id in migrated || runCatching { java.util.UUID.fromString(id).toString() == id }.getOrDefault(false).not()) continue
-        val source = File(File(context.filesDir, "torrents/$id"), "source.torrent")
+        val source = File(File(context.filesDir.canonicalFile, "torrents/$id"), "source.torrent")
         if (!source.isFile || source.length() !in 1..TorrentEngine.MaxMetadataBytes.toLong()) continue
         val url = Uri.fromFile(source).toString()
         val request = DownloadRequest(url, "Torrent", DownloadRoute.Torrent(url), taskId = id.replace("-", ""),

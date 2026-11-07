@@ -49,8 +49,8 @@ android {
         manifestPlaceholders["torrentEnabled"] = (torrentEngineAar != null).toString()
         manifestPlaceholders["appDisplayName"] = if (torrentEngineAar == null) "CaptainFlash" else "CaptainFlash Torrent"
         targetSdk = 37
-        versionCode = 19
-        versionName = "1.11.7"
+        versionCode = 20
+        versionName = "1.11.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
