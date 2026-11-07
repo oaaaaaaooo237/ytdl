@@ -278,3 +278,13 @@ Android后台设备测试重跑通过（2 tests，7.654秒），保留解析器�
 本轮未操作前台界面、鼠标或键盘。上述Compose与仪器结果是后台证据；用户要求前台稍后验收，整体未标记完成。
 
 1.11.8 全量后台回归为Torrent版656项、标准版655项通过，均0失败/错误/跳过。四个签名候选包已生成，SHA-256及42个原生ELF加载段16KiB对齐复核通过。签名与ZIP对齐在构建流程中逐包检查。当前仅后台证据，实际前台点击/保存选择器验收继续等待用户允许。候选包与校验清单位于artifacts/abi-apks，版本1.11.8（20）。
+
+### 用户原始磁力链接实际开始与暂停验证（后台设备）
+
+在API37模拟器中使用用户提供的完整27DB34AE33365674C0F982EB7FD0E312B8703E8F磁力链接，经真实DownloadCoordinator.startForegroundDownload创建统一任务并启动DownloadService。测试在进度大于0时立即请求暂停，不等待整文件完成。仪器执行46.262秒，OK (1 test)。
+
+报告记录task=3fa9086ad86842aaa9e637e73201ec3d，received=2097152，persisted=Paused bytes=2097152。临时payload实际磁盘占用约7968KiB，包含原生引擎预取；未完成约1.75GB整文件下载。之后终止目标进程，在新的进程通过原任务仓库恢复，确认同一任务仍Paused、stopReason=UserPause、非零进度及原始完整链接保持一致。冷进程检查重新执行通过（0.469秒，OK (1 test)）。
+
+新增MagnetStartPauseDeviceTest仅在显式run_external_magnet_probe=true时运行，普通自动测试不会启动公网下载。测试任务保留暂停，未继续下载。报告位于artifacts/magnet-start-pause-result.txt，设备日志位于artifacts/magnet-start-pause-device.log及artifacts/magnet-cold-restore-device.log。
+
+本轮按用户“不抢焦点”的要求进行后台设备验证。Agent Desktop后台快照确认模拟器仅暴露Qt外壳和工具栏，无法通过后台语义操作Android应用内部控件；未使用坐标点击抢占焦点。真实前台界面验收仍待允许，后台结果不替代GUI验收。
