@@ -12,6 +12,15 @@ import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 
 class ParserVersionOperationCoordinatorTest {
+    @Test fun listDownloadDoesNotChangeSelectionUntilUserConfirms() {
+        val coordinator = ParserVersionOperationCoordinator(FakeVersionControl(), Executor(Runnable::run))
+        coordinator.download("2026.4.1", selectAfterDownload = false)
+        val versions = coordinator.currentState().versions
+        assertTrue(versions.single { it.isBuiltIn }.isSelected)
+        assertFalse(versions.single { it.version == "2026.4.1" }.isSelected)
+        coordinator.select("2026.4.1")
+        assertTrue(coordinator.currentState().versions.single { it.version == "2026.4.1" }.isSelected)
+    }
     @Test
     fun lateInitialRunningSnapshotCannotOverrideCompletion() {
         val executor = QueuedOperationExecutor()

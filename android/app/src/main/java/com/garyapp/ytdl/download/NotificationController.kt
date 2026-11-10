@@ -59,16 +59,31 @@ class NotificationController(
         val language = currentLanguage()
         val title = state.request?.title?.let { SensitiveText.redact(it) }?.takeIf { it.isNotBlank() }
         val taskStatus = if (state.fileRecoveryAction == FileRecoveryAction.ConfirmRestart) language.pick("需要确认重新下载", "Confirm redownload") else state.stage.notificationText(language)
+        val transferring = state.stage in TransferringStages
+        val progress = state.progress.takeIf { transferring }
+        val percent = progress?.percent?.takeIf { it.isFinite() }?.coerceIn(0.0, 100.0)
+        val details = buildList {
+            add(if (activeCount > 1) language.pick("$activeCount 项任务进行中 · $taskStatus", "$activeCount active tasks · $taskStatus") else taskStatus)
+            percent?.let { add("${it.toInt()}%") }
+            progress?.downloadedBytes?.takeIf { it >= 0 }?.let { downloaded ->
+                val total = progress.totalBytes?.takeIf { it > 0 }
+                add(if (total != null) "${formatBytes(downloaded.toDouble())} / ${formatBytes(total.toDouble())}" else formatBytes(downloaded.toDouble()))
+            }
+            progress?.speedBytesPerSecond?.takeIf { it.isFinite() && it > 0 }?.let { add("${formatBytes(it)}/s") }
+            progress?.etaSeconds?.takeIf { it > 0 }?.let { add(language.pick("剩余 ${it}s", "${it}s left")) }
+        }.joinToString(" · ")
         return builder
             .addExtras(android.os.Bundle().apply { putString(DownloadService.ExtraTaskId, state.request?.taskId) })
             .setSmallIcon(R.drawable.ic_stat_ytdl_download)
             .setContentTitle(title ?: language.pick("CaptainFlash 下载任务", "CaptainFlash download"))
-            .setContentText(if (activeCount > 1) language.pick("$activeCount 项任务进行中 · $taskStatus", "$activeCount active tasks · $taskStatus") else taskStatus)
-            .setContentIntent(contentPendingIntent())
+            .setContentText(details)
+            .setStyle(Notification.BigTextStyle().bigText(details))
+            .setContentIntent(contentPendingIntent(state.request?.taskId))
             .setAutoCancel(state.stage in TerminalStages)
             .setOngoing(state.stage !in TerminalStages && (channelId != PausedChannelId || state.stage != DownloadStage.Paused))
             .setOnlyAlertOnce(true)
             .apply {
+                if (transferring) setProgress(100, percent?.toInt() ?: 0, percent == null)
                 if (state.stage !in TerminalStages) {
                     addAction(
                         Notification.Action.Builder(
@@ -156,8 +171,11 @@ class NotificationController(
         else PendingIntent.getService(context, requestCode, intent, flags)
     }
 
-    private fun contentPendingIntent(): PendingIntent {
+    private fun contentPendingIntent(taskId: String?): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
+            .setAction(MainActivity.ActionOpenTasks)
+            .setData(android.net.Uri.parse("ytdl://tasks/${taskId.orEmpty()}"))
+            .putExtra(DownloadService.ExtraTaskId, taskId)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
@@ -171,6 +189,17 @@ class NotificationController(
         private const val ResultNotificationId = 1002
         private const val PausedChannelId = "download_paused"
         private const val PausedNotificationId = 1003
+
+        private val TransferringStages = setOf(DownloadStage.DownloadingFile, DownloadStage.DownloadingVideo,
+            DownloadStage.DownloadingAudio, DownloadStage.DownloadingSubtitles)
+
+        private fun formatBytes(bytes: Double): String {
+            val units = listOf("B", "KB", "MB", "GB")
+            var value = bytes
+            var unit = 0
+            while (value >= 1024 && unit < units.lastIndex) { value /= 1024; unit += 1 }
+            return String.format(java.util.Locale.ROOT, "%.1f %s", value, units[unit])
+        }
 
         private val TerminalStages = setOf(
             DownloadStage.Completed,

@@ -21,6 +21,39 @@ class NotificationControllerTest {
     private val application = ApplicationProvider.getApplicationContext<Application>()
     private val controller = NotificationController(application)
 
+    @Test fun runningNotificationShowsRealProgressAndUnknownSizeStaysIndeterminate() {
+        val request = DownloadRequest("https://example.test/video", "真实视频", DownloadRoute.DirectSingleFile("18"))
+        val progress = com.garyapp.ytdl.core.ytdlp.DownloadProgress(
+            "downloading", 25.0, 1048576, 4194304, 524288.0, 6, null,
+        )
+        val state = DownloadTaskState(DownloadStage.DownloadingVideo, request, progress = progress)
+        val notification = controller.buildForegroundNotification(state)
+        assertEquals("真实视频", notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals(25, notification.extras.getInt(Notification.EXTRA_PROGRESS))
+        assertEquals(100, notification.extras.getInt(Notification.EXTRA_PROGRESS_MAX))
+        assertFalse(notification.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
+        val detail = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
+        assertTrue(detail.contains("25%"))
+        assertTrue(detail.contains("1.0 MB / 4.0 MB"))
+        assertTrue(detail.contains("512.0 KB/s"))
+        val unknown = controller.buildForegroundNotification(state.copy(progress = progress.copy(percent = null, totalBytes = null)))
+        assertTrue(unknown.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
+        assertFalse(unknown.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("%"))
+        val finished = controller.buildForegroundNotification(state.copy(stage = DownloadStage.Completed))
+        assertEquals(0, finished.extras.getInt(Notification.EXTRA_PROGRESS_MAX))
+    }
+
+    @Test fun notificationClickCarriesTaskRouteAndKeepsEachTaskIdentity() {
+        val first = DownloadRequest("https://example.test/video", "视频", DownloadRoute.DirectSingleFile("18"))
+        val second = first.copy(taskId = "b".repeat(32))
+        val firstIntent = controller.buildForegroundNotification(DownloadTaskState.waiting(first)).contentIntent
+        val secondIntent = controller.buildForegroundNotification(DownloadTaskState.waiting(second)).contentIntent
+        assertFalse(firstIntent == secondIntent)
+        val intent = shadowOf(firstIntent).savedIntent
+        assertEquals("com.garyapp.ytdl.OPEN_TASKS", intent.action)
+        assertEquals(first.taskId, intent.getStringExtra(DownloadService.ExtraTaskId))
+    }
+
     @Test
     fun notificationUsesOwnMonochromeSmallIconAndImmutableMainActivityContentIntent() {
         val stages = DownloadStage.values()

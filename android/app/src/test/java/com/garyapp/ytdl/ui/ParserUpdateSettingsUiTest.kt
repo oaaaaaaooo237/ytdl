@@ -1,5 +1,6 @@
 package com.garyapp.ytdl.ui
 
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
@@ -34,6 +35,27 @@ import java.util.concurrent.TimeUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "zh-rCN")
 class ParserUpdateSettingsUiTest {
+    @Test fun deletingRunningLatestKeepsRedownloadAvailableWithoutRestart() {
+        val versions = FakeParserVersionControl(downloadedVersions = mutableListOf("2026.4.1"), initialSelectedVersion = "2026.4.1")
+        composeRule.setContent {
+            YtdlApp(
+                parserUpdateCoordinator = ParserUpdateCoordinator(
+                    ParserUpdateChecker("2026.4.1") { """{"info":{"version":"2026.4.1"}}""" },
+                    Executor(Runnable::run)),
+                parserVersionControl = versions,
+                parserVersionExecutor = Executor(Runnable::run),
+                currentProcessParserVersion = "2026.4.1",
+            )
+        }
+        composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+        composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-delete").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-delete-confirm").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-download-2026.4.1").assertIsEnabled()
+    }
     @get:Rule
     val composeRule = createComposeRule()
 
@@ -87,10 +109,8 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
-        composeRule.onNodeWithTag("ytdl-parser-download-latest").performClick()
-        composeRule.waitForIdle()
-
-        composeRule.onAllNodesWithText("最新版已内置，当前无需下载。").assertCountEquals(2)
+        composeRule.onNodeWithTag("ytdl-parser-select").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-delete").assertIsNotEnabled()
         composeRule.onNodeWithText("已下载并选择", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("重启应用后生效", substring = true).assertDoesNotExist()
         assertEquals(emptyList<String>(), versions.selectCalls)
@@ -123,10 +143,10 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
-        composeRule.onNodeWithTag("ytdl-parser-download-latest").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-row-${YtdlpBridge.PINNED_YTDLP_VERSION}").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-select").performClick()
         composeRule.waitForIdle()
-
-        composeRule.onAllNodesWithText("已选择内置最新版，重启后生效。").assertCountEquals(2)
+        composeRule.onNodeWithText("已选择 ${YtdlpBridge.PINNED_YTDLP_VERSION}，重启应用后生效。").assertExists()
         assertEquals(YtdlpBridge.PINNED_YTDLP_VERSION, versions.selectedVersion)
         assertEquals(listOf(YtdlpBridge.PINNED_YTDLP_VERSION), versions.selectCalls)
     }
@@ -184,18 +204,20 @@ class ParserUpdateSettingsUiTest {
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
 
-        composeRule.onNodeWithText("内置版本：yt-dlp 2026.3.17").assertExists()
+        composeRule.onNodeWithTag("ytdl-parser-row-2026.3.17").assertExists()
         composeRule.onNodeWithText("本进程实际版本：yt-dlp 2026.3.17").assertExists()
-        composeRule.onNodeWithText("已下载：yt-dlp 2026.4.1").assertExists()
+        composeRule.onNodeWithTag("ytdl-parser-row-2026.4.1").assertExists()
 
-        composeRule.onNodeWithTag("ytdl-parser-select-2026.4.1").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-row-2026.4.1").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-select").performClick()
         composeRule.onNodeWithText("已选择 2026.4.1，重启应用后生效。").assertExists()
 
-        composeRule.onNodeWithTag("ytdl-parser-delete-2026.4.1").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-delete").performClick()
         composeRule.onNodeWithText("确认删除解析器 2026.4.1？").assertExists()
         composeRule.onNodeWithTag("ytdl-parser-delete-confirm").performClick()
         composeRule.onNodeWithText("已删除解析器 2026.4.1。下次启动将使用内置版本。").assertExists()
-        composeRule.onNodeWithText("已下载：yt-dlp 2026.4.1").assertDoesNotExist()
+        assertFalse(versions.listVersions().any { it.version == "2026.4.1" })
+        composeRule.onNodeWithTag("ytdl-parser-row-2026.4.1").assertExists()
     }
 
     @Test
@@ -227,6 +249,7 @@ class ParserUpdateSettingsUiTest {
     @Test
     fun parserVersionOperationDisablesConflictingActionsUntilFinalStateRefresh() {
         val operationExecutor = QueuedExecutor()
+        val checkExecutor = QueuedExecutor()
         val versions = FakeParserVersionControl(downloadedVersions = mutableListOf("2026.4.1"))
         composeRule.setContent {
             YtdlApp(
@@ -234,7 +257,7 @@ class ParserUpdateSettingsUiTest {
                     checker = ParserUpdateChecker(YtdlpBridge.PINNED_YTDLP_VERSION) {
                         """{"info":{"version":"${YtdlpBridge.PINNED_YTDLP_VERSION}"}}"""
                     },
-                    executor = QueuedExecutor(),
+                    executor = checkExecutor,
                 ),
                 parserVersionControl = versions,
                 parserVersionExecutor = operationExecutor,
@@ -248,17 +271,19 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
-        composeRule.onNodeWithTag("ytdl-parser-select-2026.4.1").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-row-2026.4.1").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-select").performClick()
 
-        composeRule.onNodeWithTag("ytdl-parser-select-2026.4.1").assertIsNotEnabled()
-        composeRule.onNodeWithTag("ytdl-parser-delete-2026.4.1").assertIsNotEnabled()
-        composeRule.onNodeWithTag("ytdl-parser-download-latest").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-select").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-delete").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").assertIsNotEnabled()
 
         operationExecutor.runNext()
+        checkExecutor.runNext()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("ytdl-parser-delete-2026.4.1").assertIsEnabled()
-        composeRule.onNodeWithTag("ytdl-parser-download-latest").assertIsEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-delete").assertIsEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").assertIsEnabled()
         composeRule.onNodeWithText("已选择 2026.4.1，重启应用后生效。").assertExists()
     }
 
@@ -290,8 +315,8 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
-        composeRule.onNodeWithTag("ytdl-parser-download-latest").performClick()
-        composeRule.onNodeWithTag("ytdl-parser-download-latest").assertIsNotEnabled()
+        composeRule.runOnIdle { versionOperations.download("2026.4.1") }
+        composeRule.onNodeWithTag("ytdl-parser-refresh").assertIsNotEnabled()
 
         composeRule.runOnIdle { generation.value += 1 }
         composeRule.waitForIdle()
@@ -302,7 +327,7 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
-        composeRule.onNodeWithTag("ytdl-parser-download-latest").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").assertIsNotEnabled()
 
         operationExecutor.runNext()
         composeRule.waitForIdle()
@@ -342,8 +367,38 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithText("本进程：2026.4.1；下次启动：2026.5.1").assertExists()
 
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
-        composeRule.onNodeWithText("当前选择：yt-dlp 2026.5.1").assertExists()
+        composeRule.onNodeWithTag("ytdl-parser-row-2026.5.1").assertExists()
         composeRule.onNodeWithText("本进程实际版本：yt-dlp 2026.4.1").assertExists()
+    }
+
+    @Test fun asyncParserStartupRefreshesSummaryAndLateCallbacksUseRunningVersion() {
+        val checkExecutor = QueuedExecutor()
+        val runningVersion = mutableStateOf("2026.3.17")
+        val versions = FakeParserVersionControl(
+            downloadedVersions = mutableListOf("2026.5.1"),
+            initialSelectedVersion = "2026.5.1",
+        )
+        val coordinator = ParserUpdateCoordinator(
+            ParserUpdateChecker("2026.5.1") { """{"info":{"version":"2026.5.1"}}""" },
+            checkExecutor,
+        )
+        composeRule.setContent {
+            YtdlApp(parserUpdateCoordinator = coordinator, parserVersionControl = versions,
+                currentProcessParserVersion = runningVersion.value)
+        }
+        composeRule.onNodeWithTag("ytdl-tab-settings").performClick()
+        composeRule.onNodeWithTag("ytdl-screen-settings")
+            .performScrollToNode(hasTestTag("ytdl-settings-category-behavior"))
+        composeRule.onNodeWithTag("ytdl-settings-category-behavior").performClick()
+        composeRule.onNodeWithText("本进程：2026.3.17；下次启动：2026.5.1").assertExists()
+        composeRule.runOnIdle { runningVersion.value = "2026.5.1" }
+        composeRule.onNodeWithText("本进程：2026.5.1").assertExists()
+        checkExecutor.runNext()
+        composeRule.onNodeWithText("本进程：2026.5.1").assertExists()
+        composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").performClick()
+        checkExecutor.runNext()
+        composeRule.onNodeWithText("本进程实际版本：yt-dlp 2026.5.1").assertExists()
     }
 
     @Test
@@ -371,10 +426,10 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-screen-settings")
             .performScrollToNode(hasTestTag("ytdl-settings-parser-version"))
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
-        composeRule.onNodeWithText("重新检查").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").performClick()
         checkExecutor.runNext()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("关闭").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-close").performClick()
 
         composeRule.onNodeWithText("已是最新版本：2026.4.1").assertExists()
     }
@@ -405,11 +460,12 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
 
         composeRule.onNodeWithTag("ytdl-parser-status-dialog").assertExists()
-        composeRule.onNodeWithText("内置版本：yt-dlp ${YtdlpBridge.PINNED_YTDLP_VERSION}").assertExists()
-        composeRule.onNodeWithText("下载最新版").assertExists()
+        composeRule.onNodeWithTag("ytdl-parser-row-${YtdlpBridge.PINNED_YTDLP_VERSION}").assertExists()
+        composeRule.onNodeWithTag("ytdl-parser-select").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-delete").assertIsNotEnabled()
         composeRule.onNodeWithText("检查失败，请稍后重试").assertExists()
 
-        composeRule.onNodeWithText("重新检查").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").performClick()
         composeRule.onAllNodesWithText("正在检查解析器更新...").assertCountEquals(2)
 
         executor.runNext()
@@ -488,7 +544,7 @@ class ParserUpdateSettingsUiTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("发现新版本 2026.4.1").assertExists()
 
-        composeRule.onNodeWithText("关闭").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-close").performClick()
         composeRule.onAllNodesWithTag("ytdl-parser-update-dialog").assertCountEquals(1)
         composeRule.onNodeWithText("稍后").performClick()
 
@@ -506,7 +562,7 @@ class ParserUpdateSettingsUiTest {
         composeRule.onNodeWithTag("ytdl-settings-parser-version").performClick()
         composeRule.onNodeWithText("发现新版本 2026.4.1").assertExists()
 
-        composeRule.onNodeWithText("重新检查").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").performClick()
         checkExecutor.runNext()
         uiStateExecutor.runLast()
         composeRule.waitForIdle()
@@ -515,9 +571,9 @@ class ParserUpdateSettingsUiTest {
 
         composeRule.onNodeWithText("已是最新版本").assertExists()
         composeRule.onAllNodesWithText("正在检查解析器更新...").assertCountEquals(0)
-        composeRule.onNodeWithText("重新检查").assertIsEnabled()
+        composeRule.onNodeWithTag("ytdl-parser-refresh").assertIsEnabled()
 
-        composeRule.onNodeWithText("关闭").performClick()
+        composeRule.onNodeWithTag("ytdl-parser-close").performClick()
         composeRule.onAllNodesWithTag("ytdl-parser-update-dialog").assertCountEquals(0)
         composeRule.runOnIdle { generation.value += 1 }
         composeRule.waitForIdle()

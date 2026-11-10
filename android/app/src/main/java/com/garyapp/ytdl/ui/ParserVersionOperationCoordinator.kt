@@ -54,11 +54,11 @@ class ParserVersionOperationCoordinator(
         }
     }
 
-    fun download(expectedVersion: String?) {
+    fun download(expectedVersion: String?, selectAfterDownload: Boolean = true) {
         submit("解析器更新失败，请稍后重试。", "解析器更新失败") {
             val result = runCatching {
                 val downloaded = control.downloadLatest(expectedVersion).getOrThrow()
-                val selectionChanged = !downloaded.isSelected
+                val selectionChanged = selectAfterDownload && !downloaded.isSelected
                 if (selectionChanged) {
                     control.select(downloaded.version).getOrThrow()
                 }
@@ -68,9 +68,10 @@ class ParserVersionOperationCoordinator(
             result.fold(
                 onSuccess = { (downloaded, selectionChanged) ->
                     val message = when {
-                        refreshed.none { it.version == downloaded.version && it.isSelected } -> {
+                        refreshed.none { it.version == downloaded.version && (!selectAfterDownload || it.isSelected) } -> {
                             "解析器更新失败，请稍后重试。"
                         }
+                        !selectAfterDownload -> "解析器 ${downloaded.version} 已下载。"
                         downloaded.isBuiltIn && selectionChanged -> "已选择内置最新版，重启后生效。"
                         downloaded.isBuiltIn -> "最新版已内置，当前无需下载。"
                         selectionChanged -> "解析器 ${downloaded.version} 已下载并选择，重启应用后生效。"
@@ -81,7 +82,8 @@ class ParserVersionOperationCoordinator(
                     } else {
                         "解析器更新完成"
                     }
-                    ParserVersionOperationState(refreshed, message = message, explanationTitle = title)
+                    ParserVersionOperationState(refreshed, message = message,
+                        explanationTitle = title.takeIf { selectAfterDownload || message.startsWith("解析器更新失败") })
                 },
                 onFailure = {
                     ParserVersionOperationState(

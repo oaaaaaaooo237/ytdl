@@ -13,16 +13,21 @@ import com.garyapp.ytdl.ui.YtdlApp
 
 class MainActivity : ComponentActivity() {
     private val sharedUrl = mutableStateOf<String?>(null)
+    private val openTasksRequest = mutableStateOf(0)
+    private val notificationTaskId = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.garyapp.ytdl.core.ytdlp.ParserRuntimeBootstrap.prepareSelectedVersionAsync(applicationContext)
         sharedUrl.value = readSharedUrl(intent)
+        readTaskNavigation(intent)
         configureLightSystemBars()
         setContent {
             YtdlApp(
                 showFirstRunGuide = true,
                 sharedUrl = sharedUrl.value,
+                openTasksRequest = openTasksRequest.value,
+                notificationTaskId = notificationTaskId.value,
                 onSharedUrlConsumed = {
                     sharedUrl.value = null
                     intent.removeExtra(Intent.EXTRA_TEXT)
@@ -37,6 +42,20 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         sharedUrl.value = readSharedUrl(intent)
+        readTaskNavigation(intent)
+    }
+
+    private fun readTaskNavigation(intent: Intent) {
+        if (intent.action != ActionOpenTasks) return
+        notificationTaskId.value = intent.getStringExtra(com.garyapp.ytdl.download.DownloadService.ExtraTaskId)
+        openTasksRequest.value += 1
+        intent.action = null
+        intent.data = null
+        intent.removeExtra(com.garyapp.ytdl.download.DownloadService.ExtraTaskId)
+    }
+
+    companion object {
+        const val ActionOpenTasks = "com.garyapp.ytdl.OPEN_TASKS"
     }
 
     private fun readSharedUrl(intent: Intent): String? {

@@ -92,6 +92,19 @@ class YtdlAppDownloadFlowTest {
         assertEquals(DownloadRoute.DirectSingleFile(formatId = "240-direct"), request.route)
     }
 
+    @Test fun notificationRequestOpensTasksAgainWhenActivityIsAlreadyRunning() {
+        val request = androidx.compose.runtime.mutableStateOf(0)
+        composeRule.setContent {
+            YtdlApp(parserUpdateCoordinator = offlineParserCoordinator(), openTasksRequest = request.value)
+        }
+        composeRule.onNodeWithTag("ytdl-screen-download").assertExists()
+        composeRule.runOnIdle { request.value = 1 }
+        composeRule.onNodeWithTag("ytdl-screen-tasks").assertExists()
+        composeRule.onNodeWithTag("ytdl-tab-download").performClick()
+        composeRule.runOnIdle { request.value = 2 }
+        composeRule.onNodeWithTag("ytdl-screen-tasks").assertExists()
+    }
+
     @Test
     fun bottomNavigationKeepsSplitStreamsOnMergeRequiredRoute() {
         val request = runDownloadFlow(

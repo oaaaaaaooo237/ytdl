@@ -35,9 +35,19 @@ class TorrentUnifiedFlowTest {
     @After fun reset() { DownloadCoordinator.resetForTests() }
 
     @Test fun magnetUsesTheMainDownloadResultAndSharedStarterThenOpensTasks() {
+        runMagnetDownload(true)
+    }
+
+    @Test fun magnetStaysOnDownloadWhenTaskJumpIsDisabled() {
+        runMagnetDownload(false)
+    }
+
+    private fun runMagnetDownload(jumpToTask: Boolean) {
         DownloadCoordinator.resetForTests()
         SettingsRepository.fromContext(ApplicationProvider.getApplicationContext<Context>())
             .setDefaultStorageTarget(StorageTarget.AppPrivate)
+        SettingsRepository.fromContext(ApplicationProvider.getApplicationContext<Context>())
+            .update { it.copy(jumpToDownloadTask = jumpToTask) }
         val captured = AtomicReference<DownloadRequest>()
         lateinit var host: Context
         composeRule.setContent {
@@ -59,6 +69,7 @@ class TorrentUnifiedFlowTest {
         assertEquals(DownloadRoute.Torrent(link), captured.get().route)
         assertEquals("Test Torrent", captured.get().title)
         assertFalse(captured.get().usesCookies)
-        composeRule.onNodeWithTag("ytdl-screen-tasks").assertExists()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(if (jumpToTask) "ytdl-screen-tasks" else "ytdl-screen-download").assertExists()
     }
 }
