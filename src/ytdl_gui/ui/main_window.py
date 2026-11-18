@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ytdl_gui import APP_DISPLAY_NAME
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
 from ytdl_gui.emule import EmuleEngine
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
@@ -110,7 +111,7 @@ class MainWindow(QWidget):
         ):
         super().__init__()
         self._ui_dispatcher = _UiCallDispatcher(self)
-        self.setWindowTitle("视频地址提取器")
+        self.setWindowTitle(APP_DISPLAY_NAME)
         self.resize(590, 883)
         self.setMinimumSize(488, 760)
         self.config_store = config_store
@@ -416,7 +417,7 @@ class MainWindow(QWidget):
         self.app_icon_label.setObjectName("appIcon")
         self.app_icon_label.setFixedSize(22, 22)
         self.app_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.app_title_label = QLabel("视频地址提取器")
+        self.app_title_label = QLabel(APP_DISPLAY_NAME)
         self.app_title_label.setObjectName("appTitle")
 
         layout.addWidget(self.app_icon_label)

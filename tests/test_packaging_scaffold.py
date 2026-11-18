@@ -65,12 +65,12 @@ def test_package_scripts_and_readme_document_release_flow():
     assert "$LASTEXITCODE" in package_script
     assert "tools\\yt-dlp.exe" in package_script
     assert ".venv\\tools\\ffmpeg\\bin\\ffmpeg.exe" in package_script
-    assert "dist\\YTDL-GUI\\YTDL-GUI.exe" in smoke_script
+    assert "dist\\CaptainFlash\\CaptainFlash.exe" in smoke_script
     assert "_internal\\tools\\yt-dlp.exe" in smoke_script
     assert "_internal\\tools\\ffmpeg\\bin\\ffmpeg.exe" in smoke_script
     assert "--version" in smoke_script
     assert "win-v1.0.0" in readme
-    assert "YTDL-GUI.exe" in readme
+    assert "CaptainFlash.exe" in readme
     assert ".\\.venv\\Scripts\\python.exe -m ytdl_gui.main" in readme
     assert "不保存 cookies 内容" in readme
     assert "ffmpeg" in readme

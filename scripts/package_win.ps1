@@ -27,4 +27,4 @@ try {
 if ($LASTEXITCODE -ne 0) {
   throw "PyInstaller packaging failed with exit code $LASTEXITCODE."
 }
-Write-Host "Packaged dist\YTDL-GUI\YTDL-GUI.exe"
+Write-Host "Packaged dist\CaptainFlash\CaptainFlash.exe"

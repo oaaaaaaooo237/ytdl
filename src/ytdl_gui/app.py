@@ -5,7 +5,7 @@ from PySide6.QtCore import QLockFile
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QMessageBox
 
-from ytdl_gui import __version__
+from ytdl_gui import APP_DISPLAY_NAME, __version__
 from ytdl_gui.config_store import ConfigStore
 from ytdl_gui.history_store import HistoryStore
 from ytdl_gui.paths import app_data_dir, app_icon_path
@@ -33,7 +33,7 @@ def configure_application_icon(app, window) -> QSystemTrayIcon | None:
         return None
 
     tray = QSystemTrayIcon(icon, window)
-    tray.setToolTip("视频地址提取器")
+    tray.setToolTip(APP_DISPLAY_NAME)
     menu = QMenu(window)
     show_action = menu.addAction("显示主窗口")
     quit_action = menu.addAction("退出")
@@ -76,6 +76,7 @@ def _set_windows_app_user_model_id() -> None:
 def run() -> int:
     _set_windows_app_user_model_id()
     app = QApplication.instance() or QApplication(sys.argv)
+    app.setApplicationDisplayName(APP_DISPLAY_NAME)
     apply_light_theme(app)
     data_dir = app_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)

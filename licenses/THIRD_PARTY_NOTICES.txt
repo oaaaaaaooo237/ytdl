@@ -1,4 +1,4 @@
-YTDL GUI third-party notices
+CaptainFlash third-party notices
 
 This distribution includes or is designed to bundle the following third-party components:
 

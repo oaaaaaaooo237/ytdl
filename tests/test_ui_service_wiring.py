@@ -268,6 +268,9 @@ def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Pa
         def __init__(self, argv):
             self.argv = argv
 
+        def setApplicationDisplayName(self, name):  # noqa: N802 - Qt API casing
+            created["display_name"] = name
+
         @staticmethod
         def instance():
             return None
@@ -300,6 +303,7 @@ def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Pa
     monkeypatch.setattr(app_module, "configure_application_icon", lambda app, window: created.setdefault("icon_configured", (app, window)))
 
     assert app_module.run() == 0
+    assert created["display_name"] == "CaptainFlash"
     assert created["theme_applied"] is True
     assert created["icon_configured"][0].argv == sys.argv
     assert isinstance(created["icon_configured"][1], FakeWindow)
@@ -392,7 +396,7 @@ def test_configure_application_icon_sets_window_icon_and_tray(monkeypatch):
     assert app.window_icon is window.window_icon
     assert "app-icon-set" in events
     assert "window-icon-set" in events
-    assert "tooltip:视频地址提取器" in events
+    assert "tooltip:CaptainFlash" in events
     assert "action:显示主窗口" in events
     assert "action:退出" in events
     assert "tray-shown" in events

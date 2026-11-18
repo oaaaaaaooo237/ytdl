@@ -1,13 +1,13 @@
 $ErrorActionPreference = "Stop"
 
-$Exe = ".\dist\YTDL-GUI\YTDL-GUI.exe"
+$Exe = ".\dist\CaptainFlash\CaptainFlash.exe"
 if (!(Test-Path $Exe)) {
   throw "Packaged exe not found: $Exe"
 }
 
 $YtdlpCandidates = @(
-  ".\dist\YTDL-GUI\tools\yt-dlp.exe",
-  ".\dist\YTDL-GUI\_internal\tools\yt-dlp.exe"
+  ".\dist\CaptainFlash\tools\yt-dlp.exe",
+  ".\dist\CaptainFlash\_internal\tools\yt-dlp.exe"
 )
 $Ytdlp = $YtdlpCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (!$Ytdlp) {
@@ -17,8 +17,8 @@ if (!$Ytdlp) {
 & $Ytdlp --version | Out-Host
 
 $FfmpegCandidates = @(
-  ".\dist\YTDL-GUI\tools\ffmpeg\bin\ffmpeg.exe",
-  ".\dist\YTDL-GUI\_internal\tools\ffmpeg\bin\ffmpeg.exe"
+  ".\dist\CaptainFlash\tools\ffmpeg\bin\ffmpeg.exe",
+  ".\dist\CaptainFlash\_internal\tools\ffmpeg\bin\ffmpeg.exe"
 )
 $Ffmpeg = $FfmpegCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (!$Ffmpeg) {

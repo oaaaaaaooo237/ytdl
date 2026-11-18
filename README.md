@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="assets/app-icon.png" width="96" alt="视频地址提取器图标" />
+  <img src="assets/app-icon.png" width="96" alt="CaptainFlash 图标" />
 
-  <h1>视频地址提取器</h1>
+  <h1>CaptainFlash</h1>
 
   <p>
     一个面向 Windows 11 x64 的图形化视频下载工具。输入播放地址，分析可用格式，按需下载音频、视频或音视频合并文件。
@@ -37,7 +37,7 @@
 
 ## 运行
 
-已编译版本：下载 Release 压缩包后，运行 `YTDL-GUI.exe`。
+本分支的 Windows 便携版解压后运行 `CaptainFlash.exe`。
 
 源码版本：
 

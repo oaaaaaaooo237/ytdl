@@ -44,8 +44,8 @@ def test_main_window_has_chinese_navigation(qtbot):
     qtbot.addWidget(window)
 
     assert nav_labels(window) == ["下载", "格式", "队列", "历史", "设置", "关于"]
-    assert window.windowTitle() == "视频地址提取器"
-    assert window.app_title_label.text() == "视频地址提取器"
+    assert window.windowTitle() == "CaptainFlash"
+    assert window.app_title_label.text() == "CaptainFlash"
     assert window.title_bar.objectName() == "titleBar"
     assert window.bottom_status_bar.objectName() == "bottomStatusBar"
     assert window.ytdlp_footer_label.text().startswith("yt-dlp")
@@ -875,7 +875,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.about_page.version_label.text() == "YTDL GUI Windows v1.2.0 RC1"
+    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.0 RC1"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"
