@@ -1,5 +1,5 @@
 from PySide6.QtCore import QPoint, QRect, QSize, QSignalBlocker, Qt
-from PySide6.QtGui import QColor, QPainter, QPixmap, QPolygon
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -24,7 +24,7 @@ class DownloadPage(QWidget):
         super().__init__()
         self.url_input = QTextEdit()
         self.url_input.setObjectName("urlInput")
-        self.url_input.setPlaceholderText("粘贴一个或多个视频播放地址")
+        self.url_input.setPlaceholderText("粘贴视频地址，或输入电驴搜索关键词")
         self.url_input.setFixedHeight(48)
         self.url_input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.url_input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -35,6 +35,12 @@ class DownloadPage(QWidget):
         self.paste_button = QPushButton("粘贴")
         self.paste_button.setFixedWidth(72)
         self.paste_button.clicked.connect(self.paste_from_clipboard)
+        self.emule_button = QPushButton()
+        self.emule_button.setIcon(_donkey_icon(self))
+        self.emule_button.setIconSize(QSize(20, 20))
+        self.emule_button.setFixedWidth(40)
+        self.emule_button.setToolTip("电驴搜索")
+        self.emule_button.setAccessibleName("电驴搜索")
         self.save_folder_button = QPushButton("浏览")
         self.start_button = QPushButton("开始下载")
         self.start_button.setObjectName("primaryButton")
@@ -105,6 +111,7 @@ class DownloadPage(QWidget):
         url_row = QHBoxLayout()
         url_row.setSpacing(10)
         url_row.addWidget(self.url_input, 1)
+        url_row.addWidget(self.emule_button)
         url_row.addWidget(self.paste_button)
         layout.addLayout(url_row)
         layout.addSpacing(4)
@@ -278,6 +285,28 @@ class DownloadPage(QWidget):
 
         painter.end()
         return composed
+
+
+def _donkey_icon(widget: QWidget) -> QIcon:
+    image = QPixmap(24, 24)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(widget.palette().buttonText().color())
+    pen.setWidthF(1.5)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.drawPolygon(QPolygon([
+        QPoint(7, 10), QPoint(5, 3), QPoint(8, 3), QPoint(11, 8),
+        QPoint(14, 8), QPoint(17, 3), QPoint(20, 3), QPoint(18, 10),
+        QPoint(18, 16), QPoint(15, 21), QPoint(10, 21), QPoint(7, 16),
+    ]))
+    painter.drawLine(10, 12, 10, 13)
+    painter.drawLine(15, 12, 15, 13)
+    painter.drawArc(10, 15, 6, 3, 0, -180 * 16)
+    painter.end()
+    return QIcon(image)
 
 
 class _SectionTitle(QLabel):

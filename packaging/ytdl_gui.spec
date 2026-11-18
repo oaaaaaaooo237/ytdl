@@ -1,10 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 from pathlib import Path
 
 
 root = Path(SPECPATH).parent
-ffmpeg_exe = root / ".venv" / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe"
+ffmpeg_exe = Path(os.environ.get("YTDL_PACKAGE_ENV", root / ".venv")) / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe"
 
 a = Analysis(
     [str(root / "src" / "ytdl_gui" / "main.py")],
@@ -17,6 +18,7 @@ a = Analysis(
         (str(root / "assets" / "app-icon.ico"), "assets"),
         (str(root / "licenses" / "THIRD_PARTY_NOTICES.txt"), "licenses"),
         (str(root / "docs" / "gui-reference.png"), "docs"),
+        (str(root / "tools" / "amule"), "tools/amule"),
     ],
     hiddenimports=["PySide6.QtMultimedia"],
     hookspath=[],

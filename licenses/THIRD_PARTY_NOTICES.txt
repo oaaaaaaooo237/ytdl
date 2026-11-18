@@ -21,3 +21,9 @@ Source: https://github.com/yt-dlp/yt-dlp
 ffmpeg executable
 License: LGPL/GPL depending on the distributed build configuration
 Source: https://ffmpeg.org/
+
+aMule 3.2.0
+License: GNU General Public License. The upstream license files and third-party
+notices are included under tools/amule/.
+Source: https://github.com/amule-org/amule/releases/tag/3.2.0
+The corresponding upstream source archive is included under tools/amule/.

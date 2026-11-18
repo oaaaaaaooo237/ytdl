@@ -28,18 +28,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ytdl_gui.config_store import AppConfig
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
+from ytdl_gui.emule import EmuleEngine
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
 from ytdl_gui.file_deletion import delete_recorded_files
 from ytdl_gui.format_selector import FormatPreference, available_resolution_values, choose_format
 from ytdl_gui.history_store import HistoryRecord
-from ytdl_gui.paths import bundled_ytdlp_path, local_ffmpeg_candidates, resource_root
+from ytdl_gui.paths import app_data_dir, bundled_ytdlp_path, local_ffmpeg_candidates, resource_root
 from ytdl_gui.queue_store import QueueRecoveryWorker
 from ytdl_gui.subtitles import subtitle_action_requires_ffmpeg
 from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
+from ytdl_gui.ui.emule_controller import EmuleController
 from ytdl_gui.ui.pages.about_page import AboutPage
 from ytdl_gui.ui.pages.download_page import DownloadPage
+from ytdl_gui.ui.pages.emule_search_page import EmuleSearchPage
 from ytdl_gui.ui.pages.formats_page import FormatsPage
 from ytdl_gui.ui.pages.history_page import HistoryPage
 from ytdl_gui.ui.pages.queue_page import QueuePage
@@ -104,6 +106,7 @@ class MainWindow(QWidget):
         save_folder_picker: Callable[[], str] | None = None,
         confirmation_dialog: Callable[[QWidget, str, str], bool] | None = None,
         queue_store=None,
+        emule_engine=None,
         ):
         super().__init__()
         self._ui_dispatcher = _UiCallDispatcher(self)
@@ -159,6 +162,7 @@ class MainWindow(QWidget):
         self.history_page = HistoryPage()
         self.settings_page = SettingsPage()
         self.about_page = AboutPage()
+        self.emule_page = EmuleSearchPage()
 
         pages = [
             self.download_page,
@@ -170,6 +174,12 @@ class MainWindow(QWidget):
         ]
         for page in pages:
             self.stack.addWidget(self._scroll_page(page))
+        self.stack.addWidget(self.emule_page)
+        if emule_engine is None:
+            profile = config_store.path.parent if config_store else app_data_dir()
+            emule_engine = EmuleEngine(resource_root() / "tools" / "amule" / "bin", profile / "emule")
+        self.emule = EmuleController(self, emule_engine)
+        self.download_page.emule_button.clicked.connect(self.emule.open_from_address_box)
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
@@ -192,6 +202,9 @@ class MainWindow(QWidget):
 
         if self.config_store:
             self.settings_page.load_config(self.config_store.load())
+        self._configure_emule()
+        if isinstance(emule_engine, EmuleEngine) and (emule_engine.profile / "amule.conf").is_file():
+            QTimer.singleShot(0, self.emule.restore)
         if self.history_store:
             records = self.history_store.list()
             self.history_page.load_records(records)
@@ -301,7 +314,8 @@ class MainWindow(QWidget):
                 self.retry_queue_task(task_id)
 
     def closeEvent(self, event):
-        if not self._threads:
+        emule_closed = self.emule.close()
+        if not self._threads and emule_closed:
             event.accept()
             return
         event.ignore()
@@ -323,6 +337,7 @@ class MainWindow(QWidget):
         # Normal window/tray exit uses closeEvent's nonblocking drain. This
         # fallback also covers an external QApplication.quit/OS shutdown.
         self._closing = True
+        self.emule.timer.stop()
         for task in list(self._download_workers_by_task):
             self._stop_queue_task(task, 'exit')
         deadline = time.monotonic() + 20
@@ -330,6 +345,7 @@ class MainWindow(QWidget):
             if not thread.wait(max(1, int((deadline - time.monotonic()) * 1000))):
                 os._exit(1)
                 return
+        self.emule.shutdown_for_quit()
 
     def _scroll_page(self, page: QWidget) -> QScrollArea:
         scroll = QScrollArea()
@@ -446,6 +462,10 @@ class MainWindow(QWidget):
         return "yt-dlp 待检测"
 
     def connect_settings_actions(self) -> None:
+        self.settings_page.emule_network.currentIndexChanged.connect(self._save_emule_settings)
+        self.settings_page.emule_upload.valueChanged.connect(self._save_emule_settings)
+        self.settings_page.emule_download.valueChanged.connect(self._save_emule_settings)
+        self.settings_page.choose_emule_directory.clicked.connect(self._choose_emule_directory)
         self.settings_page.choose_default_folder_button.clicked.connect(self.choose_default_folder)
         self.settings_page.choose_cookies_button.clicked.connect(self.choose_cookies_file)
         self.settings_page.clear_cookies_button.clicked.connect(self.clear_cookies_file)
@@ -496,7 +516,8 @@ class MainWindow(QWidget):
             return
         current = self.config_store.load()
         self.config_store.save(
-            AppConfig(
+            replace(
+                current,
                 default_save_dir=self.settings_page.default_folder.text(),
                 cookies_path=self.settings_page.cookies_path.text(),
                 ffmpeg_path=self.settings_page.ffmpeg_path.text(),
@@ -507,6 +528,30 @@ class MainWindow(QWidget):
                 rollback_ytdlp_path=current.rollback_ytdlp_path,
             )
         )
+
+    def _configure_emule(self):
+        page = self.settings_page
+        self.emule_page.network.setCurrentIndex(self.emule_page.network.findData(page.emule_network.currentData()))
+        if isinstance(self.emule.engine, EmuleEngine):
+            self.emule.engine.configure(page.emule_directory.text(), page.emule_upload.value(), page.emule_download.value())
+
+    def _save_emule_settings(self):
+        page = self.settings_page
+        if self.config_store:
+            self.config_store.save(replace(
+                self.config_store.load(),
+                emule_network=page.emule_network.currentData(),
+                emule_upload=page.emule_upload.value(),
+                emule_download=page.emule_download.value(),
+                emule_directory=page.emule_directory.text(),
+            ))
+        self._configure_emule()
+
+    def _choose_emule_directory(self):
+        folder = QFileDialog.getExistingDirectory(self, "选择电驴保存位置", self.settings_page.emule_directory.text())
+        if folder:
+            self.settings_page.emule_directory.setText(folder)
+            self._save_emule_settings()
 
     @staticmethod
     def _open_external_url(url: str) -> bool:
@@ -762,12 +807,8 @@ class MainWindow(QWidget):
             return
         current = self.config_store.load()
         self.config_store.save(
-            AppConfig(
-                default_save_dir=current.default_save_dir,
-                cookies_path=current.cookies_path,
-                ffmpeg_path=current.ffmpeg_path,
-                max_concurrency=current.max_concurrency,
-                check_ytdlp_updates_on_startup=current.check_ytdlp_updates_on_startup,
+            replace(
+                current,
                 active_ytdlp_path=outcome.active_path,
                 active_ytdlp_version=outcome.active_version,
                 rollback_ytdlp_path=outcome.rollback_path,
@@ -1041,7 +1082,10 @@ class MainWindow(QWidget):
         if action == "redownload":
             self.nav.setCurrentRow(0)
             self.download_page.url_input.setPlainText(record.url)
-            self.start_analysis()
+            if record.url.lower().startswith("ed2k:"):
+                self.emule.add_link(record.url)
+            else:
+                self.start_analysis()
             return
     def delete_history_record(self, record_index: int) -> None:
         records = self._history_records()
@@ -1051,6 +1095,10 @@ class MainWindow(QWidget):
     def start_download(self) -> None:
         if not self._queue_ready or self._closing:
             self.download_page.set_status('恢复队列尚未就绪，暂不能启动下载。')
+            return
+        address = self.download_page.url_input.toPlainText().strip()
+        if address.lower().startswith("ed2k:"):
+            self.emule.add_link(address)
             return
         analyzed_items = list(self.analyzed_results.items())
         if not analyzed_items and self.analyzed_url and self.analyzed_metadata:
@@ -1338,6 +1386,9 @@ class MainWindow(QWidget):
         self.download_page.set_status(message)
 
     def handle_queue_action(self, task_id: str, action: str) -> None:
+        if task_id.startswith("ed2k:"):
+            self.emule.action(task_id, action)
+            return
         if action == "cancel":
             self.cancel_queue_task(task_id)
         elif action == "pause":
@@ -1416,9 +1467,10 @@ class MainWindow(QWidget):
                                                          'canceled': '已取消', 'waiting_network': '等待网络'}[state])
 
     def pause_all_tasks(self) -> None:
+        self.emule.pause_all()
         for row in range(self.queue_page.table.rowCount()):
             task_item = self.queue_page.table.verticalHeaderItem(row)
-            if task_item:
+            if task_item and not task_item.text().startswith("ed2k:"):
                 self.pause_queue_task(task_item.text())
 
     def clear_completed_queue_tasks(self) -> None:

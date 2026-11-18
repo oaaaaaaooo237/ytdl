@@ -26,7 +26,7 @@ class _Accounting(ctypes.Structure):
 
 
 class ManagedProcess:
-    def __init__(self, command, cwd=None, stdin=None, **_kwargs):
+    def __init__(self, command, cwd=None, stdin=None, stdout=None, **_kwargs):
         import _winapi
         import msvcrt
         self._api = _winapi
@@ -50,7 +50,7 @@ class ManagedProcess:
         self.stdout = None
         self.stdin = None
         self.returncode = None
-        read_fd, write_fd = os.pipe()
+        read_fd, write_fd = (None, os.open(os.devnull, os.O_WRONLY)) if stdout == subprocess.DEVNULL else os.pipe()
         input_fd, input_write_fd = os.pipe() if stdin == subprocess.PIPE else (os.open(os.devnull, os.O_RDONLY), None)
         thread_handle = None
         try:
@@ -70,8 +70,9 @@ class ManagedProcess:
             self._check(self._kernel.AssignProcessToJobObject(self._job, self._handle))
             if self._kernel.ResumeThread(thread_handle) == 0xFFFFFFFF:
                 raise ctypes.WinError(ctypes.get_last_error())
-            self.stdout = os.fdopen(read_fd, 'r', encoding='utf-8', errors='replace')
-            read_fd = None
+            if read_fd is not None:
+                self.stdout = os.fdopen(read_fd, 'r', encoding='utf-8', errors='replace')
+                read_fd = None
             if input_write_fd is not None:
                 self.stdin = os.fdopen(input_write_fd, 'w', encoding='utf-8')
                 input_write_fd = None

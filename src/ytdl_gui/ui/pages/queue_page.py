@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtWidgets import QHeaderView
 
-from ytdl_gui.ui.widgets import ElidedLabel, display_status
+from ytdl_gui.ui.widgets import ElidedLabel, display_status, human_file_size
 
 
 class QueuePage(QWidget):
@@ -158,7 +158,7 @@ class QueuePage(QWidget):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(12)
 
-        thumb = QLabel("视频")
+        thumb = QLabel("电驴" if task_id.startswith("ed2k:") else "视频")
         thumb.setObjectName("queueThumb")
         thumb.setFixedSize(80, 64)
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -362,7 +362,7 @@ def _format_history_size(record) -> str:
         size = 0
     if size <= 0:
         size = _path_file_size(getattr(record, "output_path", ""))
-    return _human_file_size(size) if size > 0 else "-"
+    return human_file_size(size) if size > 0 else "-"
 
 
 def _path_file_size(path: str) -> int:
@@ -375,16 +375,6 @@ def _path_file_size(path: str) -> int:
         return candidate.stat().st_size
     except OSError:
         return 0
-
-
-def _human_file_size(size: int) -> str:
-    gigabyte = 1024 * 1024 * 1024
-    megabyte = 1024 * 1024
-    if size >= gigabyte:
-        return f"{size / gigabyte:.2f} GB"
-    if size >= megabyte:
-        return f"{size / megabyte:.1f} MB"
-    return f"{max(size, 0) / 1024:.1f} KB"
 
 
 def _history_title_cell(record) -> QWidget:

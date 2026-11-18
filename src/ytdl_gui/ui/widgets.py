@@ -105,3 +105,13 @@ def display_status(status: str) -> str:
         "downloading": "下载中",
     }
     return labels.get(str(status).casefold(), str(status))
+
+
+def human_file_size(size: int) -> str:
+    gigabyte = 1024 * 1024 * 1024
+    megabyte = 1024 * 1024
+    if size >= gigabyte:
+        return f"{size / gigabyte:.2f} GB"
+    if size >= megabyte:
+        return f"{size / megabyte:.1f} MB"
+    return f"{max(size, 0) / 1024:.1f} KB"

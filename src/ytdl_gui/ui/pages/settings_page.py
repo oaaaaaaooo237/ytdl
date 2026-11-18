@@ -1,5 +1,6 @@
-from PySide6.QtWidgets import QCheckBox, QFormLayout, QGroupBox, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QGroupBox, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
 
+from ytdl_gui.ui.pages.emule_search_page import NETWORKS
 from ytdl_gui.ui.widgets import PageHeader
 
 
@@ -55,12 +56,39 @@ class SettingsPage(QWidget):
         behavior.addRow("并发下载数", self.concurrency)
         behavior.addRow("", self.update_on_start)
 
+        emule_group = QGroupBox("电驴")
+        emule_settings = QFormLayout(emule_group)
+        self.emule_status = QLabel("尚未连接")
+        emule_settings.addRow("连接状态", self.emule_status)
+        self.emule_network = QComboBox()
+        for label, value in NETWORKS:
+            self.emule_network.addItem(label, value)
+        self.emule_upload = QSpinBox()
+        self.emule_download = QSpinBox()
+        for limit in (self.emule_upload, self.emule_download):
+            limit.setRange(0, 1000000)
+            limit.setSpecialValueText("不限速")
+            limit.setSuffix(" KiB/s")
+        self.emule_directory = QLineEdit()
+        self.emule_directory.setPlaceholderText("应用专用目录")
+        self.emule_directory.setReadOnly(True)
+        self.choose_emule_directory = QPushButton("选择保存位置")
+        emule_settings.addRow("默认搜索网络", self.emule_network)
+        emule_settings.addRow("上传限速", self.emule_upload)
+        emule_settings.addRow("下载限速", self.emule_download)
+        emule_settings.addRow("保存位置", self.emule_directory)
+        emule_settings.addRow("", self.choose_emule_directory)
+        hint = QLabel("文件保存到所选位置的「电驴下载」子目录。电驴运行时可能共享该目录内的文件。限速和目录在引擎下次启动时生效。")
+        hint.setWordWrap(True)
+        emule_settings.addRow(hint)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
         layout.addWidget(PageHeader("设置", "配置保存位置、cookies、ffmpeg 与启动检查。"))
         layout.addWidget(paths_group)
         layout.addWidget(behavior_group)
+        layout.addWidget(emule_group)
         layout.addStretch()
 
     def load_config(self, config) -> None:
@@ -69,6 +97,10 @@ class SettingsPage(QWidget):
         self.ffmpeg_path.setText(config.ffmpeg_path)
         self.concurrency.setValue(config.max_concurrency)
         self.update_on_start.setChecked(config.check_ytdlp_updates_on_startup)
+        self.emule_network.setCurrentIndex(max(0, self.emule_network.findData(config.emule_network)))
+        self.emule_upload.setValue(config.emule_upload)
+        self.emule_download.setValue(config.emule_download)
+        self.emule_directory.setText(config.emule_directory)
 
     def set_ffmpeg_path(self, path: str) -> None:
         self.ffmpeg_path.setText(path)

@@ -51,3 +51,4 @@ worktrees/
 
 # Download helper temporary files
 tools/yt-dlp.tmp.exe
+tools/amule/

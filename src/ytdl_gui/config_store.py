@@ -13,6 +13,10 @@ class AppConfig:
     active_ytdlp_path: str = ""
     active_ytdlp_version: str = ""
     rollback_ytdlp_path: str = ""
+    emule_network: str = "all"
+    emule_upload: int = 0
+    emule_download: int = 0
+    emule_directory: str = ""
 
 
 class ConfigStore:
