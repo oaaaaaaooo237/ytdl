@@ -377,6 +377,7 @@ class MainWindow(QWidget):
             icon = self.style().standardIcon(standard_icon)
             item = QListWidgetItem("")
             item.setData(Qt.ItemDataRole.UserRole, text)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, text)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item.setSizeHint(QSize(70, 72))
             nav.addItem(item)

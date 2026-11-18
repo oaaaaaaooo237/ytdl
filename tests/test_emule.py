@@ -1,5 +1,6 @@
 import io
 import json
+import ssl
 from urllib.error import HTTPError
 
 import pytest
@@ -15,6 +16,40 @@ def test_file_link_requires_positive_size_and_file_hash():
     assert ed2k_file_hash(LINK) == FILE_HASH
     assert ed2k_file_hash(LINK.replace("|1024|", "|0|")) is None
     assert ed2k_file_hash("ed2k://|server|127.0.0.1|4661|/") is None
+
+
+def test_loopback_api_does_not_initialize_https(monkeypatch):
+    def unavailable():
+        raise FileNotFoundError("HTTPS runtime unavailable")
+
+    monkeypatch.setattr(ssl, "_create_default_https_context", unavailable)
+    EmuleApi(4713, "test-password")
+
+
+def test_cold_search_waits_for_real_network_connections(monkeypatch, tmp_path):
+    calls = []
+    states = iter((
+        {"ed2k": {"state": "connecting"}, "kad": {"state": "connecting"}},
+        {"ed2k": {"state": "connected"}, "kad": {"state": "connecting"}},
+        {"ed2k": {"state": "connected"}, "kad": {"state": "connected"}},
+    ))
+
+    class Api:
+        def call(self, method, path):
+            assert (method, path) == ("GET", "/status")
+            calls.append("status")
+            return next(states)
+
+        def search(self, query, network):
+            calls.append((query, network))
+            return 42
+
+    engine = EmuleEngine(tmp_path, tmp_path / "profile")
+    monkeypatch.setattr(engine, "start", Api)
+    monkeypatch.setattr(engine, "_connect", lambda *_: None)
+    monkeypatch.setattr("ytdl_gui.emule.time.sleep", lambda _: None)
+    assert engine.search("Debian ISO", "all") == 42
+    assert calls == ["status", "status", "status", ("Debian ISO", "all")]
 
 
 def test_search_and_download_use_correct_methods_and_search_id():

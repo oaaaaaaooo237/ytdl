@@ -10,8 +10,9 @@ import secrets
 import socket
 import subprocess
 import time
+import traceback
 from urllib.error import HTTPError
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import HTTPDefaultErrorHandler, HTTPErrorProcessor, HTTPHandler, OpenerDirector, Request
 
 from ytdl_gui.process_tree import ManagedProcess
 
@@ -34,7 +35,13 @@ class EmuleError(Exception):
 class EmuleApi:
     def __init__(self, port: int, password: str, *, open_request=None):
         self._base_url = f"http://127.0.0.1:{port}/api/v1"
-        self._open = open_request or build_opener(ProxyHandler({})).open
+        if open_request is None:
+            # The private API is plain loopback HTTP. The default opener eagerly creates an HTTPS context.
+            opener = OpenerDirector()
+            for handler in (HTTPHandler(), HTTPDefaultErrorHandler(), HTTPErrorProcessor()):
+                opener.add_handler(handler)
+            open_request = opener.open
+        self._open = open_request
         self._password = password
         self._token = None
 
@@ -205,6 +212,10 @@ class EmuleEngine:
                     return client
             raise EmuleError("本机电驴引擎提前退出")
         except (OSError, subprocess.SubprocessError, ValueError):
+            try:
+                (self.profile / "startup-error.log").write_text(traceback.format_exc(), encoding="utf-8")
+            except OSError:
+                pass
             self.stop()
             raise EmuleError("无法初始化本机电驴引擎") from None
         except EmuleError:
@@ -271,13 +282,16 @@ class EmuleEngine:
     def search(self, query: str, network: str) -> int:
         api = self.start()
         self._connect(api, network)
+        wanted = {"global": {"ed2k"}, "kad": {"kad"}, "all": {"ed2k", "kad"}}[network]
         deadline = time.monotonic() + 17
         while True:
-            try:
-                return api.search(query, network)
-            except EmuleError as error:
-                if error.code != "amuled_rejected":
-                    raise
-                if time.monotonic() >= deadline:
-                    raise EmuleError("电驴网络尚未连接，请稍后重新搜索") from None
-            time.sleep(1)
+            status = api.call("GET", "/status")
+            ready = {name for name in wanted if status.get(name, {}).get("state") == "connected"}
+            if ready == wanted:
+                break
+            if time.monotonic() >= deadline:
+                if not ready:
+                    raise EmuleError("电驴网络尚未连接，请稍后重新搜索")
+                break
+            time.sleep(0.5)
+        return api.search(query, network)

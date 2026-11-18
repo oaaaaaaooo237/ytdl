@@ -70,7 +70,6 @@ class EmuleController(QObject):
 
     def _begin(self):
         self.active = True
-        self.timer.start()
 
     def restore(self):
         if not self.window._closing:
@@ -91,6 +90,7 @@ class EmuleController(QObject):
         tab = self.page.add_search(query, network)
 
         def started(search_id):
+            self.timer.start()
             if not tab.closed:
                 tab.search_id = search_id
 
@@ -129,7 +129,11 @@ class EmuleController(QObject):
                     updates.append((tab, None))
             return updates, api.call("GET", "/downloads?status=all&limit=1000000000")["downloads"], status
 
-        self._submit(fetch, self._update, self.window.queue_page.show_notice)
+        def failed(message):
+            self.timer.stop()
+            self.window.queue_page.show_notice(message)
+
+        self._submit(fetch, self._update, failed)
 
     def _check_selected_search(self, index):
         tab = self.page.tabs.widget(index)
@@ -137,6 +141,8 @@ class EmuleController(QObject):
             tab.settled = False
 
     def _update(self, snapshot):
+        if self.active and not self.timer.isActive():
+            self.timer.start()
         updates, downloads, status = snapshot
         connected = [label for key, label in (("ed2k", "eD2k"), ("kad", "Kad"))
                      if status.get(key, {}).get("state") == "connected"]
@@ -199,6 +205,7 @@ class EmuleController(QObject):
         self._begin()
 
         def queued(_):
+            self.timer.start()
             self.window.queue_page.show_notice("已加入电驴队列")
             self.window.nav.setCurrentRow(2)
             self.poll()
