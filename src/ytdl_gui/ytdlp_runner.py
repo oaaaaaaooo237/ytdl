@@ -178,7 +178,10 @@ def categorize_analysis_error(stderr: str) -> AnalysisFailureKind:
         return AnalysisFailureKind.PLAYLIST_CONFIRMATION_NEEDED
     if 'no video formats' in text:
         return AnalysisFailureKind.NO_FORMATS
-    if "sign in" in text or "login" in text or any(term in text for term in ('age-restricted', 'age restricted', 'confirm your age', 'age verification')):
+    if any(term in text for term in (
+        'sign in', 'login', 'only available for registered users',
+        'age-restricted', 'age restricted', 'confirm your age', 'age verification',
+    )):
         return AnalysisFailureKind.LOGIN_REQUIRED
     if "unavailable" in text or "private" in text or "removed" in text:
         return AnalysisFailureKind.UNAVAILABLE

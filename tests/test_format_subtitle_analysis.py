@@ -315,3 +315,8 @@ def test_extract_playlist_urls_limits_to_50_and_reports_skipped():
     assert len(result.urls) == 50
     assert result.total_count == 52
     assert result.skipped_count == 2
+
+
+def test_qqmusic_registered_users_error_requires_login():
+    message = "ERROR: [qqmusic] This video is only available for registered users."
+    assert categorize_analysis_error(message) == AnalysisFailureKind.LOGIN_REQUIRED
