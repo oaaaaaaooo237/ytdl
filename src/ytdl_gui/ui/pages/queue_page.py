@@ -242,6 +242,7 @@ class QueuePage(QWidget):
         retry = card.get("retry")
         if isinstance(retry, QPushButton) and status is not None:
             retry.setVisible(_should_show_retry(status))
+            retry.setToolTip('继续' if status in {'已暂停', '等待网络'} else '重试')
 
     def completed_task_ids(self) -> list[str]:
         task_ids: list[str] = []
@@ -349,6 +350,7 @@ def _should_show_retry(status: str) -> bool:
         "失败",
         "已取消",
         "已暂停",
+        "等待网络",
     }
 
 
@@ -364,6 +366,8 @@ def _format_history_size(record) -> str:
 
 
 def _path_file_size(path: str) -> int:
+    if not isinstance(path, str) or not path:
+        return 0
     try:
         candidate = Path(path)
         if not candidate.is_file():

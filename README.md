@@ -8,8 +8,8 @@
   </p>
 
   <p>
-    <a href="https://github.com/oaaaaaaooo237/ytdl/releases/tag/v0.2.2-thumbnail">
-      <img alt="Release" src="https://img.shields.io/badge/release-v0.2.2--thumbnail-149A9A" />
+    <a href="https://github.com/oaaaaaaooo237/ytdl/releases/tag/win-v1.0.0">
+      <img alt="Release" src="https://img.shields.io/badge/Windows-v1.0.0-149A9A" />
     </a>
     <img alt="Windows" src="https://img.shields.io/badge/Windows-11%20x64-2563EB" />
     <img alt="yt-dlp" src="https://img.shields.io/badge/engine-yt--dlp-3B82F6" />

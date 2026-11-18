@@ -122,6 +122,7 @@ def test_history_row_actions_open_redownload_and_delete(qtbot, app_data_dir: Pat
     history_action_button(window, 0, "打开").click()
     history_action_button(window, 0, "目录").click()
     history_action_button(window, 0, "重下").click()
+    window._confirm_record_deletion = lambda *_: False
     history_action_button(window, 0, "删除").click()
 
     assert opened[0] == output_path.as_uri()
@@ -199,6 +200,7 @@ def test_clear_history_action_updates_store_and_table(qtbot, app_data_dir: Path)
     history.add(HistoryRecord("Title", "url", "D:/file.mp4", "video", "720p", "none", "finished", "2026-05-30T20:00:00"))
     window = MainWindow(config_store=ConfigStore(app_data_dir), history_store=history)
     qtbot.addWidget(window)
+    window._confirm_record_deletion = lambda *_: False
 
     window.clear_history()
 
@@ -258,6 +260,11 @@ def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Pa
     created = {}
 
     class FakeApplication:
+        class QuitSignal:
+            def connect(self, callback):
+                created['quit_handler'] = callback
+        aboutToQuit = QuitSignal()
+
         def __init__(self, argv):
             self.argv = argv
 
@@ -269,9 +276,16 @@ def test_app_run_injects_config_and_history_stores(monkeypatch, app_data_dir: Pa
             return 0
 
     class FakeWindow:
-        def __init__(self, config_store=None, history_store=None):
+        def __init__(self, config_store=None, history_store=None, queue_store=None):
             created["config_store"] = config_store
             created["history_store"] = history_store
+            created['queue_store'] = queue_store
+
+        def watch_network(self):
+            created['network_watched'] = True
+
+        def shutdown_for_quit(self):
+            pass
 
         def show(self):
             created["shown"] = True
@@ -357,6 +371,9 @@ def test_configure_application_icon_sets_window_icon_and_tray(monkeypatch):
     class FakeWindow:
         def __init__(self):
             self.window_icon = None
+
+        def close(self):
+            events.append('window-close')
 
         def setWindowIcon(self, icon):
             self.window_icon = icon

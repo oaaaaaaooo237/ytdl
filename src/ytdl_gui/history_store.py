@@ -18,6 +18,7 @@ class HistoryRecord:
     created_at: str
     file_size_bytes: int = 0
     thumbnail_path: str = ""
+    task_id: str = ""
 
 
 class HistoryStore:
