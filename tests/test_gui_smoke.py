@@ -233,6 +233,7 @@ def test_download_page_has_primary_controls(qtbot):
     assert not window.download_page.paste_button.text()
     assert not window.download_page.paste_button.icon().isNull()
     assert window.download_page.paste_button.size() == window.download_page.emule_button.size()
+    assert window.download_page.save_folder_button.height() == window.download_page.save_folder_label.height()
     assert window.download_page.save_folder_button.text() == "浏览"
     assert window.download_page.start_button.text() == "开始下载"
     assert window.download_page.free_space_label.text().startswith("剩余空间")

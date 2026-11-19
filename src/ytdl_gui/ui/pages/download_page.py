@@ -23,10 +23,12 @@ from ytdl_gui.ui.player import PreviewPlayer
 class DownloadPage(QWidget):
     def __init__(self):
         super().__init__()
+        field_height = 48
+        section_spacing = 8
         self.url_input = QTextEdit()
         self.url_input.setObjectName("urlInput")
         self.url_input.setPlaceholderText("粘贴视频地址，或输入电驴搜索关键词")
-        self.url_input.setFixedHeight(48)
+        self.url_input.setFixedHeight(field_height)
         self.url_input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.url_input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.analyze_button = QPushButton("分析")
@@ -45,8 +47,9 @@ class DownloadPage(QWidget):
         for button in (self.emule_button, self.paste_button):
             button.setProperty("addressIcon", True)
             button.setIconSize(QSize(32, 32))
-            button.setFixedSize(48, 48)
+            button.setFixedSize(field_height, field_height)
         self.save_folder_button = QPushButton("浏览")
+        self.save_folder_button.setFixedHeight(field_height)
         self.start_button = QPushButton("开始下载")
         self.start_button.setObjectName("primaryButton")
         self.start_button.setProperty("largePrimary", True)
@@ -59,7 +62,7 @@ class DownloadPage(QWidget):
         self.save_folder_label = QLineEdit()
         self.save_folder_label.setObjectName("pathDisplay")
         self.save_folder_label.setReadOnly(True)
-        self.save_folder_label.setFixedHeight(46)
+        self.save_folder_label.setFixedHeight(field_height)
         self.save_folder_label.setText("保存位置：未选择")
         self.free_space_label = QLabel("剩余空间：未检测")
         self.free_space_label.setFixedHeight(20)
@@ -112,14 +115,14 @@ class DownloadPage(QWidget):
         layout.setSpacing(0)
 
         layout.addWidget(_SectionTitle("1. 输入视频地址"))
-        layout.addSpacing(8)
+        layout.addSpacing(section_spacing)
         url_row = QHBoxLayout()
         url_row.setSpacing(10)
         url_row.addWidget(self.url_input, 1)
         url_row.addWidget(self.emule_button)
         url_row.addWidget(self.paste_button)
         layout.addLayout(url_row)
-        layout.addSpacing(4)
+        layout.addSpacing(8)
         analyze_row = QHBoxLayout()
         analyze_row.addStretch()
         analyze_row.addWidget(self.analyze_button)
@@ -149,7 +152,7 @@ class DownloadPage(QWidget):
 
         lower_block = QVBoxLayout()
         lower_block.setContentsMargins(0, 0, 0, 0)
-        lower_block.setSpacing(8)
+        lower_block.setSpacing(section_spacing)
         lower_block.addWidget(_SectionTitle("2. 保存位置"))
         save_row = QHBoxLayout()
         save_row.setSpacing(10)
