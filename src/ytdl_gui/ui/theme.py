@@ -51,16 +51,7 @@ def apply_light_theme(app) -> None:
             font-size: 13px;
             font-weight: 700;
         }}
-        #windowChromeButton {{
-            border: 0;
-            background: transparent;
-            padding: 0;
-            min-height: 0;
-        }}
-        #windowChromeButton:hover {{
-            background: #eef3f6;
-        }}
-        #footerMuted {{
+        #appVersion, #footerMuted {{
             color: {MUTED_TEXT};
             background: transparent;
             font-size: 11px;

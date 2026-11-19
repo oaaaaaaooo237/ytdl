@@ -47,6 +47,8 @@ def test_main_window_has_chinese_navigation(qtbot):
     assert window.windowTitle() == "CaptainFlash"
     assert window.app_title_label.text() == "CaptainFlash"
     assert window.title_bar.objectName() == "titleBar"
+    assert not window.title_bar.findChildren(QPushButton)
+    assert "v1.2.3" in {label.text() for label in window.title_bar.findChildren(QLabel)}
     assert window.bottom_status_bar.objectName() == "bottomStatusBar"
     assert window.ytdlp_footer_label.text().startswith("yt-dlp")
     assert window.footer_update_button.text() == "检查更新"
@@ -881,7 +883,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.2"
+    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.3"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"

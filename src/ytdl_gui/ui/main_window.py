@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ytdl_gui import APP_DISPLAY_NAME
+from ytdl_gui import APP_DISPLAY_NAME, __version__
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
 from ytdl_gui.emule import EmuleEngine
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
@@ -420,15 +420,13 @@ class MainWindow(QWidget):
         self.app_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.app_title_label = QLabel(APP_DISPLAY_NAME)
         self.app_title_label.setObjectName("appTitle")
+        version_label = QLabel(f"v{__version__}")
+        version_label.setObjectName("appVersion")
 
         layout.addWidget(self.app_icon_label)
         layout.addWidget(self.app_title_label)
+        layout.addWidget(version_label)
         layout.addStretch()
-        for text in ("－", "□", "×"):
-            button = QPushButton(text)
-            button.setObjectName("windowChromeButton")
-            button.setFixedSize(32, 28)
-            layout.addWidget(button)
         return frame
 
     def _build_bottom_status_bar(self) -> QFrame:
