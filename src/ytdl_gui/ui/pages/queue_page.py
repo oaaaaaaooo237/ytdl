@@ -1,9 +1,11 @@
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
+    QComboBox,
+    QApplication,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtWidgets import QHeaderView
 
 from ytdl_gui.ui.widgets import ElidedLabel, display_status, human_file_size
+from ytdl_gui.ui.icons import line_icon
 
 
 class QueuePage(QWidget):
@@ -49,7 +52,7 @@ class QueuePage(QWidget):
         self.scroll_area.setObjectName("queueScroll")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.scroll_area.setMaximumHeight(300)
         self.scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.scroll_area.setWidget(self.card_host)
@@ -67,8 +70,27 @@ class QueuePage(QWidget):
         self.notice_label.setObjectName("queueNotice")
         self.notice_label.setWordWrap(True)
         self.notice_label.hide()
+        self.task_search = QLineEdit()
+        self.task_search.setPlaceholderText("搜索任务")
+        self.task_search.setAccessibleName("搜索任务")
+        self.task_status = QComboBox()
+        self.task_status.setAccessibleName("任务状态")
+        for text in ("全部状态", "下载中", "等待中", "已暂停", "已完成", "失败"):
+            self.task_status.addItem(text)
+        self.task_type = QComboBox()
+        self.task_type.setAccessibleName("任务类型")
+        for text in ("全部类型", "媒体", "普通文件", "种子", "电驴"):
+            self.task_type.addItem(text)
+        self.empty_label = QLabel()
+        self.empty_label.setObjectName("mutedLabel")
+        self.empty_label.setWordWrap(True)
+        for control in (self.task_search.textChanged, self.task_status.currentTextChanged, self.task_type.currentTextChanged):
+            control.connect(self._filter_tasks)
         self.history_heading = QLabel("历史")
         self.history_heading.setObjectName("sectionTitle")
+        self.recent_history_empty = QLabel()
+        self.recent_history_empty.setWordWrap(True)
+        self.recent_history_empty.setObjectName("mutedLabel")
         self.recent_history_table = QTableWidget(0, 7)
         self.recent_history_table.setObjectName("queueHistoryTable")
         self.recent_history_table.setHorizontalHeaderLabels(["标题", "格式", "大小", "状态", "时间", "", ""])
@@ -85,7 +107,7 @@ class QueuePage(QWidget):
         self.open_downloads_button = QPushButton("打开下载文件夹")
         self.open_downloads_button.setObjectName("queueOpenDownloadsButton")
         self.open_downloads_button.setFixedWidth(150)
-        self.open_downloads_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+        self.open_downloads_button.setIcon(self._action_icon("storage"))
         self.open_downloads_button.setIconSize(QSize(15, 15))
         self.history_search = QLineEdit()
         self.history_search.setPlaceholderText("搜索历史...")
@@ -107,9 +129,17 @@ class QueuePage(QWidget):
         header_row.addLayout(actions)
         layout.addLayout(header_row)
         layout.addWidget(self.notice_label)
-        layout.addWidget(self.scroll_area, 2)
+        filters = QHBoxLayout()
+        filters.setSpacing(8)
+        filters.addWidget(self.task_search, 1)
+        filters.addWidget(self.task_status)
+        filters.addWidget(self.task_type)
+        layout.addLayout(filters)
+        layout.addWidget(self.empty_label)
+        layout.addWidget(self.scroll_area)
         layout.addWidget(self.history_heading)
         layout.addWidget(self.recent_history_table, 1)
+        layout.addWidget(self.recent_history_empty)
         history_footer = QHBoxLayout()
         history_footer.setContentsMargins(0, 0, 0, 0)
         history_footer.setSpacing(12)
@@ -118,16 +148,20 @@ class QueuePage(QWidget):
         history_footer.addWidget(self.history_search)
         layout.addLayout(history_footer)
         layout.addWidget(self.table, 1)
+        self._filter_tasks()
+        self._render_recent_history()
 
-    def add_task(self, task_id: str, title: str, status: str = "等待中", thumbnail: QPixmap | None = None) -> None:
+    def add_task(self, task_id: str, title: str, status: str = "等待中", thumbnail: QPixmap | None = None,
+                 kind: str = "media") -> None:
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setVerticalHeaderItem(row, QTableWidgetItem(task_id))
         values = [title, status, "0.0%", "", "", ""]
         for column, value in enumerate(values):
             self.table.setItem(row, column, QTableWidgetItem(value))
-        self._add_task_card(task_id, title, status, thumbnail)
+        self._add_task_card(task_id, title, status, thumbnail, kind)
         self._update_queue_heading()
+        self._filter_tasks()
 
     def update_task(self, task_id: str, status: str | None = None, progress=None, speed: str = "", eta: str = "") -> None:
         row = self._row_for_task(task_id)
@@ -150,7 +184,7 @@ class QueuePage(QWidget):
                 return row
         return -1
 
-    def _add_task_card(self, task_id: str, title: str, status: str, thumbnail: QPixmap | None = None) -> None:
+    def _add_task_card(self, task_id: str, title: str, status: str, thumbnail: QPixmap | None, kind: str) -> None:
         card = QFrame()
         card.setObjectName("queueCard")
         card.setFixedHeight(90)
@@ -160,7 +194,10 @@ class QueuePage(QWidget):
         heading = QHBoxLayout()
         heading.setSpacing(10)
 
-        thumb = QLabel("电驴" if task_id.startswith("ed2k:") else "视频")
+        type_label = "电驴" if task_id.startswith("ed2k:") else {
+            "file": "普通文件", "direct_media": "普通文件", "torrent": "种子",
+        }.get(kind, "媒体")
+        thumb = QLabel({"普通文件": "文件", "媒体": "媒体"}.get(type_label, type_label))
         thumb.setObjectName("queueThumb")
         thumb.setFixedSize(38, 38)
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -185,15 +222,15 @@ class QueuePage(QWidget):
         meta.setObjectName("mutedLabel")
 
         pause = _queue_action_button(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause),
+            self._action_icon("pause"),
             "暂停",
         )
         cancel = _queue_action_button(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton),
+            self._action_icon("cancel"),
             "取消",
         )
         retry = _queue_action_button(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+            self._action_icon("retry"),
             "重试",
         )
         pause.setObjectName(f"queue-pause-{task_id}")
@@ -227,8 +264,23 @@ class QueuePage(QWidget):
             "pause": pause,
             "cancel": cancel,
             "retry": retry,
+            "type": type_label,
+            "status": status,
+            "name": title,
         }
         self._update_task_card(task_id, status, None, "", "")
+
+    @staticmethod
+    def _action_icon(key):
+        return QIcon(line_icon(key, QApplication.instance().palette().windowText().color()))
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "open_downloads_button"):
+            self.open_downloads_button.setIcon(self._action_icon("storage"))
+            for card in self._task_cards.values():
+                for key in ("pause", "cancel", "retry"):
+                    card[key].setIcon(self._action_icon(key))
 
     def _update_task_card(self, task_id: str, status: str | None, progress_value, speed: str, eta: str) -> None:
         card = self._task_cards.get(task_id)
@@ -248,19 +300,43 @@ class QueuePage(QWidget):
             if parts:
                 meta.setText(" · ".join(parts))
         if status is not None:
-            terminal = status in {"已完成", "已取消"}
+            changed = status != card["status"]
+            card["status"] = status
+            terminal = status in {"已完成", "已取消", "已跳过"}
             retry_visible = _should_show_retry(status)
             card["pause"].setVisible(not terminal and not retry_visible)
             card["cancel"].setVisible(not terminal)
             card["retry"].setVisible(retry_visible)
             card["retry"].setToolTip('继续' if status in {'已暂停', '等待网络'} else '重试')
+            if changed:
+                self._filter_tasks()
+
+    def _filter_tasks(self):
+        query = self.task_search.text().strip().casefold()
+        status = self.task_status.currentText()
+        kind = self.task_type.currentText()
+        visible = 0
+        for card in self._task_cards.values():
+            state = card["status"]
+            if state in {"等待预约时间", "等待网络", "等待来源"}:
+                state = "等待中"
+            matches = (query in card["name"].casefold()
+                       and status in {"全部状态", state}
+                       and kind in {"全部类型", card["type"]})
+            card["card"].setVisible(matches)
+            visible += int(matches)
+        self.scroll_area.setVisible(bool(visible))
+        if visible:
+            self.scroll_area.setFixedHeight(min(300, visible * 90 + 2))
+        self.empty_label.setText("没有符合当前筛选的任务。" if self._task_cards else "添加下载后，可在这里查看进度。")
+        self.empty_label.setVisible(not visible)
 
     def completed_task_ids(self) -> list[str]:
         task_ids: list[str] = []
         for row in range(self.table.rowCount()):
             status_item = self.table.item(row, 1)
             task_item = self.table.verticalHeaderItem(row)
-            if status_item and task_item and status_item.text() in {"已完成", "已取消"}:
+            if status_item and task_item and status_item.text() in {"已完成", "已取消", "已跳过"}:
                 task_ids.append(task_item.text())
         return task_ids
 
@@ -275,6 +351,7 @@ class QueuePage(QWidget):
                 self.card_layout.removeWidget(widget)
                 widget.deleteLater()
         self._update_queue_heading()
+        self._filter_tasks()
 
     def _update_queue_heading(self) -> None:
         count = self.table.rowCount()
@@ -301,6 +378,11 @@ class QueuePage(QWidget):
             or query in record.format_summary.casefold()
             or query in record.created_at.casefold()
         ]
+        self.recent_history_table.setVisible(bool(records))
+        self.recent_history_empty.setText(
+            "没有匹配的历史记录。" if query else "完成的下载会出现在这里。"
+        )
+        self.recent_history_empty.setVisible(not records)
         for record_index, record in records:
             row = self.recent_history_table.rowCount()
             self.recent_history_table.insertRow(row)

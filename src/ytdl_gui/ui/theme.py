@@ -1,3 +1,4 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPalette
 
 TEAL = "#536F73"
@@ -8,13 +9,39 @@ ROSE_DARK = "#794B53"
 ROSE_SOFT = "#F0E2E2"
 SURFACE = "#FCFAF6"
 BACKGROUND = "#F3F0EB"
-NAV_BACKGROUND = SURFACE
 TEXT = "#323F40"
 MUTED_TEXT = "#637071"
 BORDER = "#D8D9D1"
 
 
 def apply_light_theme(app) -> None:
+    apply_theme(app, "light")
+
+
+def apply_theme(app, mode: str, color_preset: str = "morandi") -> None:
+    dark = mode == "dark" or (
+        mode == "system" and app.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    )
+    if color_preset == "codex" and dark:
+        colors = ("#A7CDDA", "#C8E7F3", "#174D5C", "#E0C2A4", "#F4DEC4", "#55402A",
+                  "#201D16", "#15130E", "#E8E2D7", "#CBC5BA", "#413A2D", "#15130E")
+    elif color_preset == "codex":
+        colors = ("#315C6B", "#083541", "#C8E7F3", "#6A5641", "#493A2A", "#F4DEC4",
+                  "#FFFFFF", "#FAF8F2", "#1D1B16", "#615B50", "#E2DCD0", "#FFFFFF")
+    elif dark:
+        colors = ("#B0C8C5", "#C6D8D6", "#3A4E50", "#D7B2B7", "#E3C6CA", "#493B42",
+                  "#2B373B", "#232C30", "#E4E6DF", "#B3BFBC", "#465458", "#30292D")
+    else:
+        colors = (TEAL, TEAL_DARK, TEAL_SOFT, ROSE, ROSE_DARK, ROSE_SOFT,
+                  SURFACE, BACKGROUND, TEXT, MUTED_TEXT, BORDER, "#FFFDF7")
+    if getattr(app, "_captainflash_theme_colors", None) == colors and app.styleSheet():
+        return
+    _apply_theme(app, *colors)
+    app._captainflash_theme_colors = colors
+
+
+def _apply_theme(app, TEAL, TEAL_DARK, TEAL_SOFT, ROSE, ROSE_DARK, ROSE_SOFT,
+                 SURFACE, BACKGROUND, TEXT, MUTED_TEXT, BORDER, ON_ACCENT) -> None:
     app.setFont(QFont("Segoe UI", 10))
     palette = QPalette()
     palette.setColor(QPalette.Window, QColor(BACKGROUND))
@@ -25,7 +52,7 @@ def apply_light_theme(app) -> None:
     palette.setColor(QPalette.WindowText, QColor(TEXT))
     palette.setColor(QPalette.ButtonText, QColor(TEXT))
     palette.setColor(QPalette.Highlight, QColor(TEAL))
-    palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+    palette.setColor(QPalette.HighlightedText, QColor(ON_ACCENT))
     app.setPalette(palette)
     app.setStyleSheet(
         f"""
@@ -45,7 +72,7 @@ def apply_light_theme(app) -> None:
         }}
         #appIcon {{
             background: {TEAL};
-            color: white;
+            color: {ON_ACCENT};
             border-radius: 6px;
             font-weight: 700;
         }}
@@ -71,8 +98,26 @@ def apply_light_theme(app) -> None:
         }}
         #contentSurface {{
             background: {SURFACE};
-            border: 1px solid #e3e8ec;
+            border: 1px solid {BORDER};
             border-radius: 8px;
+        }}
+        QScrollBar:vertical {{
+            width: 10px;
+            margin: 2px;
+            background: transparent;
+        }}
+        QScrollBar::handle:vertical {{
+            min-height: 28px;
+            background: {BORDER};
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {MUTED_TEXT};
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0;
+        }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+            background: transparent;
         }}
         #pageTitle {{
             font-size: 22px;
@@ -84,7 +129,7 @@ def apply_light_theme(app) -> None:
             background: transparent;
         }}
         QListWidget {{
-            background: {NAV_BACKGROUND};
+            background: {SURFACE};
             border: 1px solid {BORDER};
             border-radius: 8px;
             padding: 12px 8px;
@@ -140,7 +185,7 @@ def apply_light_theme(app) -> None:
         }}
         QPushButton#primaryButton {{
             background: {ROSE};
-            color: #FFFDF7;
+            color: {ON_ACCENT};
             border-color: {ROSE};
             font-weight: 600;
         }}
@@ -188,7 +233,7 @@ def apply_light_theme(app) -> None:
             border: 1px solid {BORDER};
             border-radius: 8px;
         }}
-        #videoCard QLabel, QGroupBox QLabel {{
+        #videoCard QLabel, #optionsCard QLabel, QGroupBox QLabel {{
             background: transparent;
         }}
         #videoCard #thumbnailPlaceholder {{
@@ -236,16 +281,16 @@ def apply_light_theme(app) -> None:
             background: transparent;
         }}
         #actualFormatLabel {{
-            color: #31445b;
-            background: #f7fafc;
-            border: 1px solid #d8e1e8;
+            color: {TEXT};
+            background: {SURFACE};
+            border: 1px solid {BORDER};
             border-radius: 6px;
             padding: 7px 9px;
         }}
         #mergeHintLabel {{
-            color: #455a73;
-            background: #eef7f6;
-            border: 1px solid #c8e7e3;
+            color: {TEXT};
+            background: {TEAL_SOFT};
+            border: 1px solid {BORDER};
             border-radius: 6px;
             padding: 7px 9px;
         }}
@@ -303,7 +348,7 @@ def apply_light_theme(app) -> None:
         #queueHistoryThumb {{
             background: {TEAL_SOFT};
             border-radius: 4px;
-            color: #ffffff;
+            color: {TEXT};
             font-weight: 700;
         }}
         #queueHistoryTitle {{
@@ -314,6 +359,18 @@ def apply_light_theme(app) -> None:
             min-width: 0;
             padding: 0;
             border-radius: 0;
+        }}
+        QPushButton[historyTextAction="true"], QToolButton#historyMore {{
+            min-width: 30px;
+            min-height: 20px;
+            padding: 0 6px;
+            border: 1px solid {BORDER};
+            border-radius: 0;
+            background: {SURFACE};
+        }}
+        QPushButton[historyTextAction="true"]:hover, QToolButton#historyMore:hover {{
+            border-color: {TEAL};
+            background: {TEAL_SOFT};
         }}
         #toolbarButton {{
             min-width: 88px;
@@ -355,6 +412,49 @@ def apply_light_theme(app) -> None:
             subcontrol-origin: margin;
             left: 12px;
             padding: 0 4px;
+        }}
+        #settingsScroll {{
+            border: 0;
+        }}
+        #settingsSectionLabel {{
+            color: {MUTED_TEXT};
+            font-size: 12px;
+            background: transparent;
+            margin-top: 4px;
+        }}
+        QPushButton#settingsRow {{
+            border: 0;
+            border-bottom: 1px solid {BORDER};
+            padding: 0;
+            background: transparent;
+            min-height: 63px;
+        }}
+        QPushButton#settingsRow[lastRow="true"] {{
+            border-bottom: 1px solid transparent;
+        }}
+        QPushButton#settingsRow:hover, QPushButton#settingsRow:focus {{
+            background: {TEAL_SOFT};
+        }}
+        #settingsRowIcon {{
+            background: {TEAL_SOFT};
+            border-radius: 8px;
+        }}
+        #settingsRowTitle {{
+            font-weight: 600;
+            background: transparent;
+        }}
+        #settingsRowSummary, #settingsRowChevron {{
+            color: {MUTED_TEXT};
+            font-size: 12px;
+            background: transparent;
+        }}
+        #startGuide {{
+            background: {SURFACE};
+            border: 1px solid {BORDER};
+            border-radius: 8px;
+        }}
+        #startGuide QLabel {{
+            background: transparent;
         }}
         QTableWidget {{
             background: {SURFACE};

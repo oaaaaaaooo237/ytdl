@@ -104,6 +104,9 @@ class YtdlpCommandBuilder:
         subtitle_action: str = "none",
         ffmpeg_path: Path | None = None,
         temp_dir: Path | None = None,
+        subtitle_languages: tuple[str, ...] = (),
+        automatic_subtitles: bool = True,
+        resume_transfer: bool = True,
     ) -> list[str]:
         command = [
             str(self.executable),
@@ -118,11 +121,16 @@ class YtdlpCommandBuilder:
             "--print",
             "before_dl:__YTDL_OUTPUT__%(filename)j",
         ]
-        command.extend(['--continue', '--part', '--socket-timeout', '15', '--retries', '2', '--fragment-retries', '2', '--no-playlist'])
+        command.extend(['--continue' if resume_transfer else '--no-continue', '--part',
+                        '--socket-timeout', '15', '--retries', '2', '--fragment-retries', '2', '--no-playlist'])
         if temp_dir is not None:
             command.extend(['-P', 'home:' + str(output_template.parent), '-P', 'temp:' + str(temp_dir)])
         if subtitle_action in {"file", "embed", "burn"}:
-            command.extend(["--write-subs", "--write-auto-subs", "--sub-langs", DEFAULT_SUBTITLE_LANGS])
+            command.append("--write-subs")
+            if automatic_subtitles:
+                command.append("--write-auto-subs")
+            languages = ",".join(re.escape(language) for language in subtitle_languages) or DEFAULT_SUBTITLE_LANGS
+            command.extend(["--sub-langs", languages])
         if subtitle_action == "embed":
             command.append("--embed-subs")
         if subtitle_action == "burn":

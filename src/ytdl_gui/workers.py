@@ -249,6 +249,11 @@ class DownloadRequest:
     temp_dir: Path | None = None
     uses_cookies: bool = False
     analysis_info: dict | None = field(default=None, repr=False, compare=False)
+    kind: str = "media"
+    conflict_policy: str = "rename"
+    torrent_files: tuple[int, ...] = ()
+    subtitle_languages: tuple[str, ...] = ()
+    automatic_subtitles: bool = True
 
 
 @dataclass(frozen=True)
@@ -262,6 +267,7 @@ class PreviewUrlRequest:
 
 class DownloadWorker(QObject):
     output_reserved = Signal(str)
+    artifacts_ready = Signal(object)
     progress = Signal(object)
     finished = Signal(str)
     failed = Signal(str)
@@ -274,11 +280,14 @@ class DownloadWorker(QObject):
         request: DownloadRequest,
         popen_factory: PopenFactory | None = None,
         ffmpeg_runner: FfmpegRunner | None = None,
+        *,
+        resume_transfer: bool = True,
     ):
         super().__init__()
         self.request = request
         self._popen_factory = popen_factory or ManagedProcess
         self._ffmpeg_runner = ffmpeg_runner
+        self._resume_transfer = resume_transfer
         self._process = None
         self._canceled = False
         self._stop_reason = ''
@@ -365,6 +374,9 @@ class DownloadWorker(QObject):
             subtitle_action=self.request.subtitle_action,
             ffmpeg_path=self.request.ffmpeg_path,
             temp_dir=self.request.temp_dir,
+            subtitle_languages=self.request.subtitle_languages,
+            automatic_subtitles=self.request.automatic_subtitles,
+            resume_transfer=self._resume_transfer,
         )
         snapshot = reusable_analysis(self.request.analysis_info, self.request.url, self.request.cookies_path)
         input_options = {}
@@ -436,6 +448,12 @@ class DownloadWorker(QObject):
                 if burned_output_path:
                     self._complete('finished', burned_output_path)
                 return
+            if self.request.subtitle_action == "file" and resolved_output_path:
+                primary = Path(resolved_output_path).resolve()
+                artifacts = tuple(str(path) for path in _snapshot_output_files(primary.parent) - before_files
+                                  if path.suffix.lower() in {".srt", ".vtt", ".ass", ".ssa", ".ttml", ".json3", ".lrc"}
+                                  and path.name.startswith(primary.stem + "."))
+                self.artifacts_ready.emit(artifacts)
             self._complete('finished', resolved_output_path)
         else:
             if 'no video formats' in errors.casefold():

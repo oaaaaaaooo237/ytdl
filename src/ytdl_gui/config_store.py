@@ -17,6 +17,17 @@ class AppConfig:
     emule_upload: int = 0
     emule_download: int = 0
     emule_directory: str = ""
+    theme_mode: str = "light"
+    color_preset: str = "morandi"
+    jump_to_tasks: bool = True
+    notify_completed: bool = True
+    notify_failed: bool = True
+    file_conflict: str = "rename"
+    http_max_connections: int = 4
+    http_limit_kib: int = 0
+    max_waiting_downloads: int = 5
+    resume_downloads: bool = True
+    download_detected_subtitles: bool = False
 
 
 class ConfigStore:

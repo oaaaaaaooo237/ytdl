@@ -65,6 +65,7 @@ class FormatsPage(QWidget):
         ):
             combo.setFixedHeight(32)
         self.format_id_combo.addItem("自动")
+        self.subtitle_language_button = QPushButton("选择字幕语言")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 14, 24, 8)
@@ -97,6 +98,7 @@ class FormatsPage(QWidget):
         layout.addWidget(_section("容器与字幕", [
             ("容器", self.container_combo),
             ("字幕行为", self.subtitle_combo),
+            ("语言", self.subtitle_language_button),
             ("实际格式", self.actual_format_label),
         ]))
         layout.addWidget(self.merge_hint_label)

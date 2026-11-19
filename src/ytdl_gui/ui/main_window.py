@@ -3,6 +3,10 @@ from datetime import datetime
 from dataclasses import replace
 import os
 import copy
+import hashlib
+import shutil
+import sys
+import tempfile
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -10,10 +14,14 @@ from uuid import uuid4
 from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QListView,
     QListWidget,
@@ -24,23 +32,31 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QStackedWidget,
     QTabWidget,
-    QStyle,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
 from ytdl_gui import APP_DISPLAY_NAME, __version__
 from ytdl_gui.cookies import cookie_help_text, validate_netscape_cookies
-from ytdl_gui.emule import EmuleEngine
+from ytdl_gui.direct_file import (
+    DirectFileProbeWorker, DirectFileWorker, HttpTransferLimiter, reset_direct_file_partial, sanitize_file_name,
+)
+from ytdl_gui.emule import EmuleEngine, ed2k_file_hash
 from ytdl_gui.ffmpeg import FfmpegStatus, ffmpeg_help_url, find_ffmpeg
 from ytdl_gui.file_deletion import delete_recorded_files
 from ytdl_gui.format_selector import FormatPreference, available_resolution_values, choose_format
 from ytdl_gui.history_store import HistoryRecord
+from ytdl_gui.parser_catalog import fetch_parser_releases, parser_version_key
 from ytdl_gui.paths import app_data_dir, bundled_ytdlp_path, local_ffmpeg_candidates, resource_root
-from ytdl_gui.queue_store import QueueRecoveryWorker
+from ytdl_gui.queue_store import QueueRecoveryWorker, QueueStore
+from ytdl_gui.site_login import SiteLoginStore
 from ytdl_gui.subtitles import subtitle_action_requires_ffmpeg
+from ytdl_gui.torrent import TorrentRequest, TorrentWorker, retained_torrent_stage
 from ytdl_gui.update_manager import UpdateOutcome, UpdateResult
 from ytdl_gui.ui.emule_controller import EmuleController
+from ytdl_gui.ui.history_actions import history_source_link, show_history_details, show_history_share
+from ytdl_gui.ui.icons import line_icon
 from ytdl_gui.ui.pages.about_page import AboutPage
 from ytdl_gui.ui.pages.download_page import DownloadPage
 from ytdl_gui.ui.pages.emule_search_page import EmuleSearchPage
@@ -48,6 +64,7 @@ from ytdl_gui.ui.pages.formats_page import FormatsPage
 from ytdl_gui.ui.pages.history_page import HistoryPage
 from ytdl_gui.ui.pages.queue_page import QueuePage
 from ytdl_gui.ui.pages.settings_page import SettingsPage
+from ytdl_gui.ui.theme import apply_theme
 from ytdl_gui.workers import (
     AnalysisRequest,
     AnalysisWorker,
@@ -62,6 +79,7 @@ from ytdl_gui.workers import (
     fetch_thumbnail_bytes,
 )
 from ytdl_gui.workers import YtdlpUpdateRequest, YtdlpUpdateRunner, YtdlpUpdateWorker
+from ytdl_gui.windows_schedule import sync_windows_schedule
 from ytdl_gui.ytdlp_runner import ProgressEvent, extract_playlist_urls, playlist_limit_message
 
 
@@ -77,10 +95,40 @@ class _UiCallDispatcher(QObject):
         callback()
 
 
+class _ParserReleaseCheck(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+
+    @Slot()
+    def run(self):
+        try:
+            self.finished.emit(fetch_parser_releases())
+        except (OSError, ValueError):
+            self.failed.emit("解析器更新检查暂不可用")
+
+
+class _ScheduleRegistration(QObject):
+    finished = Signal(object)
+
+    def __init__(self, profile, next_run):
+        super().__init__()
+        self.profile = profile
+        self.next_run = next_run
+
+    @Slot()
+    def run(self):
+        try:
+            sync_windows_schedule(self.profile, self.next_run)
+        except (OSError, RuntimeError, ValueError):
+            self.finished.emit(False)
+        else:
+            self.finished.emit(True)
+
+
 NAV_ITEMS = [
-    ("下载", QStyle.StandardPixmap.SP_ArrowDown),
-    ("任务", QStyle.StandardPixmap.SP_FileDialogListView),
-    ("设置", QStyle.StandardPixmap.SP_ComputerIcon),
+    ("下载", "behavior"),
+    ("任务", "tasks"),
+    ("设置", "settings"),
 ]
 
 
@@ -110,14 +158,17 @@ class MainWindow(QWidget):
         super().__init__()
         self._ui_dispatcher = _UiCallDispatcher(self)
         self.setWindowTitle(APP_DISPLAY_NAME)
-        self.resize(590, 883)
-        self.setMinimumSize(488, 760)
+        self.resize(690, 895)
+        self.setMinimumSize(488, 680)
         self.config_store = config_store
+        self._site_logins = SiteLoginStore(config_store.path.parent if config_store else app_data_dir())
+        self._session_cookie_workspace = None
         self.history_store = history_store
         self.queue_store = queue_store
         self._queue_ready = queue_store is None
         self._queue_save_failed = False
         self._progress_saved_at = 0.0
+        self._notification_task_id = ""
         self._closing = False
         self._shutdown_deadline = None
         self._network_available = True
@@ -125,6 +176,12 @@ class MainWindow(QWidget):
         self.analyzed_url = ""
         self.analyzed_metadata: dict = {}
         self.analyzed_results: dict[str, dict] = {}
+        self._file_results = {}
+        self._direct_probes = {}
+        self._torrent_sources = {}
+        self._subtitle_languages: tuple[str, ...] = ()
+        self._automatic_subtitles = True
+        self._replay_record = None
         self._analysis_revision = 0
         self.selected_format_id = ""
         self.selected_format_summary = ""
@@ -135,6 +192,11 @@ class MainWindow(QWidget):
         self._download_task_states: dict[str, str] = {}
         self._pending_download_task_ids: list[str] = []
         self._pending_download_status_by_task: dict[str, str] = {}
+        self._schedule_timer = QTimer(self)
+        self._schedule_timer.setSingleShot(True)
+        self._schedule_timer.timeout.connect(self._run_scheduled_tasks)
+        self._schedule_registered_at = object()
+        self._schedule_registration_active = False
         self._threads: list[QThread] = []
         self._workers: list[object] = []
         self._ffmpeg_finder = ffmpeg_finder
@@ -153,6 +215,7 @@ class MainWindow(QWidget):
         self._save_folder_picker = save_folder_picker
         self._confirmation_dialog = confirmation_dialog or self._ask_confirmation
 
+        self._nav_icons = []
         self.nav = self._build_navigation()
 
         self.stack = QStackedWidget()
@@ -174,13 +237,10 @@ class MainWindow(QWidget):
         self.tasks_tabs.setDocumentMode(True)
         self.tasks_tabs.addTab(self._scroll_page(self.queue_page), "当前任务")
         self.tasks_tabs.addTab(self._scroll_page(self.history_page), "全部历史")
-        settings_tabs = QTabWidget()
-        settings_tabs.setDocumentMode(True)
-        settings_tabs.addTab(self._scroll_page(self.settings_page), "常规")
-        settings_tabs.addTab(self._scroll_page(self.about_page), "关于与组件")
+        self.settings_page.set_about_page(self.about_page)
         self.stack.addWidget(self.download_stack)
         self.stack.addWidget(self.tasks_tabs)
-        self.stack.addWidget(settings_tabs)
+        self.stack.addWidget(self.settings_page)
         if emule_engine is None:
             profile = config_store.path.parent if config_store else app_data_dir()
             emule_engine = EmuleEngine(resource_root() / "tools" / "amule" / "bin", profile / "emule")
@@ -210,6 +270,9 @@ class MainWindow(QWidget):
 
         if self.config_store:
             self.settings_page.load_config(self.config_store.load())
+            self._apply_appearance()
+        self._http_transfer_limiter = HttpTransferLimiter(self.settings_page.http_limit.value())
+        QApplication.instance().styleHints().colorSchemeChanged.connect(self._system_theme_changed)
         self._configure_emule()
         if isinstance(emule_engine, EmuleEngine) and (emule_engine.profile / "amule.conf").is_file():
             QTimer.singleShot(0, self.emule.restore)
@@ -238,11 +301,12 @@ class MainWindow(QWidget):
         for task_id, item in items.items():
             request = item['request']
             self._download_requests_by_task[task_id] = request
-            self._download_context_by_task[task_id] = {**item['context'], 'url': request.url,
+            self._download_context_by_task[task_id] = {'url': request.url, **item['context'],
                                                        'format_id': request.format_id}
             state = item['state']
             self._download_task_states[task_id] = state
-            self.queue_page.add_task(task_id, request.expected_title or '恢复任务', '失败' if state == 'failed' else '已暂停')
+            status = {'failed': '失败', 'scheduled': '等待预约时间'}.get(state, '已暂停')
+            self.queue_page.add_task(task_id, request.expected_title or '恢复任务', status, kind=request.kind)
             self.queue_page.update_task(task_id, progress=item['context'].get('progress', 0))
             if state == 'failed':
                 error = item['context'].get('error') or '上次下载失败，请检查网站权限和所选格式后重试。'
@@ -254,6 +318,7 @@ class MainWindow(QWidget):
             self.queue_page.show_notice('已恢复暂停任务。点击继续将使用原格式和保存位置；不支持续传的网站会重新下载当前文件。')
         if errors:
             self.queue_page.show_notice('已恢复失败任务：' + '；'.join(dict.fromkeys(errors)))
+        self._run_scheduled_tasks()
 
     @Slot(str)
     def _queue_recovery_failed(self, message):
@@ -322,6 +387,7 @@ class MainWindow(QWidget):
                 self.retry_queue_task(task_id)
 
     def closeEvent(self, event):
+        self._schedule_timer.stop()
         emule_closed = self.emule.close()
         if not self._threads and emule_closed:
             event.accept()
@@ -354,6 +420,9 @@ class MainWindow(QWidget):
                 os._exit(1)
                 return
         self.emule.shutdown_for_quit()
+        if self._session_cookie_workspace is not None:
+            self._session_cookie_workspace.cleanup()
+            self._session_cookie_workspace = None
 
     def _scroll_page(self, page: QWidget) -> QScrollArea:
         scroll = QScrollArea()
@@ -369,6 +438,9 @@ class MainWindow(QWidget):
     def _open_main_page(self, index: int) -> None:
         if index == 0:
             self.download_stack.setCurrentWidget(self.download_view)
+        elif index == 2:
+            self.settings_page.show_overview()
+            self._refresh_site_status()
         self.stack.setCurrentIndex(index)
 
     def _sync_navigation_selection(self) -> None:
@@ -400,18 +472,17 @@ class MainWindow(QWidget):
         nav.setIconSize(QSize(20, 20))
         nav.setGridSize(QSize(70, 72))
         nav.setUniformItemSizes(True)
-        for text, standard_icon in NAV_ITEMS:
-            icon = self.style().standardIcon(standard_icon)
+        for text, icon_key in NAV_ITEMS:
             item = QListWidgetItem("")
             item.setData(Qt.ItemDataRole.UserRole, text)
             item.setData(Qt.ItemDataRole.AccessibleTextRole, text)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item.setSizeHint(QSize(70, 72))
             nav.addItem(item)
-            nav.setItemWidget(item, self._build_navigation_item_widget(text, icon))
+            nav.setItemWidget(item, self._build_navigation_item_widget(text, icon_key))
         return nav
 
-    def _build_navigation_item_widget(self, text: str, icon) -> QWidget:
+    def _build_navigation_item_widget(self, text: str, icon_key) -> QWidget:
         widget = QWidget()
         widget.setObjectName("navItem")
         layout = QVBoxLayout(widget)
@@ -422,7 +493,8 @@ class MainWindow(QWidget):
         icon_label.setObjectName("navItemIcon")
         icon_label.setFixedSize(24, 24)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setPixmap(icon.pixmap(QSize(20, 20)))
+        icon_label.setPixmap(line_icon(icon_key, self.palette().windowText().color()))
+        self._nav_icons.append((icon_key, icon_label))
 
         text_label = QLabel(text)
         text_label.setObjectName("navItemLabel")
@@ -489,6 +561,21 @@ class MainWindow(QWidget):
         return "yt-dlp 待检测"
 
     def connect_settings_actions(self) -> None:
+        self.settings_page.manage_site_login.clicked.connect(self.manage_download_site_logins)
+        self.settings_page.manage_parsers.clicked.connect(self.open_parser_versions)
+        self.settings_page.reset_save_folder.clicked.connect(self.reset_save_folder)
+        self.settings_page.clean_task_cache.clicked.connect(self.clean_task_cache)
+        self.settings_page.clear_records.clicked.connect(self.clear_history)
+        self.settings_page.appearance.currentIndexChanged.connect(self._change_appearance)
+        self.settings_page.color_preset.currentIndexChanged.connect(self._change_appearance)
+        self.settings_page.file_conflict.currentIndexChanged.connect(self._save_settings_config)
+        for spin in (self.settings_page.http_connections, self.settings_page.http_limit, self.settings_page.waiting_limit):
+            spin.valueChanged.connect(self._save_settings_config)
+        self.settings_page.resume_downloads.toggled.connect(self._save_settings_config)
+        self.settings_page.detected_subtitles.toggled.connect(self._save_settings_config)
+        self.settings_page.jump_to_tasks.toggled.connect(self._save_settings_config)
+        self.settings_page.notify_completed.toggled.connect(self._save_settings_config)
+        self.settings_page.notify_failed.toggled.connect(self._save_settings_config)
         self.settings_page.emule_network.currentIndexChanged.connect(self._save_emule_settings)
         self.settings_page.emule_upload.valueChanged.connect(self._save_emule_settings)
         self.settings_page.emule_download.valueChanged.connect(self._save_emule_settings)
@@ -539,6 +626,7 @@ class MainWindow(QWidget):
         self._save_settings_config()
 
     def _save_settings_config(self) -> None:
+        self._http_transfer_limiter.set_limit(self.settings_page.http_limit.value())
         if not self.config_store:
             return
         current = self.config_store.load()
@@ -550,11 +638,56 @@ class MainWindow(QWidget):
                 ffmpeg_path=self.settings_page.ffmpeg_path.text(),
                 max_concurrency=self.settings_page.concurrency.value(),
                 check_ytdlp_updates_on_startup=self.settings_page.update_on_start.isChecked(),
+                theme_mode=self.settings_page.appearance.currentData(),
+                color_preset=self.settings_page.color_preset.currentData(),
+                file_conflict=self.settings_page.file_conflict.currentData(),
+                http_max_connections=self.settings_page.http_connections.value(),
+                http_limit_kib=self.settings_page.http_limit.value(),
+                max_waiting_downloads=self.settings_page.waiting_limit.value(),
+                resume_downloads=self.settings_page.resume_downloads.isChecked(),
+                download_detected_subtitles=self.settings_page.detected_subtitles.isChecked(),
+                jump_to_tasks=self.settings_page.jump_to_tasks.isChecked(),
+                notify_completed=self.settings_page.notify_completed.isChecked(),
+                notify_failed=self.settings_page.notify_failed.isChecked(),
                 active_ytdlp_path=current.active_ytdlp_path,
                 active_ytdlp_version=current.active_ytdlp_version,
                 rollback_ytdlp_path=current.rollback_ytdlp_path,
             )
         )
+
+    def _apply_appearance(self):
+        apply_theme(QApplication.instance(), self.settings_page.appearance.currentData(),
+                    self.settings_page.color_preset.currentData())
+        color = QApplication.instance().palette().windowText().color()
+        for key, label in self._nav_icons:
+            label.setPixmap(line_icon(key, color))
+
+    def _change_appearance(self):
+        self._save_settings_config()
+        self._apply_appearance()
+
+    def _system_theme_changed(self, _scheme):
+        if self.settings_page.appearance.currentData() == "system":
+            self._apply_appearance()
+
+    def notify_download(self, task_id: str, title: str, completed: bool) -> None:
+        control = self.settings_page.notify_completed if completed else self.settings_page.notify_failed
+        tray = getattr(self, "_tray_icon", None)
+        if tray and control.isChecked():
+            self._notification_task_id = task_id
+            icon = QSystemTrayIcon.MessageIcon.Information if completed else QSystemTrayIcon.MessageIcon.Warning
+            tray.showMessage("下载完成" if completed else "下载失败", title, icon)
+
+    def open_notification_task(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.show_tasks()
+        card = self.queue_page._task_cards.get(self._notification_task_id, {}).get("card")
+        if card:
+            self.queue_page.scroll_area.ensureWidgetVisible(card)
+        else:
+            self.tasks_tabs.setCurrentIndex(1)
 
     def _configure_emule(self):
         page = self.settings_page
@@ -649,6 +782,77 @@ class MainWindow(QWidget):
         self.download_page.audio_quality_button.clicked.connect(self.open_format_selection)
         self.download_page.video_quality_button.clicked.connect(self.open_format_selection)
         self.download_page.format_settings_button.clicked.connect(self.open_format_selection)
+        self.download_page.import_links_button.clicked.connect(self.import_download_links)
+        self.download_page.torrent_file_button.clicked.connect(self.open_torrent_file)
+        self.download_page.open_browser_button.clicked.connect(self.open_download_browser)
+
+    def import_download_links(self):
+        filename, _ = QFileDialog.getOpenFileName(self, "导入地址列表", "", "文本文件 (*.txt *.urls);;所有文件 (*)")
+        if not filename:
+            return
+        try:
+            with Path(filename).open("r", encoding="utf-8-sig") as stream:
+                content = stream.read(1024 * 1024 + 1)
+            if len(content) > 1024 * 1024:
+                raise ValueError("large list")
+        except (OSError, UnicodeError, ValueError):
+            self.download_page.set_status("地址列表无法读取。请选择小于 1 MB 的 UTF-8 文本。")
+            return
+        addresses = dict.fromkeys(line.strip() for line in content.splitlines()
+                                  if line.strip().lower().startswith(("http://", "https://", "ed2k://", "magnet:")))
+        if not addresses:
+            self.download_page.set_status("地址列表没有可用链接。")
+            return
+        self.download_page.url_input.setPlainText("\n".join(addresses))
+        self.download_page.set_status(f"已导入 {len(addresses)} 条地址。")
+
+    def open_download_browser(self):
+        self._open_download_browser(self._first_url())
+
+    def manage_download_site_logins(self):
+        try:
+            hosts = self._site_logins.sites()
+        except (OSError, ValueError):
+            hosts = ()
+        if not hosts:
+            self._open_download_browser("")
+            return
+        host, accepted = QInputDialog.getItem(self, "站点登录", "选择站点", list(hosts), editable=False)
+        if accepted:
+            self._open_download_browser(f"https://{host}/")
+
+    def _open_download_browser(self, url):
+        from ytdl_gui.ui.browser_dialog import BrowserDialog
+
+        dialog = BrowserDialog(self._site_logins, initial_url=url, parent=self)
+
+        def receive(address):
+            self.show_download_page()
+            self.download_page.url_input.setPlainText(address)
+            self.download_page.set_status("已接收浏览器地址，点击分析继续。")
+
+        dialog.url_selected.connect(receive)
+        dialog.sessions_changed.connect(self._refresh_site_status)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _refresh_site_status(self):
+        try:
+            count = len(self._site_logins.sites())
+        except (OSError, ValueError):
+            count = 0
+        self.settings_page.set_saved_sites(count)
+
+    def open_torrent_file(self):
+        filename, _ = QFileDialog.getOpenFileName(self, "打开种子", "", "种子文件 (*.torrent)")
+        if filename:
+            self.download_page.url_input.setPlainText(filename)
+            self._show_torrent_source(filename, Path(filename).stem)
+
+    def _show_torrent_source(self, source, title):
+        self._torrent_sources[source] = title
+        self.download_page.set_save_folder(str(self._output_dir()))
+        self.download_page.show_torrent_result(title)
 
     def open_format_selection(self) -> None:
         self.nav.setCurrentRow(0)
@@ -667,16 +871,55 @@ class MainWindow(QWidget):
         self.queue_page.clear_completed_button.clicked.connect(self.clear_completed_queue_tasks)
 
     def connect_update_actions(self) -> None:
-        self.footer_update_button.clicked.connect(lambda: self.check_ytdlp_updates(silent=False))
+        if self._ytdlp_update_runner is not None:
+            self.footer_update_button.clicked.connect(lambda: self.check_ytdlp_updates(silent=False))
+        else:
+            self.footer_update_button.clicked.connect(self.open_parser_versions)
 
     def connect_format_actions(self) -> None:
         self.formats_page.back_button.clicked.connect(self.show_download_page)
+        self.formats_page.subtitle_language_button.clicked.connect(self.choose_subtitle_languages)
         self.formats_page.subtitle_combo.currentTextChanged.connect(self.validate_subtitle_option)
         for index, button in enumerate(self.formats_page.mode_buttons):
             button.clicked.connect(lambda _checked=False, current=index: self.set_download_mode(current))
         self.download_page.mode_combo.currentIndexChanged.connect(self.formats_page.set_mode_index)
         self.formats_page.apply_button.clicked.connect(self.apply_format_selection)
         self.formats_page.reset_button.clicked.connect(self.reset_format_selection)
+
+    def choose_subtitle_languages(self) -> None:
+        manual = self.analyzed_metadata.get("subtitles") or {}
+        auto = self.analyzed_metadata.get("automatic_captions") or {}
+        available = [(code, False) for code in manual if code != "live_chat"]
+        available.extend((code, True) for code in auto if code not in manual and code != "live_chat")
+        if not available:
+            self._information_dialog(self, "字幕语言", "当前识别结果没有可选择的字幕语言。")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("选择字幕语言")
+        dialog.resize(420, 364)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("可选择多种语言。清空选择时使用默认语言。"))
+        listing = QListWidget()
+        for code, generated in sorted(available, key=lambda item: (item[1], item[0])):
+            item = QListWidgetItem(f"{code} · {'自动生成' if generated else '人工字幕'}", listing)
+            item.setData(Qt.ItemDataRole.UserRole, (code, generated))
+            item.setCheckState(Qt.CheckState.Checked if code in self._subtitle_languages else Qt.CheckState.Unchecked)
+        layout.addWidget(listing)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("应用语言")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected = [listing.item(i).data(Qt.ItemDataRole.UserRole) for i in range(listing.count())
+                        if listing.item(i).checkState() == Qt.CheckState.Checked]
+            self._subtitle_languages = tuple(code for code, _ in selected)
+            self._automatic_subtitles = not selected or any(generated for _, generated in selected)
+            self._update_subtitle_chip()
+
+    def _update_subtitle_chip(self):
+        count = len(self._subtitle_languages)
+        self.formats_page.subtitle_language_button.setText(f"已选 {count} 种语言" if count else "选择字幕语言")
 
     def set_download_mode(self, index: int) -> None:
         self.download_page.mode_combo.setCurrentIndex(index)
@@ -792,7 +1035,51 @@ class MainWindow(QWidget):
             return
         if not self.config_store.load().check_ytdlp_updates_on_startup:
             return
-        self.check_ytdlp_updates(silent=True)
+        if self._ytdlp_update_runner is not None:
+            self.check_ytdlp_updates(silent=True)
+            return
+        worker = _ParserReleaseCheck()
+        worker.finished.connect(self._show_parser_release_status)
+        worker.failed.connect(lambda message: self._run_on_ui_thread(
+            lambda: self.footer_status_label.setText(message)))
+        self._worker_runner(worker)
+
+    def _show_parser_release_status(self, versions):
+        if not versions:
+            return
+        current = self.config_store.load().active_ytdlp_version
+        if not current:
+            self.footer_status_label.setText(f"可查看 {versions[0]}")
+        elif parser_version_key(versions[0]) > parser_version_key(current):
+            self.footer_status_label.setText(f"有新版 {versions[0]}")
+        else:
+            self.footer_status_label.setText("当前已是最新")
+
+    def open_parser_versions(self):
+        from ytdl_gui.ui.parser_dialog import ParserVersionDialog
+
+        if not self.config_store:
+            return
+        dialog = ParserVersionDialog(
+            self.config_store.path.parent, bundled_ytdlp_path(),
+            get_active=lambda: (self._active_ytdlp_path(), self.config_store.load().active_ytdlp_version),
+            apply_version=self._select_parser_version,
+            can_change=lambda: not self._threads and not self._has_running_download_tasks(),
+            parent=self,
+        )
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _select_parser_version(self, path: Path, version: str):
+        if self._threads or self._has_running_download_tasks():
+            raise ValueError("请等待解析和下载结束后再切换版本。")
+        config = self.config_store.load()
+        self.config_store.save(replace(
+            config, active_ytdlp_path="" if path == bundled_ytdlp_path() else str(path),
+            active_ytdlp_version=version, rollback_ytdlp_path=config.active_ytdlp_path,
+        ))
+        self.ytdlp_footer_label.setText(f"yt-dlp {version}")
+        self.about_page.set_ytdlp_status(f"yt-dlp {version}")
 
     def check_ytdlp_updates(self, silent: bool = False) -> None:
         if not self.config_store:
@@ -865,12 +1152,20 @@ class MainWindow(QWidget):
                 return candidate
         return Path(path) if path else None
 
-    def _clear_download_analysis(self) -> None:
+    def _clear_download_analysis(self, preserve_replay=False) -> None:
         self._analysis_revision += 1
         had_result = bool(self.analyzed_metadata or self.analyzed_results)
         self.analyzed_url = ""
         self.analyzed_metadata = {}
         self.analyzed_results.clear()
+        self._file_results.clear()
+        self._direct_probes.clear()
+        self._torrent_sources.clear()
+        self._subtitle_languages = ()
+        self._automatic_subtitles = True
+        self._update_subtitle_chip()
+        if not preserve_replay:
+            self._replay_record = None
         self.selected_format_id = ""
         self.selected_format_summary = ""
         if had_result:
@@ -893,20 +1188,60 @@ class MainWindow(QWidget):
             self.download_page.set_status("请输入视频地址。")
             return
 
-        self._clear_download_analysis()
+        self._clear_download_analysis(preserve_replay=True)
         if len(urls) == 1:
             self.download_page.set_status("正在后台分析视频地址...")
         else:
             self.download_page.set_status(f"正在后台分析 {len(urls)} 个视频地址...")
         for url in urls:
-            self._start_analysis_for_url(url)
+            if url.lower().startswith("magnet:?"):
+                self._show_torrent_source(url, "磁链")
+            elif url.lower().startswith("ed2k:"):
+                self.download_page.start_button.show()
+                self.download_page.set_status("电驴链接可直接下载。" if ed2k_file_hash(url) else "请检查电驴链接。")
+            elif url.lower().endswith(".torrent") and Path(url).is_file():
+                self._show_torrent_source(url, Path(url).stem)
+            elif self._analysis_runner is not None or not url.lower().startswith(("http://", "https://")):
+                self._start_analysis_for_url(url)
+            else:
+                self._probe_download_url(url)
+
+    def _probe_download_url(self, url):
+        revision = self._analysis_revision
+        worker = DirectFileProbeWorker(url, self._cookies_path(url))
+
+        def apply(metadata):
+            if metadata and metadata.kind == "torrent":
+                self._show_torrent_source(url, metadata.filename)
+            elif metadata and metadata.kind == "file":
+                self._show_direct_file_result(url, metadata)
+            else:
+                if metadata and metadata.kind in {"audio", "video"}:
+                    self._direct_probes[url] = metadata
+                self._start_analysis_for_url(url)
+
+        worker.finished.connect(lambda result: self._apply_current_analysis(revision, lambda: apply(result)))
+        worker.failed.connect(lambda _: self._apply_current_analysis(revision, lambda: apply(None)))
+        self._worker_runner(worker)
+
+    def _show_direct_file_result(self, url, metadata):
+        self.analyzed_results.pop(url, None)
+        self._file_results[url] = metadata
+        replay = self._replay_record
+        filename = Path(replay.output_path).name if replay and replay.url == url and replay.output_path else metadata.filename
+        self.download_page.set_save_folder(str(self._output_dir()))
+        self.download_page.show_file_result(
+            filename, metadata.total_bytes, metadata.resume_available,
+            self.settings_page.file_conflict.currentData(),
+        )
+        self.download_page.set_status("已识别可直接下载的文件。")
 
     def _start_analysis_for_url(self, url: str) -> None:
         revision = self._analysis_revision
         request = AnalysisRequest(
             url=url,
             ytdlp_path=self._active_ytdlp_path(),
-            cookies_path=self._cookies_path(),
+            cookies_path=self._cookies_path(url),
         )
         if self._analysis_runner is None:
             worker = AnalysisWorker(request)
@@ -924,20 +1259,47 @@ class MainWindow(QWidget):
         self.analyzed_url = url
         self.analyzed_metadata = metadata
         self.analyzed_results[url] = metadata
+        replay = self._replay_record if self._replay_record and self._replay_record.url == url else None
+        if replay:
+            mode_index = self.download_page.mode_combo.findText(replay.download_type)
+            if mode_index >= 0:
+                self.set_download_mode(mode_index)
+            subtitle_index = self.formats_page.subtitle_combo.findText(replay.subtitle_behavior)
+            if subtitle_index >= 0:
+                self.formats_page.subtitle_combo.setCurrentIndex(subtitle_index)
+            self._subtitle_languages = tuple(replay.subtitle_languages)
+            self._automatic_subtitles = replay.automatic_subtitles
+            self._update_subtitle_chip()
+        elif self.settings_page.detected_subtitles.isChecked() and self._download_mode() != "audio_only":
+            manual = metadata.get("subtitles") or {}
+            automatic = metadata.get("automatic_captions") or {}
+            detected = tuple(dict.fromkeys([*manual, *automatic]))[:256]
+            if detected:
+                self._subtitle_languages = detected
+                self._automatic_subtitles = any(language not in manual for language in detected)
+                self._update_subtitle_chip()
+                self.formats_page.subtitle_combo.setCurrentText("下载字幕文件")
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
         try:
             choice = choose_format(formats, self._format_preference())
         except ValueError as exc:
+            if url in self._direct_probes:
+                self._show_direct_file_result(url, self._direct_probes[url])
+                return
             self.selected_format_id = ""
             self.selected_format_summary = ""
             self.formats_page.set_merge_hint_visible(False)
             self.download_page.set_status(f"分析完成，但没有可直接下载的格式：{exc}")
             return
 
-        self.selected_format_id = choice.format_id
+        format_ids = {str(item.get("format_id", "")) for item in formats}
+        restored_format = replay.format_id if replay and replay.format_id and all(
+            part in format_ids for part in replay.format_id.split("+")
+        ) else choice.format_id
+        self.selected_format_id = restored_format
         self.selected_format_summary = choice.actual_summary
         title = str(metadata.get("title") or "未命名视频")
-        self.formats_page.load_available_formats(formats, choice.format_id, choice.actual_summary)
+        self.formats_page.load_available_formats(formats, restored_format, choice.actual_summary)
         self.formats_page.set_merge_hint_visible(choice.requires_ffmpeg_merge)
         self._apply_available_resolution_controls(formats, choice.actual_summary)
         self.download_page.set_save_folder(str(self._output_dir()))
@@ -947,6 +1309,9 @@ class MainWindow(QWidget):
         self.download_page.set_status(_analysis_success_status(choice.relaxed, choice.requires_ffmpeg_merge))
 
     def show_analysis_error(self, message: str, url: str | None = None) -> None:
+        if message in {"no_formats", "unsupported_url"} and url in self._direct_probes:
+            self._show_direct_file_result(url, self._direct_probes[url])
+            return
         if message == "playlist_confirmation_needed" and url:
             self.start_playlist_probe(url)
             return
@@ -970,7 +1335,7 @@ class MainWindow(QWidget):
         request = PlaylistProbeRequest(
             url=url,
             ytdlp_path=self._active_ytdlp_path(),
-            cookies_path=self._cookies_path(),
+            cookies_path=self._cookies_path(url),
         )
         if self._playlist_probe_runner is None:
             worker = PlaylistProbeWorker(request)
@@ -1014,6 +1379,51 @@ class MainWindow(QWidget):
             return
         self.save_folder_path = selected
         self.download_page.set_save_folder(selected)
+
+    def reset_save_folder(self) -> None:
+        self.settings_page.set_default_folder("")
+        self.save_folder_path = ""
+        self._save_settings_config()
+        self.download_page.set_save_folder(str(self._output_dir()))
+
+    def clean_task_cache(self) -> None:
+        if not self.queue_store or not self._queue_ready:
+            self._information_dialog(self, "闲置缓存", "请等待任务恢复完成后再清理。")
+            return
+        root = self.queue_store.tasks_root
+        if not root.is_dir() or root.is_symlink() or root.is_junction():
+            self._information_dialog(self, "闲置缓存", "没有可清理的缓存。")
+            return
+        protected = set(self._download_requests_by_task)
+        protected.update(record.task_id for record in self._history_records() if record.task_id)
+        candidates = []
+        for item in root.iterdir():
+            if item.name in protected or not item.is_dir():
+                continue
+            try:
+                expected = self.queue_store.task_dir(item.name)
+            except ValueError:
+                continue
+            if expected.resolve().parent == root.resolve():
+                candidates.append(expected)
+        if not candidates:
+            self._information_dialog(self, "闲置缓存", "没有可清理的缓存。")
+            return
+        if not self._confirmation_dialog(self, "清理闲置缓存", f"删除 {len(candidates)} 项闲置缓存？"):
+            return
+        removed = 0
+        for item in candidates:
+            if item.name in self._download_requests_by_task or item.is_symlink() or item.is_junction():
+                continue
+            try:
+                torrent_stage = retained_torrent_stage(item)
+                if torrent_stage is not None:
+                    shutil.rmtree(torrent_stage)
+                shutil.rmtree(item)
+                removed += 1
+            except OSError:
+                continue
+        self._information_dialog(self, "闲置缓存", f"已清理 {removed} 项。")
 
     def clear_history(self) -> None:
         records = self._history_records()
@@ -1079,6 +1489,32 @@ class MainWindow(QWidget):
         failures.update({positions[index]: reason for index, reason in delete_recorded_files(eligible, protected).items()})
         return failures
 
+    @staticmethod
+    def _recorded_outputs(record):
+        primary = (record.output_path, record.file_size_bytes)
+        if record.download_type != "种子" or not isinstance(record.output_path, str) or not record.output_path:
+            return [primary]
+        root = Path(record.output_path)
+        if not root.is_dir():
+            return [primary]
+        candidates = []
+        root = root.resolve()
+        for name in record.auxiliary_paths:
+            path = Path(name)
+            if not path.is_file() or not path.resolve().is_relative_to(root):
+                return [primary]
+            candidates.append((name, _file_size_bytes(name)))
+        size = sum(size for _, size in candidates)
+        return candidates if candidates and size == record.file_size_bytes else [primary]
+
+    def _delete_output_groups(self, groups, protected):
+        owners = []
+        files = []
+        for owner, group in enumerate(groups):
+            owners.extend([owner] * len(group))
+            files.extend(group)
+        return {owners[index]: reason for index, reason in self._delete_files(files, protected).items()}
+
     def _show_deletion_failures(self, failures: dict[int, str]) -> None:
         if failures:
             self._information_dialog(self, "部分记录未删除", f"有 {len(failures)} 条记录已保留：\n" + "\n".join(dict.fromkeys(failures.values())))
@@ -1096,10 +1532,11 @@ class MainWindow(QWidget):
         if choice:
             selected = [records[index] for index in indices]
             owned_tasks = {record.task_id for record in selected if record.task_id}
-            protected = [record.output_path for index, record in enumerate(records) if index not in indices]
+            protected = [path for index, record in enumerate(records) if index not in indices
+                         for path, _ in self._recorded_outputs(record)]
             protected.extend(str(context.get("output_path", "")) for task, context in self._download_context_by_task.items()
                              if task not in owned_tasks or self._download_task_states.get(task) != "finished")
-            failures = self._delete_files([(record.output_path, record.file_size_bytes) for record in selected], protected)
+            failures = self._delete_output_groups([self._recorded_outputs(record) for record in selected], protected)
         self._remove_history_indices(records, [index for position, index in enumerate(indices) if position not in failures])
         self._show_deletion_failures(failures)
 
@@ -1117,6 +1554,17 @@ class MainWindow(QWidget):
         if record_index < 0 or record_index >= len(records):
             return
         record = records[record_index]
+        if action == "share":
+            show_history_share(self, record)
+            return
+        if action == "details":
+            show_history_details(self, record)
+            return
+        if action == "copy_source":
+            source = history_source_link(record)
+            if source:
+                QApplication.clipboard().setText(source)
+            return
         if action == "delete":
             self.delete_history_record(record_index)
             return
@@ -1133,13 +1581,17 @@ class MainWindow(QWidget):
             self._external_url_opener(QUrl.fromLocalFile(str(output_path)).toString())
             return
         if action == "open_folder":
-            self._external_url_opener(QUrl.fromLocalFile(str(output_path.parent)).toString())
+            folder = output_path if output_path.is_dir() else output_path.parent
+            self._external_url_opener(QUrl.fromLocalFile(str(folder)).toString())
             return
         if action == "redownload":
             self.show_download_page()
             self.download_page.url_input.setPlainText(record.url)
+            self._replay_record = record
             if record.url.lower().startswith("ed2k:"):
                 self.emule.add_link(record.url)
+            elif record.torrent_source_path and Path(record.torrent_source_path).is_file():
+                self._show_torrent_source(record.torrent_source_path, record.title)
             else:
                 self.start_analysis()
             return
@@ -1152,23 +1604,35 @@ class MainWindow(QWidget):
         if not self._queue_ready or self._closing:
             self.download_page.set_status('恢复队列尚未就绪，暂不能启动下载。')
             return
-        address = self.download_page.url_input.toPlainText().strip()
-        if address.lower().startswith("ed2k:"):
-            self.emule.add_link(address)
-            return
+        ed2k_links = [address for address in self._all_urls() if address.lower().startswith("ed2k:")]
         analyzed_items = list(self.analyzed_results.items())
         if not analyzed_items and self.analyzed_url and self.analyzed_metadata:
             analyzed_items = [(self.analyzed_url, self.analyzed_metadata)]
-        if not analyzed_items:
-            self.download_page.set_status("请先分析视频，再开始下载。")
+        if not analyzed_items and not self._file_results and not self._torrent_sources:
+            if ed2k_links:
+                self.emule.add_links(ed2k_links)
+            else:
+                self.download_page.set_status("请先分析视频，再开始下载。")
             return
 
         if not self._ensure_output_dir_available():
             return
 
+        scheduled_at = self._requested_schedule()
+        if scheduled_at is False:
+            return
+        if scheduled_at and ed2k_links:
+            self.download_page.set_status("预约的媒体、文件或种子任务请与电驴链接分别提交。")
+            return
         started = 0
+        for url, metadata in self._file_results.items():
+            name = self.download_page.filename_input.text() if len(self._file_results) == 1 else metadata.filename
+            kind = "direct_media" if metadata.kind in {"audio", "video"} else "file"
+            started += self._enqueue_external_task(url, sanitize_file_name(name), kind, scheduled_at)
+        for torrent, title in self._torrent_sources.items():
+            started += self._enqueue_external_task(torrent, title, "torrent", scheduled_at)
         for url, metadata in analyzed_items:
-            if self._start_download_for_analysis(url, metadata, allow_preview=started == 0):
+            if self._start_download_for_analysis(url, metadata, allow_preview=started == 0, scheduled_at=scheduled_at):
                 started += 1
             if self._queue_save_failed:
                 self.queue_page.show_notice('恢复队列保存失败，任务尚未启动；请检查磁盘后继续。')
@@ -1177,9 +1641,49 @@ class MainWindow(QWidget):
             message = f"已添加 {started} 个下载任务，正在队列页显示进度。"
             self.queue_page.show_notice(message)
             self.download_page.set_status(message)
-            self.show_tasks()
+            if self.settings_page.jump_to_tasks.isChecked():
+                self.show_tasks()
+        if ed2k_links:
+            self.emule.add_links(ed2k_links)
 
-    def _start_download_for_analysis(self, url: str, metadata: dict, allow_preview: bool) -> bool:
+    def _enqueue_external_task(self, source, title, kind, scheduled_at):
+        task_id = uuid4().hex
+        storage = self.queue_store or QueueStore(app_data_dir())
+        state_dir = storage.task_dir(task_id)
+        request_source = source
+        if kind == "torrent" and not source.lower().startswith(("magnet:", "http://", "https://")):
+            try:
+                state_dir.mkdir(parents=True, exist_ok=False)
+                cached = state_dir / "source.torrent"
+                shutil.copyfile(source, cached)
+                request_source = str(cached)
+            except (OSError, ValueError):
+                self.download_page.set_status("种子文件无法读取，请重新选择。")
+                return False
+        download_type = "种子" if kind == "torrent" else "普通文件"
+        cookies = self._cookies_path(source) if kind in {"file", "direct_media"} else None
+        request = DownloadRequest(
+            url=request_source, ytdlp_path=self._active_ytdlp_path(), output_template=self._output_dir() / sanitize_file_name(title),
+            format_id="", expected_title=title, temp_dir=state_dir, kind=kind,
+            conflict_policy=self.download_page.conflict_combo.currentData(),
+            cookies_path=cookies, uses_cookies=cookies is not None,
+        )
+        context = {
+            "title": title, "url": source, "download_type": download_type,
+            "format_summary": download_type, "subtitle_behavior": "", "scheduled_at": scheduled_at,
+        }
+        return self._enqueue_task(task_id, request, context)
+
+    def _requested_schedule(self):
+        if not self.download_page.scheduled.isChecked():
+            return None
+        timestamp = self.download_page.scheduled_at.dateTime().toSecsSinceEpoch()
+        if timestamp <= time.time():
+            self.download_page.set_status("预约时间需要晚于当前时间。")
+            return False
+        return timestamp
+
+    def _start_download_for_analysis(self, url: str, metadata: dict, allow_preview: bool, scheduled_at=None) -> bool:
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
         try:
             choice = choose_format(formats, self._format_preference())
@@ -1208,22 +1712,23 @@ class MainWindow(QWidget):
         thumbnail = self.download_page.thumbnail_label.pixmap()
         if thumbnail is not None and thumbnail.isNull():
             thumbnail = None
-        self.queue_page.add_task(task_id, title, "等待中", thumbnail=thumbnail)
+        cookies_path = self._cookies_path(url)
         request = DownloadRequest(
             url=url,
             ytdlp_path=self._active_ytdlp_path(),
             output_template=self._output_template(),
             format_id=choice_format_id,
-            cookies_path=self._cookies_path(),
+            cookies_path=cookies_path,
             subtitle_action=subtitle_action,
             ffmpeg_path=ffmpeg_path,
             expected_title=title,
-            uses_cookies=self._cookies_path() is not None,
+            uses_cookies=cookies_path is not None,
             temp_dir=self.queue_store.task_dir(task_id) if self.queue_store else None,
             analysis_info=copy.deepcopy(metadata) if '__ytdl_snapshot_created' in metadata else None,
+            subtitle_languages=self._subtitle_languages[:1] if subtitle_action == "burn" else self._subtitle_languages,
+            automatic_subtitles=self._automatic_subtitles,
         )
-        self._download_requests_by_task[task_id] = request
-        self._download_context_by_task[task_id] = {
+        context = {
             "title": title,
             "url": url,
             "format_id": choice_format_id,
@@ -1231,7 +1736,14 @@ class MainWindow(QWidget):
             "download_type": self.download_page.mode_combo.currentText(),
             "subtitle_behavior": self.formats_page.subtitle_combo.currentText(),
             "preview_on_start": allow_preview and self.download_page.preview_checkbox.isChecked(),
+            "scheduled_at": scheduled_at,
         }
+        return self._enqueue_task(task_id, request, context, thumbnail)
+
+    def _enqueue_task(self, task_id, request, context, thumbnail=None):
+        self.queue_page.add_task(task_id, request.expected_title, "等待中", thumbnail=thumbnail, kind=request.kind)
+        self._download_requests_by_task[task_id] = request
+        self._download_context_by_task[task_id] = context
         if not self._queue_download_task(task_id, "下载已开始，进度见队列。"):
             self.queue_page.remove_tasks([task_id])
             self._download_requests_by_task.pop(task_id, None)
@@ -1241,6 +1753,21 @@ class MainWindow(QWidget):
         return True
 
     def _queue_download_task(self, task_id: str, status_text: str) -> bool:
+        scheduled = self._download_context_by_task.get(task_id, {}).get("scheduled_at")
+        if scheduled and scheduled > time.time():
+            if not self._set_download_state(task_id, "scheduled"):
+                return False
+            self.queue_page.update_task(
+                task_id, status="等待预约时间", eta=datetime.fromtimestamp(scheduled).strftime("%m-%d %H:%M")
+            )
+            self._arm_scheduled_tasks()
+            return True
+        if self._download_task_states.get(task_id) not in {"pending", "waiting_network", "scheduled"}:
+            waiting = sum(state in {"pending", "waiting_network"} for state in self._download_task_states.values())
+            free_slots = max(0, self._max_concurrency() - self._active_download_count()) if self._network_available else 0
+            if waiting >= free_slots + self.settings_page.waiting_limit.value():
+                self.download_page.set_status("等待队列已满。任务结束后再添加，或在设置中调高等待上限。")
+                return False
         state = 'pending' if self._network_available else 'waiting_network'
         if not self._set_download_state(task_id, state):
             return False
@@ -1252,6 +1779,63 @@ class MainWindow(QWidget):
         self._pending_download_status_by_task[task_id] = status_text
         self._start_ready_download_workers()
         return True
+
+    def _arm_scheduled_tasks(self) -> None:
+        self._schedule_timer.stop()
+        future = [
+            self._download_context_by_task[task_id].get("scheduled_at") or time.time()
+            for task_id, state in self._download_task_states.items() if state == "scheduled"
+        ]
+        next_run = min(future, default=None)
+        if next_run is not None and not self._closing:
+            delay = min(2147483000, max(100, int((next_run - time.time()) * 1000)))
+            self._schedule_timer.start(delay)
+        if (self.config_store and self.queue_store and getattr(sys, "frozen", False)
+                and sys.platform == "win32"
+                and not self._schedule_registration_active and next_run != self._schedule_registered_at):
+            self._schedule_registration_active = True
+            worker = _ScheduleRegistration(self.config_store.path.parent, next_run)
+
+            def finish(ok):
+                self._schedule_registration_active = False
+                if not ok:
+                    if next_run is not None:
+                        self.queue_page.show_notice("Windows 预约登记失败。请保持 CaptainFlash 打开以执行预约。")
+                    return
+                self._schedule_registered_at = next_run
+                self._arm_scheduled_tasks()
+
+            worker.finished.connect(lambda ok: self._run_on_ui_thread(lambda: finish(ok)))
+            self._worker_runner(worker)
+
+    def background_schedule_finished(self) -> bool:
+        if not self._queue_ready or self._schedule_registration_active:
+            return False
+        terminal = {"scheduled", "paused", "finished", "failed", "canceled"}
+        return all(state in terminal or not self._download_context_by_task.get(task_id, {}).get("scheduled_at")
+                   for task_id, state in self._download_task_states.items())
+
+    def _run_scheduled_tasks(self) -> None:
+        if self._closing or not self._queue_ready:
+            return
+        now = time.time()
+        for task_id, state in list(self._download_task_states.items()):
+            if state == "scheduled" and (self._download_context_by_task[task_id].get("scheduled_at") or 0) <= now:
+                request = self._download_requests_by_task[task_id]
+                if request.kind in {"media", "file", "direct_media"}:
+                    cookies = self._cookies_path(request.url) if request.uses_cookies else None
+                    if request.uses_cookies and (cookies is None or not validate_netscape_cookies(cookies).ok):
+                        self.fail_download(task_id, "此预约任务需要有效的 cookies.txt，请补充登录授权后继续。")
+                        continue
+                    request = replace(request, cookies_path=cookies)
+                    if request.kind == "media":
+                        request = replace(request, ytdlp_path=self._active_ytdlp_path(),
+                                          ffmpeg_path=self._configured_ffmpeg_path())
+                    self._download_requests_by_task[task_id] = request
+                if not self._queue_download_task(task_id, "预约下载已开始。"):
+                    self._download_task_states[task_id] = "paused"
+                    self.queue_page.update_task(task_id, status="已暂停")
+        self._arm_scheduled_tasks()
 
     def _start_ready_download_workers(self) -> None:
         if self._closing or not self._queue_ready or not self._network_available:
@@ -1288,7 +1872,7 @@ class MainWindow(QWidget):
             url=url or self.analyzed_url,
             ytdlp_path=self._active_ytdlp_path(),
             format_id=format_id or self.selected_format_id,
-            cookies_path=self._cookies_path(),
+            cookies_path=self._cookies_path(url or self.analyzed_url),
         )
         if self._preview_runner is None:
             worker = PreviewUrlWorker(request)
@@ -1306,19 +1890,91 @@ class MainWindow(QWidget):
         self.queue_page.update_task(task_id, status="下载中", speed="", eta="")
         self._download_context_by_task.setdefault(task_id, {}).pop('output_path', None)
         self.download_page.set_status(status_text)
-        worker = DownloadWorker(
-            request,
-            popen_factory=self._download_popen_factory,
-        )
+        if request.kind in {"file", "direct_media"}:
+            worker = DirectFileWorker(
+                request, conflict_policy=request.conflict_policy, report_special_results=True,
+                max_connections=self.settings_page.http_connections.value(),
+                resume_transfer=self.settings_page.resume_downloads.isChecked(),
+                transfer_limiter=self._http_transfer_limiter,
+            )
+            worker.skipped.connect(lambda message: self._run_on_ui_thread(
+                lambda: self._skip_direct_file(task_id, message)))
+            worker.restart_required.connect(lambda message: self._run_on_ui_thread(
+                lambda: self._mark_file_restart(task_id, message)))
+        elif request.kind == "torrent":
+            worker = TorrentWorker(TorrentRequest(request.url, request.output_template.parent,
+                                                  request.temp_dir, request.torrent_files))
+            worker.files_ready.connect(lambda files: self._run_on_ui_thread(
+                lambda: self._select_torrent_files(task_id, worker, files)))
+        else:
+            worker = DownloadWorker(request, popen_factory=self._download_popen_factory,
+                                    resume_transfer=self.settings_page.resume_downloads.isChecked())
+        if hasattr(worker, "artifacts_ready"):
+            worker.artifacts_ready.connect(lambda paths: self._run_on_ui_thread(
+                lambda: self._download_context_by_task.get(task_id, {}).update(auxiliary_paths=paths)))
         self._download_workers_by_task[task_id] = worker
-        worker.progress.connect(lambda event, task=task_id: self.update_download_progress(task, event))
-        worker.output_reserved.connect(lambda path, task=task_id: self.reserve_download_output(task, path))
+        if request.kind == "torrent":
+            worker.progress.connect(lambda event: self.update_download_progress(
+                task_id, ProgressEvent(event.get("percent"), event.get("speed", ""), event.get("eta", ""))))
+        else:
+            worker.progress.connect(lambda event, task=task_id: self.update_download_progress(task, event))
+            worker.output_reserved.connect(lambda path, task=task_id: self.reserve_download_output(task, path))
+            worker.network_failed.connect(lambda task=task_id: self.download_stopped(task, 'offline'))
+            worker.stop_failed.connect(lambda message, task=task_id: self.download_stop_failed(task, message))
         worker.finished.connect(lambda output_path, task=task_id: self.finish_download(task, output_path))
         worker.failed.connect(lambda message, task=task_id: self.fail_download(task, message))
         worker.stopped.connect(lambda reason, task=task_id: self.download_stopped(task, reason))
-        worker.network_failed.connect(lambda task=task_id: self.download_stopped(task, 'offline'))
-        worker.stop_failed.connect(lambda message, task=task_id: self.download_stop_failed(task, message))
         self._worker_runner(worker)
+
+    def _skip_direct_file(self, task_id, message):
+        self._download_workers_by_task.pop(task_id, None)
+        self._download_task_states[task_id] = "canceled"
+        self._save_queue()
+        self.queue_page.update_task(task_id, status="已跳过")
+        self.queue_page.show_notice(message)
+        self._start_ready_download_workers()
+
+    def _mark_file_restart(self, task_id, message):
+        self._download_context_by_task.setdefault(task_id, {})["restart_file"] = True
+        self.fail_download(task_id, message)
+
+    def _select_torrent_files(self, task_id, worker, files):
+        if self._closing or self._download_task_states.get(task_id) != "running":
+            worker.stop("exit" if self._closing else "pause")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("选择种子文件")
+        dialog.resize(480, 360)
+        layout = QVBoxLayout(dialog)
+        listing = QListWidget()
+        for file in files:
+            item = QListWidgetItem(file.path, listing)
+            item.setData(Qt.ItemDataRole.UserRole, file.index)
+            item.setCheckState(Qt.CheckState.Checked)
+        layout.addWidget(listing)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        ok.setText("下载选中文件")
+        listing.itemChanged.connect(lambda _: ok.setEnabled(any(
+            listing.item(i).checkState() == Qt.CheckState.Checked for i in range(listing.count())
+        )))
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.cancel_queue_task(task_id)
+            return
+        selection = tuple(listing.item(i).data(Qt.ItemDataRole.UserRole) for i in range(listing.count())
+                          if listing.item(i).checkState() == Qt.CheckState.Checked)
+        request = self._download_requests_by_task.get(task_id)
+        if request is None or self._download_task_states.get(task_id) != "running":
+            return
+        self._download_requests_by_task[task_id] = replace(request, torrent_files=selection)
+        if not self._save_queue():
+            self._download_requests_by_task[task_id] = request
+            self.pause_queue_task(task_id)
+            return
+        worker.select_files(selection)
 
     def _is_ui_thread(self) -> bool:
         return QThread.currentThread() == self.thread()
@@ -1377,6 +2033,7 @@ class MainWindow(QWidget):
             self.record_finished_download(task_id)
         except Exception:
             self.download_page.set_status("下载完成，但历史记录写入失败。")
+        self.notify_download(task_id, str(self._download_context_by_task.get(task_id, {}).get("title", "任务已完成")), True)
         self._start_ready_download_workers()
 
     def fail_download(self, task_id: str, message: str) -> None:
@@ -1402,6 +2059,7 @@ class MainWindow(QWidget):
         self.queue_page.update_task(task_id, status="失败")
         if saved:
             self.download_page.set_status(shown_message)
+        self.notify_download(task_id, str(self._download_context_by_task.get(task_id, {}).get("title", "任务失败")), False)
         self._start_ready_download_workers()
 
     def download_stopped(self, task_id, reason):
@@ -1472,6 +2130,8 @@ class MainWindow(QWidget):
                 worker.stop('pause')
             return
         self._remove_pending_download_task(task_id)
+        if state == "scheduled":
+            self._arm_scheduled_tasks()
         if worker:
             label = {'pause': '正在暂停', 'cancel': '正在取消', 'offline': '正在等待网络', 'exit': '正在暂停'}[reason]
             self.queue_page.update_task(task_id, status=label)
@@ -1506,8 +2166,18 @@ class MainWindow(QWidget):
         request = self._download_requests_by_task.get(task_id)
         if request is None:
             return
+        context = self._download_context_by_task.get(task_id, {})
+        if request.kind in {"file", "direct_media"} and context.get("restart_file"):
+            if not self._confirmation_dialog(self, "重新下载", "文件来源已变化。清除该任务的未完成分片并重新下载？"):
+                return
+            try:
+                reset_direct_file_partial(request.temp_dir)
+            except (OSError, ValueError):
+                self.queue_page.show_notice("无法清理该任务的分片，请检查缓存目录。")
+                return
+            context.pop("restart_file", None)
         uses_cookies = request.uses_cookies or request.cookies_path is not None
-        cookies = self._cookies_path() if uses_cookies else None
+        cookies = self._cookies_path(request.url) if uses_cookies else None
         if uses_cookies and (cookies is None or not validate_netscape_cookies(cookies).ok):
             self.download_page.set_status('此任务需要 cookies.txt，请在设置中重新选择有效文件后继续。')
             return
@@ -1548,7 +2218,8 @@ class MainWindow(QWidget):
                 matching = [record for record in records if record.task_id == task]
                 sizes = {record.file_size_bytes for record in matching if record.file_size_bytes}
                 outputs.append((str(context.get("output_path", "")), next(iter(sizes), 0)))
-            protected = [record.output_path for record in records if record.task_id not in task_ids]
+            protected = [path for record in records if record.task_id not in task_ids
+                         for path, _ in self._recorded_outputs(record)]
             protected.extend(str(context.get("output_path", "")) for task, context in self._download_context_by_task.items() if task not in task_ids)
             # Never discard a history path which differs from its queue output.
             mapping_failures = {}
@@ -1559,7 +2230,14 @@ class MainWindow(QWidget):
                     mapping_failures[index] = "任务与历史记录中的文件信息不一致，已保留文件和记录。"
                     protected.append(outputs[index][0])
                     protected.extend(record.output_path for record in matching)
-            failures = self._delete_files(outputs, protected)
+            groups = []
+            for index, task in enumerate(task_ids):
+                record = next((record for record in records if record.task_id == task), None)
+                if index in mapping_failures:
+                    groups.append([])
+                else:
+                    groups.append(self._recorded_outputs(record) if record else [outputs[index]])
+            failures = self._delete_output_groups(groups, protected)
             failures.update(mapping_failures)
             task_ids = [task for index, task in enumerate(task_ids) if index not in failures]
             self._remove_history_indices(records, [index for index, record in enumerate(records) if record.task_id in task_ids])
@@ -1581,7 +2259,16 @@ class MainWindow(QWidget):
         if not self.history_store:
             return
         context = self._download_context_by_task.get(task_id or "", {})
+        request = self._download_requests_by_task.get(task_id or "")
         output_path = str(context.get("output_path") or self._output_template())
+        torrent_source = ""
+        if request and request.kind == "torrent" and request.temp_dir:
+            original = request.temp_dir / "source.torrent"
+            torrent_source = str(original) if original.is_file() else next(
+                (str(path) for path in request.temp_dir.glob("*.torrent") if path.is_file()), ""
+            )
+        auxiliary = context.get("auxiliary_paths", ())
+        size = sum(_file_size_bytes(path) for path in auxiliary) if Path(output_path).is_dir() else _file_size_bytes(output_path)
         record = HistoryRecord(
             title=str(context.get("title") or self.analyzed_metadata.get("title") or "未命名视频"),
             url=str(context.get("url") or self.analyzed_url),
@@ -1591,8 +2278,13 @@ class MainWindow(QWidget):
             subtitle_behavior=str(context.get("subtitle_behavior") or self.formats_page.subtitle_combo.currentText()),
             status="finished",
             created_at=datetime.now().isoformat(timespec="seconds"),
-            file_size_bytes=_file_size_bytes(output_path),
+            file_size_bytes=size,
             task_id=task_id or "",
+            auxiliary_paths=auxiliary,
+            torrent_source_path=torrent_source,
+            format_id=request.format_id if request else "",
+            subtitle_languages=request.subtitle_languages if request else (),
+            automatic_subtitles=request.automatic_subtitles if request else True,
         )
         self.history_store.add(record)
         records = self.history_store.list()
@@ -1618,7 +2310,20 @@ class MainWindow(QWidget):
                 return Path(config.active_ytdlp_path)
         return bundled_ytdlp_path()
 
-    def _cookies_path(self) -> Path | None:
+    def _cookies_path(self, url: str = "") -> Path | None:
+        if url:
+            try:
+                captured = self._site_logins.netscape_cookies(url)
+                if captured:
+                    if self._session_cookie_workspace is None:
+                        self._session_cookie_workspace = tempfile.TemporaryDirectory(prefix="captainflash-site-")
+                    filename = hashlib.sha256(captured).hexdigest() + ".txt"
+                    temporary = Path(self._session_cookie_workspace.name) / filename
+                    if not temporary.is_file():
+                        temporary.write_bytes(captured)
+                    return temporary
+            except (OSError, ValueError):
+                pass
         if self.config_store:
             value = self.config_store.load().cookies_path.strip()
         else:
@@ -1668,7 +2373,7 @@ class MainWindow(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
 
-        for signal_name in ("finished", "failed", "canceled", "stopped", "network_failed", "stop_failed"):
+        for signal_name in ("finished", "failed", "canceled", "stopped", "network_failed", "stop_failed", "skipped", "restart_required"):
             signal = getattr(worker, signal_name, None)
             if signal is not None:
                 signal.connect(thread.quit, Qt.ConnectionType.DirectConnection)

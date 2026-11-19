@@ -19,6 +19,11 @@ class HistoryRecord:
     file_size_bytes: int = 0
     thumbnail_path: str = ""
     task_id: str = ""
+    auxiliary_paths: tuple[str, ...] = ()
+    torrent_source_path: str = ""
+    format_id: str = ""
+    subtitle_languages: tuple[str, ...] = ()
+    automatic_subtitles: bool = True
 
 
 class HistoryStore:
@@ -73,6 +78,8 @@ def _sanitize_record(row: dict) -> dict:
 
 
 def _sanitize_value(value: object) -> object:
+    if isinstance(value, (list, tuple)):
+        return tuple(_sanitize_value(item) for item in value if isinstance(item, str))
     if not isinstance(value, str):
         return value
 

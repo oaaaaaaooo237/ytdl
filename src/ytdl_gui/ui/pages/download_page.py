@@ -1,8 +1,9 @@
-from PySide6.QtCore import QPoint, QRect, QSize, QSignalBlocker, Qt
+from PySide6.QtCore import QDateTime, QEvent, QPoint, QRect, QSize, QSignalBlocker, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDateTimeEdit,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -10,15 +11,15 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QApplication,
-    QStyle,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from ytdl_gui.paths import resource_root
+from ytdl_gui.ui.icons import line_icon
 from ytdl_gui.ui.player import PreviewPlayer
-from ytdl_gui.ui.widgets import PageHeader
+from ytdl_gui.ui.widgets import PageHeader, human_file_size
 
 
 class DownloadPage(QWidget):
@@ -38,7 +39,7 @@ class DownloadPage(QWidget):
         self.analyze_button.setProperty("addressAction", True)
         self.analyze_button.setFixedSize(76, field_height)
         self.paste_button = QPushButton()
-        self.paste_button.setIcon(_clipboard_icon(self))
+        self.paste_button.setIcon(_clipboard_icon())
         self.paste_button.setToolTip("粘贴")
         self.paste_button.setAccessibleName("粘贴")
         self.paste_button.clicked.connect(self.paste_from_clipboard)
@@ -56,7 +57,24 @@ class DownloadPage(QWidget):
         self.start_button.setObjectName("primaryButton")
         self.start_button.setProperty("largePrimary", True)
         self.start_button.setFixedHeight(46)
-        self.status_label = QLabel("等待输入视频地址。")
+        self.import_links_button = QPushButton("导入地址")
+        self.open_browser_button = QPushButton("内置浏览器")
+        self.torrent_file_button = QPushButton("打开种子")
+        self.filename_input = QLineEdit()
+        self.filename_input.setAccessibleName("文件名")
+        self.conflict_combo = QComboBox()
+        for label, policy in (("自动改名", "rename"), ("覆盖", "overwrite"), ("跳过", "skip")):
+            self.conflict_combo.addItem(label, policy)
+        self.scheduled = QCheckBox("定时下载")
+        self.scheduled_at = QDateTimeEdit(QDateTime.currentDateTime().addSecs(300))
+        self.scheduled_at.setAccessibleName("预约下载时间")
+        self.scheduled_at.setCalendarPopup(True)
+        self.scheduled_at.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.scheduled_at.setEnabled(False)
+        self.scheduled.toggled.connect(self.scheduled_at.setEnabled)
+        self.scheduled.toggled.connect(lambda checked: self.start_button.setText("预约下载" if checked else "开始下载"))
+        self.status_label = QLabel()
+        self.status_label.hide()
         self.status_label.setObjectName("mutedLabel")
         self.title_label = QLabel("标题：未分析")
         self.duration_label = QLabel("时长：未分析")
@@ -90,9 +108,9 @@ class DownloadPage(QWidget):
         self.video_checkbox = QCheckBox("")
         self.video_checkbox.setObjectName("optionSwitch")
         self.video_checkbox.setChecked(True)
-        self.audio_option_icon = _OptionRowIcon(_standard_icon_pixmap(self, QStyle.StandardPixmap.SP_MediaVolume))
+        self.audio_option_icon = _OptionRowIcon(line_icon("audio", QApplication.instance().palette().windowText().color()))
         self.audio_option_label = _OptionRowLabel("下载音频")
-        self.video_option_icon = _OptionRowIcon(_standard_icon_pixmap(self, QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self.video_option_icon = _OptionRowIcon(line_icon("media", QApplication.instance().palette().windowText().color()))
         self.video_option_label = _OptionRowLabel("下载视频")
         self.audio_quality_button = QPushButton("最佳质量")
         self.video_quality_button = QPushButton("最佳质量")
@@ -102,7 +120,7 @@ class DownloadPage(QWidget):
         self.mode_combo.addItems(["音频+视频", "仅音频", "仅视频"])
         self.preview_checkbox = QCheckBox("")
         self.preview_checkbox.setObjectName("optionSwitch")
-        self.preview_option_icon = _OptionRowIcon(_standard_icon_pixmap(self, QStyle.StandardPixmap.SP_MediaPlay))
+        self.preview_option_icon = _OptionRowIcon(line_icon("play", QApplication.instance().palette().windowText().color()))
         self.preview_option_label = _OptionRowLabel("下载时同步预览播放")
         self.preview_player = PreviewPlayer()
         self.preview_player.setObjectName("compactPreview")
@@ -117,6 +135,7 @@ class DownloadPage(QWidget):
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
         layout.addWidget(PageHeader("新建下载", "识别链接后，选择下载设置。"))
+        layout.addWidget(_SectionTitle("链接或电驴关键词"))
         url_row = QHBoxLayout()
         url_row.setSpacing(8)
         url_row.addWidget(self.url_input, 1)
@@ -124,7 +143,24 @@ class DownloadPage(QWidget):
         url_row.addWidget(self.paste_button)
         url_row.addWidget(self.analyze_button)
         layout.addLayout(url_row)
+        entry_row = QHBoxLayout()
+        entry_row.setSpacing(8)
+        for button in (self.import_links_button, self.open_browser_button, self.torrent_file_button):
+            entry_row.addWidget(button, 1)
+        layout.addLayout(entry_row)
         layout.addWidget(self.status_label)
+        self.start_guide = QFrame()
+        self.start_guide.setObjectName("startGuide")
+        guide = QVBoxLayout(self.start_guide)
+        guide.setContentsMargins(16, 14, 16, 14)
+        guide.setSpacing(6)
+        guide.addWidget(_SectionTitle("从链接开始"))
+        for text in ("多条媒体地址可以一次粘贴，每行一条。", "输入关键词查找电驴资源，或直接粘贴 eD2k 链接。"):
+            label = QLabel(text)
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            guide.addWidget(label)
+        layout.addWidget(self.start_guide)
 
         self.result_panel = QWidget()
         result_layout = QVBoxLayout(self.result_panel)
@@ -185,11 +221,35 @@ class DownloadPage(QWidget):
         options_heading.addWidget(self.format_settings_button)
         result_layout.addLayout(options_heading)
         result_layout.addWidget(self.options_card)
-        result_layout.addWidget(_SectionTitle("保存位置"))
-        result_layout.addLayout(save_row)
-        result_layout.addWidget(self.free_space_label)
+
+        self.file_panel = QFrame()
+        self.file_panel.setObjectName("optionsCard")
+        file_layout = QVBoxLayout(self.file_panel)
+        file_layout.setContentsMargins(14, 12, 14, 12)
+        file_layout.addWidget(_SectionTitle("普通文件"))
+        self.file_summary = QLabel()
+        self.file_summary.setWordWrap(True)
+        file_layout.addWidget(self.file_summary)
+        file_layout.addWidget(QLabel("保存文件名"))
+        file_layout.addWidget(self.filename_input)
+        file_layout.addWidget(QLabel("文件重名"))
+        file_layout.addWidget(self.conflict_combo)
+
+        self.destination_panel = QWidget()
+        destination = QVBoxLayout(self.destination_panel)
+        destination.setContentsMargins(0, 0, 0, 0)
+        destination.setSpacing(8)
+        destination.addWidget(_SectionTitle("保存位置"))
+        destination.addLayout(save_row)
+        destination.addWidget(self.free_space_label)
+        schedule = QHBoxLayout()
+        schedule.addWidget(self.scheduled)
+        schedule.addWidget(self.scheduled_at, 1)
+        destination.addLayout(schedule)
 
         layout.addWidget(self.result_panel)
+        layout.addWidget(self.file_panel)
+        layout.addWidget(self.destination_panel)
         layout.addWidget(self.start_button)
         layout.addStretch()
         self.clear_analysis_result()
@@ -224,6 +284,17 @@ class DownloadPage(QWidget):
     def set_status(self, message: str, tooltip: str = "") -> None:
         self.status_label.setText(message)
         self.status_label.setToolTip(tooltip)
+        self.status_label.setVisible(bool(message))
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "paste_button"):
+            self.paste_button.setIcon(_clipboard_icon())
+            if hasattr(self, "preview_option_icon"):
+                color = QApplication.instance().palette().windowText().color()
+                for key, label in (("audio", self.audio_option_icon), ("media", self.video_option_icon),
+                                   ("play", self.preview_option_icon)):
+                    label.setPixmap(line_icon(key, color))
 
     def set_analysis_retry_available(self) -> None:
         self.analyze_button.setText("重试分析")
@@ -245,11 +316,38 @@ class DownloadPage(QWidget):
         self.duration_label.setText(f"时长：{duration_text}")
         self.format_summary_label.setText(f"格式：{format_summary}")
         self.result_panel.show()
+        self.file_panel.hide()
+        self.destination_panel.show()
+        self.start_guide.hide()
         self.start_button.show()
+
+    def show_file_result(self, filename, size, resume, policy):
+        self.result_panel.hide()
+        self.filename_input.setText(filename)
+        size_text = human_file_size(size) if size is not None else "大小未知"
+        self.file_summary.setText(f"{size_text} · {'支持断点续传' if resume else '续传能力待确认'}")
+        self.conflict_combo.setCurrentIndex(max(0, self.conflict_combo.findData(policy)))
+        self.file_panel.show()
+        self.destination_panel.show()
+        self.start_guide.hide()
+        self.start_button.show()
+
+    def show_torrent_result(self, title):
+        self.result_panel.hide()
+        self.file_panel.hide()
+        self.start_guide.hide()
+        self.destination_panel.show()
+        self.start_button.show()
+        self.set_status(f"{title}。开始后可选择要下载的文件。")
 
     def clear_analysis_result(self) -> None:
         self.result_panel.hide()
-        self.start_button.setVisible(self.url_input.toPlainText().strip().lower().startswith("ed2k:"))
+        self.file_panel.hide()
+        self.destination_panel.hide()
+        self.scheduled.setChecked(False)
+        direct = self.url_input.toPlainText().strip().lower().startswith("ed2k:")
+        self.start_guide.setVisible(not direct)
+        self.start_button.setVisible(direct)
         self.thumbnail_label.setText("预览图")
         self.thumbnail_label.setProperty("hasPreviewOverlay", False)
         self.thumbnail_label.setProperty("durationBadge", "")
@@ -306,19 +404,20 @@ class DownloadPage(QWidget):
         return composed
 
 
-def _clipboard_icon(widget: QWidget) -> QIcon:
+def _clipboard_icon() -> QIcon:
     image = QPixmap(64, 64)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.scale(64 / 24, 64 / 24)
-    pen = QPen(widget.palette().buttonText().color())
+    palette = QApplication.instance().palette()
+    pen = QPen(palette.buttonText().color())
     pen.setWidthF(1.5)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setPen(pen)
     painter.drawRoundedRect(5, 4, 14, 17, 2, 2)
-    painter.fillRect(8, 2, 8, 5, widget.palette().button())
+    painter.fillRect(8, 2, 8, 5, palette.button())
     painter.drawRoundedRect(8, 2, 8, 5, 1, 1)
     painter.drawLine(8, 11, 16, 11)
     painter.drawLine(8, 15, 16, 15)
@@ -384,7 +483,3 @@ def _preview_toggle_row(toggle: QCheckBox, icon: QLabel, label: QLabel) -> QHBox
     row.addWidget(label, 1)
     row.addStretch()
     return row
-
-
-def _standard_icon_pixmap(widget: QWidget, standard_icon: QStyle.StandardPixmap) -> QPixmap:
-    return widget.style().standardIcon(standard_icon).pixmap(QSize(18, 18))

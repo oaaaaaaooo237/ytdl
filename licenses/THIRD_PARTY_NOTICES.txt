@@ -33,3 +33,13 @@ Copyright: eMule Project contributors.
 License: GNU General Public License version 2 or later. See eMule-GPL-2.0.txt.
 Source: srchybrid/res/Mule_Vista.ico in the eMule0.72a-Sources.zip archive at
 https://github.com/irwir/eMule/releases/tag/eMule_v0.72a-community
+
+aria2 1.37.0
+License: GNU General Public License v2 or later with OpenSSL exception.
+The distribution includes the binary, source and the matching dependency sources in tools/aria2/.
+Source: https://github.com/aria2/aria2/releases/tag/release-1.37.0
+
+Qt WebEngine (from the PySide6 distribution)
+License: Qt and Chromium components are distributed under their respective licenses.
+Source: https://www.qt.io/product/qt6
+Third-party notices: https://doc.qt.io/qt-6/qtwebengine-3rdparty.html

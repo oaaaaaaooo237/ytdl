@@ -64,9 +64,14 @@ class QueueStore:
                           'output_template': str(request.output_template.absolute()),
                           'format_id': request.format_id, 'subtitle_action': request.subtitle_action,
                           'expected_title': request.expected_title,
+                          'kind': request.kind, 'conflict_policy': request.conflict_policy,
+                          'torrent_files': list(request.torrent_files),
+                          'subtitle_languages': list(request.subtitle_languages),
+                          'automatic_subtitles': request.automatic_subtitles,
                           'uses_cookies': request.uses_cookies or request.cookies_path is not None,
                           'context': {key: context[key] for key in
-                                      ('title', 'format_summary', 'download_type', 'subtitle_behavior', 'progress', 'error')
+                                      ('title', 'format_summary', 'download_type', 'subtitle_behavior', 'progress', 'error',
+                                       'scheduled_at', 'restart_file', 'url')
                                       if key in context}})
         encrypted = _protect(json.dumps({'version': 1, 'tasks': items}, ensure_ascii=False).encode('utf-8'))
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,9 +100,14 @@ class QueueStore:
             request = DownloadRequest(url=item['url'], ytdlp_path=Path('yt-dlp.exe'),
                                       output_template=Path(item['output_template']), format_id=item['format_id'],
                                       subtitle_action=item['subtitle_action'], expected_title=item['expected_title'],
-                                      uses_cookies=item['uses_cookies'], temp_dir=self.task_dir(task_id))
+                                      uses_cookies=item['uses_cookies'], temp_dir=self.task_dir(task_id),
+                                      kind=item.get('kind', 'media'),
+                                      conflict_policy=item.get('conflict_policy', 'rename'),
+                                      torrent_files=tuple(item.get('torrent_files', ())),
+                                      subtitle_languages=tuple(item.get('subtitle_languages', ())),
+                                      automatic_subtitles=item.get('automatic_subtitles', True))
             restored[task_id] = {'request': request, 'context': item['context'],
-                                 'state': 'failed' if item['state'] == 'failed' else 'paused'}
+                                 'state': item['state'] if item['state'] in {'failed', 'scheduled'} else 'paused'}
         return restored
 
 

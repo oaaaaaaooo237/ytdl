@@ -17,6 +17,7 @@ if (!(Test-Path -LiteralPath (Join-Path $packageEnv "tools\ffmpeg\bin\ffmpeg.exe
 }
 
 & "$PSScriptRoot\fetch_amule.ps1"
+& "$PSScriptRoot\fetch_aria2.ps1"
 $previousPackageEnv = $env:YTDL_PACKAGE_ENV
 $env:YTDL_PACKAGE_ENV = $packageEnv
 try {

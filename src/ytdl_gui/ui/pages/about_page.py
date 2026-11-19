@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ytdl_gui import APP_DISPLAY_NAME, __display_version__
-from ytdl_gui.ui.widgets import PageHeader
+from ytdl_gui.ui.widgets import Surface
 
 
 class AboutPage(QWidget):
@@ -13,14 +13,18 @@ class AboutPage(QWidget):
         self.legal_button = QPushButton("第三方许可")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        layout.addWidget(PageHeader("关于", "查看组件状态和第三方许可信息。"))
-        layout.addWidget(self.version_label)
-        layout.addWidget(self.ytdlp_label)
-        layout.addWidget(self.ffmpeg_label)
-        layout.addWidget(self.legal_button)
-        layout.addStretch()
+        details = Surface()
+        info = QVBoxLayout(details)
+        info.setContentsMargins(16, 16, 16, 16)
+        info.setSpacing(12)
+        self.version_label.setObjectName("sectionTitle")
+        info.addWidget(self.version_label)
+        info.addWidget(self.ytdlp_label)
+        info.addWidget(self.ffmpeg_label)
+        info.addWidget(self.legal_button)
+        layout.addWidget(details)
 
     def load_status(self, ytdlp_status: str = "待检测", ffmpeg_status: str = "待检测") -> None:
         self.set_ytdlp_status(ytdlp_status)

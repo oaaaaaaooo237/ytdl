@@ -37,10 +37,13 @@ def test_queue_card_buttons_emit_task_actions(qtbot):
     assert not pause.icon().isNull()
     assert not cancel.icon().isNull()
     assert not retry.icon().isNull()
-    assert pause.y() == cancel.y()
+    assert pause.isHidden() and retry.y() == cancel.y()
 
+    page.update_task("task-1", status="下载中")
+    assert not pause.isHidden() and retry.isHidden()
     pause.click()
     cancel.click()
+    page.update_task("task-1", status="失败")
     retry.click()
 
     assert events == [("task-1", "pause"), ("task-1", "cancel"), ("task-1", "retry")]

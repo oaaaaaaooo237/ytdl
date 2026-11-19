@@ -7,7 +7,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import subprocess
 
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QPushButton, QToolButton
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryRecord, HistoryStore
@@ -81,6 +82,12 @@ def history_action_button(window: MainWindow, row: int, text: str) -> QPushButto
     raise AssertionError(f"missing history action button: {text}")
 
 
+def history_menu_action(window: MainWindow, row: int, name: str) -> QAction:
+    widget = window.history_page.table.cellWidget(row, 5)
+    assert widget is not None
+    return next(action for action in widget.findChild(QToolButton).menu().actions() if action.data() == name)
+
+
 def test_history_row_actions_open_redownload_and_delete(qtbot, app_data_dir: Path):
     output_path = app_data_dir / "downloads" / "demo.mp4"
     output_path.parent.mkdir()
@@ -120,10 +127,10 @@ def test_history_row_actions_open_redownload_and_delete(qtbot, app_data_dir: Pat
     qtbot.addWidget(window)
 
     history_action_button(window, 0, "打开").click()
-    history_action_button(window, 0, "目录").click()
-    history_action_button(window, 0, "重下").click()
+    history_menu_action(window, 0, "open_folder").trigger()
+    history_menu_action(window, 0, "redownload").trigger()
     window._confirm_record_deletion = lambda *_: False
-    history_action_button(window, 0, "删除").click()
+    history_menu_action(window, 0, "delete").trigger()
 
     assert opened[0] == output_path.as_uri()
     assert opened[1] == output_path.parent.as_uri()
@@ -338,6 +345,7 @@ def test_configure_application_icon_sets_window_icon_and_tray(monkeypatch):
 
     class FakeTrayIcon:
         activated = FakeSignal()
+        messageClicked = FakeSignal()
 
         def __init__(self, icon, parent=None):
             self.icon = icon
@@ -375,6 +383,9 @@ def test_configure_application_icon_sets_window_icon_and_tray(monkeypatch):
     class FakeWindow:
         def __init__(self):
             self.window_icon = None
+
+        def open_notification_task(self):
+            pass
 
         def close(self):
             events.append('window-close')

@@ -146,7 +146,7 @@ class EmuleController(QObject):
         updates, downloads, status = snapshot
         connected = [label for key, label in (("ed2k", "eD2k"), ("kad", "Kad"))
                      if status.get(key, {}).get("state") == "connected"]
-        self.window.settings_page.emule_status.setText("、".join(connected) if connected else "尚未连接")
+        self.window.settings_page.set_emule_status("、".join(connected) if connected else "尚未连接")
         for tab, results in updates:
             if tab.closed:
                 continue
@@ -207,7 +207,8 @@ class EmuleController(QObject):
         def queued(_):
             self.timer.start()
             self.window.queue_page.show_notice("已加入电驴队列")
-            self.window.show_tasks()
+            if self.window.settings_page.jump_to_tasks.isChecked():
+                self.window.show_tasks()
             self.poll()
 
         self._submit(operation, queued, failed or self._notice)
@@ -232,13 +233,20 @@ class EmuleController(QObject):
         self._queue(download, failed)
 
     def add_link(self, address):
-        if not ed2k_file_hash(address):
+        self.add_links([address])
+
+    def add_links(self, addresses):
+        if not addresses or not all(ed2k_file_hash(address) for address in addresses):
             self._notice("请输入有效的 eD2k 文件链接。")
             return
         if not self.window._confirmation_dialog(self.window, "电驴下载", "电驴运行时可能向同网用户上传已下载片段及电驴保存目录内的文件。继续下载？"):
             return
 
-        self._queue(lambda: self.engine.add_link(address))
+        def add():
+            for address in addresses:
+                self.engine.add_link(address)
+
+        self._queue(add)
 
     def action(self, task_id, action):
         if action == "cancel" and not self.window._confirmation_dialog(

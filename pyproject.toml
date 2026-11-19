@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ytdl-gui"
-version = "1.3.0"
-description = "Windows GUI for YouTube-first yt-dlp downloads"
+version = "1.4.0"
+description = "Windows graphical downloader for media, files, BitTorrent, and eD2k"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
-dependencies = ["PySide6==6.8.1.1"]
+dependencies = ["PySide6==6.11.3"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",

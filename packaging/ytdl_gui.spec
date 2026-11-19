@@ -21,14 +21,26 @@ a = Analysis(
         (str(root / "licenses" / "eMule-GPL-2.0.txt"), "licenses"),
         (str(root / "docs" / "gui-reference.png"), "docs"),
         (str(root / "tools" / "amule"), "tools/amule"),
+        (str(root / "tools" / "aria2"), "tools/aria2"),
     ],
-    hiddenimports=["PySide6.QtMultimedia"],
+    hiddenimports=["PySide6.QtMultimedia", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
 )
+# Qt uses the ICU implementation supplied by Windows 11. A different ICU
+# discovered through the build host's PATH must not shadow System32.
+a.binaries = [
+    (name, source, kind)
+    for name, source, kind in a.binaries
+    if not (
+        Path(name).parent == Path(".")
+        and Path(name).suffix.lower() == ".dll"
+        and Path(name).name.lower().startswith(("icuuc", "icuin", "icudt"))
+    )
+]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

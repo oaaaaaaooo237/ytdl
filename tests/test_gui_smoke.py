@@ -48,13 +48,14 @@ def test_main_window_has_chinese_navigation(qtbot):
     assert window.app_title_label.text() == "CaptainFlash"
     assert window.title_bar.objectName() == "titleBar"
     assert not window.title_bar.findChildren(QPushButton)
-    assert "v1.3.0" in {label.text() for label in window.title_bar.findChildren(QLabel)}
+    assert "v1.4.0" in {label.text() for label in window.title_bar.findChildren(QLabel)}
     assert window.bottom_status_bar.objectName() == "bottomStatusBar"
     assert window.ytdlp_footer_label.text().startswith("yt-dlp")
     assert window.footer_update_button.text() == "检查更新"
     assert window.stack.count() == 3
     assert window.tasks_tabs.widget(1).widget() is window.history_page
-    assert window.stack.widget(2).widget(1).widget() is window.about_page
+    assert window.stack.widget(2) is window.settings_page
+    assert "about" in window.settings_page.section_buttons
 
 
 def test_theme_uses_point_sized_system_font_for_crisper_windows_text(qtbot):
@@ -301,6 +302,7 @@ def test_download_video_card_follows_the_analysis_status(qtbot):
     window.resize(590, 883)
     window.show()
     window.download_page.show_analysis_result("示例", "02:00", "720p")
+    window.download_page.set_status("分析完成")
     qtbot.wait(50)
 
     video_card = window.download_page.thumbnail_label.parentWidget()
@@ -460,8 +462,8 @@ def test_download_start_button_stays_near_save_location(qtbot):
     qtbot.wait(50)
 
     page = window.download_page
-    gap = page.start_button.mapTo(window, QPoint(0, 0)).y() - page.free_space_label.mapTo(
-        window, QPoint(0, page.free_space_label.height())
+    gap = page.start_button.mapTo(window, QPoint(0, 0)).y() - page.scheduled_at.mapTo(
+        window, QPoint(0, page.scheduled_at.height())
     ).y()
 
     assert 8 <= gap <= 20
@@ -776,8 +778,8 @@ def test_queue_rows_follow_the_toolbar(qtbot):
     first_card = window.queue_page._task_cards["task-0"]["card"]
     first_card_top = first_card.mapTo(window, QPoint(0, 0)).y()
 
-    toolbar_bottom = window.queue_page.queue_heading.mapTo(
-        window, QPoint(0, window.queue_page.queue_heading.height())
+    toolbar_bottom = window.queue_page.task_search.mapTo(
+        window, QPoint(0, window.queue_page.task_search.height())
     ).y()
     assert 4 <= first_card_top - toolbar_bottom <= 40
     assert 86 <= first_card.height() <= 94
@@ -920,7 +922,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.3.0"
+    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.4.0"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"
