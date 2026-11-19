@@ -319,7 +319,8 @@ def test_successful_single_url_analysis_opens_format_selection(qtbot, app_data_d
         },
     )
 
-    assert window.nav.currentRow() == 1
+    assert window.nav.currentRow() == 0
+    assert not window.download_page.result_panel.isHidden()
     assert "格式" in window.download_page.status_label.text()
 
 
@@ -328,11 +329,13 @@ def test_quality_buttons_open_format_selection(qtbot):
     qtbot.addWidget(window)
 
     window.download_page.audio_quality_button.click()
-    assert window.nav.currentRow() == 1
+    assert window.nav.currentRow() == 0
+    assert window.download_stack.currentWidget() is window.formats_view
 
-    window.nav.setCurrentRow(0)
+    window.formats_page.back_button.click()
+    assert window.download_stack.currentWidget() is window.download_view
     window.download_page.video_quality_button.click()
-    assert window.nav.currentRow() == 1
+    assert window.download_stack.currentWidget() is window.formats_view
 
 
 def test_start_download_announces_queued_task_and_opens_queue(qtbot, app_data_dir: Path):
@@ -376,7 +379,7 @@ def test_start_download_announces_queued_task_and_opens_queue(qtbot, app_data_di
 
     assert len(started_downloads) == 1
     assert window.queue_page.table.rowCount() == 1
-    assert window.nav.currentRow() == 2
+    assert window.nav.currentRow() == 1
     assert "已添加 1 个下载任务" in window.queue_page.notice_label.text()
     assert "正在队列页显示进度" in window.download_page.status_label.text()
 

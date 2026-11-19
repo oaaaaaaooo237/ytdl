@@ -18,23 +18,25 @@ from PySide6.QtWidgets import (
 
 from ytdl_gui.paths import resource_root
 from ytdl_gui.ui.player import PreviewPlayer
+from ytdl_gui.ui.widgets import PageHeader
 
 
 class DownloadPage(QWidget):
     def __init__(self):
         super().__init__()
         field_height = 48
-        section_spacing = 8
         self.url_input = QTextEdit()
         self.url_input.setObjectName("urlInput")
-        self.url_input.setPlaceholderText("粘贴视频地址，或输入电驴搜索关键词")
+        self.url_input.setPlaceholderText("输入或粘贴链接")
+        self.url_input.setAccessibleName("下载地址或电驴关键词")
+        self.url_input.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.url_input.setFixedHeight(field_height)
         self.url_input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.url_input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.analyze_button = QPushButton("分析")
         self.analyze_button.setObjectName("primaryButton")
-        self.analyze_button.setFixedWidth(110)
-        self.analyze_button.setMinimumHeight(46)
+        self.analyze_button.setProperty("addressAction", True)
+        self.analyze_button.setFixedSize(76, field_height)
         self.paste_button = QPushButton()
         self.paste_button.setIcon(_clipboard_icon(self))
         self.paste_button.setToolTip("粘贴")
@@ -78,7 +80,7 @@ class DownloadPage(QWidget):
         self.thumbnail_label = QLabel("预览图")
         self.thumbnail_label.setObjectName("thumbnailPlaceholder")
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.thumbnail_label.setFixedSize(198, 170)
+        self.thumbnail_label.setFixedSize(160, 112)
         self.mode_combo = QComboBox()
         self.mode_combo.setObjectName("hiddenModeCombo")
         self.mode_combo.hide()
@@ -94,6 +96,7 @@ class DownloadPage(QWidget):
         self.video_option_label = _OptionRowLabel("下载视频")
         self.audio_quality_button = QPushButton("最佳质量")
         self.video_quality_button = QPushButton("最佳质量")
+        self.format_settings_button = QPushButton("格式与字幕")
         self.audio_quality_button.setObjectName("qualityPill")
         self.video_quality_button.setObjectName("qualityPill")
         self.mode_combo.addItems(["音频+视频", "仅音频", "仅视频"])
@@ -111,29 +114,28 @@ class DownloadPage(QWidget):
         self.mode_combo.currentIndexChanged.connect(self._sync_toggles_from_mode)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 41, 24, 18)
-        layout.setSpacing(0)
-
-        layout.addWidget(_SectionTitle("1. 输入视频地址"))
-        layout.addSpacing(section_spacing)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(12)
+        layout.addWidget(PageHeader("新建下载", "识别链接后，选择下载设置。"))
         url_row = QHBoxLayout()
-        url_row.setSpacing(10)
+        url_row.setSpacing(8)
         url_row.addWidget(self.url_input, 1)
         url_row.addWidget(self.emule_button)
         url_row.addWidget(self.paste_button)
+        url_row.addWidget(self.analyze_button)
         layout.addLayout(url_row)
-        layout.addSpacing(8)
-        analyze_row = QHBoxLayout()
-        analyze_row.addStretch()
-        analyze_row.addWidget(self.analyze_button)
-        layout.addLayout(analyze_row)
-        layout.addSpacing(25)
+        layout.addWidget(self.status_label)
+
+        self.result_panel = QWidget()
+        result_layout = QVBoxLayout(self.result_panel)
+        result_layout.setContentsMargins(0, 0, 0, 0)
+        result_layout.setSpacing(12)
 
         video_card = QFrame()
         video_card.setObjectName("videoCard")
-        video_card.setFixedHeight(196)
+        video_card.setMinimumHeight(140)
         video_layout = QHBoxLayout(video_card)
-        video_layout.setContentsMargins(14, 14, 14, 0)
+        video_layout.setContentsMargins(14, 14, 14, 14)
         video_layout.setSpacing(16)
         video_layout.addWidget(self.thumbnail_label, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -144,24 +146,16 @@ class DownloadPage(QWidget):
         detail_layout.addWidget(self.title_label)
         detail_layout.addWidget(self.duration_label)
         detail_layout.addWidget(self.format_summary_label)
-        detail_layout.addWidget(self.status_label)
         detail_layout.addStretch()
         video_layout.addLayout(detail_layout, 1)
-        layout.addWidget(video_card)
-        layout.addSpacing(30)
+        result_layout.addWidget(video_card)
+        result_layout.addWidget(self.preview_player)
 
-        lower_block = QVBoxLayout()
-        lower_block.setContentsMargins(0, 0, 0, 0)
-        lower_block.setSpacing(section_spacing)
-        lower_block.addWidget(_SectionTitle("2. 保存位置"))
         save_row = QHBoxLayout()
-        save_row.setSpacing(10)
+        save_row.setSpacing(8)
         self.free_space_label.setObjectName("pathDisplay")
         save_row.addWidget(self.save_folder_label, 1)
         save_row.addWidget(self.save_folder_button)
-        lower_block.addLayout(save_row)
-        lower_block.addWidget(self.free_space_label)
-        lower_block.addWidget(_SectionTitle("3. 选项"))
         self.options_card = QFrame()
         self.options_card.setObjectName("optionsCard")
         self.options_card.setFixedHeight(139)
@@ -186,13 +180,19 @@ class DownloadPage(QWidget):
         )
         options_layout.addLayout(_option_row("下载类型", self.mode_combo))
         options_layout.addLayout(_preview_toggle_row(self.preview_checkbox, self.preview_option_icon, self.preview_option_label))
-        options_layout.addWidget(self.preview_player)
-        lower_block.addWidget(self.options_card)
-        layout.addLayout(lower_block)
+        options_heading = QHBoxLayout()
+        options_heading.addWidget(_SectionTitle("下载选项"), 1)
+        options_heading.addWidget(self.format_settings_button)
+        result_layout.addLayout(options_heading)
+        result_layout.addWidget(self.options_card)
+        result_layout.addWidget(_SectionTitle("保存位置"))
+        result_layout.addLayout(save_row)
+        result_layout.addWidget(self.free_space_label)
 
-        layout.addSpacing(28)
+        layout.addWidget(self.result_panel)
         layout.addWidget(self.start_button)
         layout.addStretch()
+        self.clear_analysis_result()
 
     def choose_folder(self) -> str:
         return QFileDialog.getExistingDirectory(self, "选择保存位置")
@@ -233,6 +233,8 @@ class DownloadPage(QWidget):
 
     def set_save_folder(self, path: str) -> None:
         self.save_folder_label.setText(path)
+        self.save_folder_label.setCursorPosition(0)
+        self.save_folder_label.setToolTip(path)
 
     def set_free_space(self, text: str) -> None:
         self.free_space_label.setText(text)
@@ -242,6 +244,15 @@ class DownloadPage(QWidget):
         self.title_label.setText(f"标题：{title}")
         self.duration_label.setText(f"时长：{duration_text}")
         self.format_summary_label.setText(f"格式：{format_summary}")
+        self.result_panel.show()
+        self.start_button.show()
+
+    def clear_analysis_result(self) -> None:
+        self.result_panel.hide()
+        self.start_button.setVisible(self.url_input.toPlainText().strip().lower().startswith("ed2k:"))
+        self.thumbnail_label.setText("预览图")
+        self.thumbnail_label.setProperty("hasPreviewOverlay", False)
+        self.thumbnail_label.setProperty("durationBadge", "")
 
     def set_thumbnail(self, pixmap: QPixmap) -> None:
         if pixmap.isNull():

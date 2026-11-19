@@ -42,7 +42,7 @@ class QueuePage(QWidget):
         self.card_host = QWidget()
         self.card_layout = QVBoxLayout(self.card_host)
         self.card_layout.setContentsMargins(0, 0, 0, 0)
-        self.card_layout.setSpacing(8)
+        self.card_layout.setSpacing(0)
         self.card_layout.addStretch()
 
         self.scroll_area = QScrollArea()
@@ -154,13 +154,15 @@ class QueuePage(QWidget):
         card = QFrame()
         card.setObjectName("queueCard")
         card.setFixedHeight(90)
-        layout = QHBoxLayout(card)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(12)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
+        heading = QHBoxLayout()
+        heading.setSpacing(10)
 
         thumb = QLabel("电驴" if task_id.startswith("ed2k:") else "视频")
         thumb.setObjectName("queueThumb")
-        thumb.setFixedSize(80, 64)
+        thumb.setFixedSize(38, 38)
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if thumbnail is not None and not thumbnail.isNull():
             thumb.setText("")
@@ -172,17 +174,15 @@ class QueuePage(QWidget):
                 )
             )
 
-        content = QVBoxLayout()
         title_label = ElidedLabel(title)
         title_label.setObjectName("queueTitle")
         progress = QProgressBar()
         progress.setRange(0, 1000)
         progress.setValue(0)
+        progress.setFixedHeight(7)
+        progress.setTextVisible(False)
         meta = QLabel(status)
         meta.setObjectName("mutedLabel")
-        content.addWidget(title_label)
-        content.addWidget(progress)
-        content.addWidget(meta)
 
         pause = _queue_action_button(
             self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause),
@@ -201,7 +201,6 @@ class QueuePage(QWidget):
         retry.setObjectName(f"queue-retry-{task_id}")
         for button in (pause, cancel, retry):
             button.setProperty("queueAction", True)
-        retry.setVisible(_should_show_retry(status))
         pause.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "pause"))
         cancel.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "cancel"))
         retry.clicked.connect(lambda _checked=False, current=task_id: self.task_action_requested.emit(current, "retry"))
@@ -212,9 +211,12 @@ class QueuePage(QWidget):
         actions.addWidget(cancel)
         actions.addWidget(retry)
 
-        layout.addWidget(thumb)
-        layout.addLayout(content, 1)
-        layout.addLayout(actions)
+        heading.addWidget(thumb)
+        heading.addWidget(title_label, 1)
+        heading.addLayout(actions)
+        layout.addLayout(heading)
+        layout.addWidget(progress)
+        layout.addWidget(meta)
         self.card_layout.insertWidget(max(self.card_layout.count() - 1, 0), card)
         self._task_cards[task_id] = {
             "card": card,
@@ -226,6 +228,7 @@ class QueuePage(QWidget):
             "cancel": cancel,
             "retry": retry,
         }
+        self._update_task_card(task_id, status, None, "", "")
 
     def _update_task_card(self, task_id: str, status: str | None, progress_value, speed: str, eta: str) -> None:
         card = self._task_cards.get(task_id)
@@ -236,13 +239,21 @@ class QueuePage(QWidget):
         if isinstance(progress, QProgressBar) and progress_value is not None:
             progress.setValue(int(float(progress_value) * 10))
         if isinstance(meta, QLabel):
-            parts = [part for part in [status, speed, f"ETA {eta}" if eta else ""] if part]
+            if status == "已完成":
+                speed = eta = ""
+            parts = [part for part in (
+                status, f"{progress_value:.0f}%" if progress_value is not None else "",
+                speed, f"ETA {eta}" if eta else "",
+            ) if part]
             if parts:
                 meta.setText(" · ".join(parts))
-        retry = card.get("retry")
-        if isinstance(retry, QPushButton) and status is not None:
-            retry.setVisible(_should_show_retry(status))
-            retry.setToolTip('继续' if status in {'已暂停', '等待网络'} else '重试')
+        if status is not None:
+            terminal = status in {"已完成", "已取消"}
+            retry_visible = _should_show_retry(status)
+            card["pause"].setVisible(not terminal and not retry_visible)
+            card["cancel"].setVisible(not terminal)
+            card["retry"].setVisible(retry_visible)
+            card["retry"].setToolTip('继续' if status in {'已暂停', '等待网络'} else '重试')
 
     def completed_task_ids(self) -> list[str]:
         task_ids: list[str] = []

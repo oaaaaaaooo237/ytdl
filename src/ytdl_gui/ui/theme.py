@@ -1,14 +1,17 @@
 from PySide6.QtGui import QColor, QFont, QPalette
 
-TEAL = "#0f8f8c"
-TEAL_DARK = "#08716f"
-TEAL_SOFT = "#d7f0ee"
-SURFACE = "#ffffff"
-BACKGROUND = "#f6f9fb"
-NAV_BACKGROUND = "#ffffff"
-TEXT = "#1f2933"
-MUTED_TEXT = "#667085"
-BORDER = "#d8dee4"
+TEAL = "#536F73"
+TEAL_DARK = "#455F62"
+TEAL_SOFT = "#E0E7E4"
+ROSE = "#8B5860"
+ROSE_DARK = "#794B53"
+ROSE_SOFT = "#F0E2E2"
+SURFACE = "#FCFAF6"
+BACKGROUND = "#F3F0EB"
+NAV_BACKGROUND = SURFACE
+TEXT = "#323F40"
+MUTED_TEXT = "#637071"
+BORDER = "#D8D9D1"
 
 
 def apply_light_theme(app) -> None:
@@ -16,7 +19,7 @@ def apply_light_theme(app) -> None:
     palette = QPalette()
     palette.setColor(QPalette.Window, QColor(BACKGROUND))
     palette.setColor(QPalette.Base, QColor(SURFACE))
-    palette.setColor(QPalette.AlternateBase, QColor("#f8fafb"))
+    palette.setColor(QPalette.AlternateBase, QColor(BACKGROUND))
     palette.setColor(QPalette.Button, QColor(SURFACE))
     palette.setColor(QPalette.Text, QColor(TEXT))
     palette.setColor(QPalette.WindowText, QColor(TEXT))
@@ -34,10 +37,10 @@ def apply_light_theme(app) -> None:
         }}
         #titleBar, #bottomStatusBar {{
             background: {SURFACE};
-            border-bottom: 1px solid #e1e7ec;
+            border-bottom: 1px solid {BORDER};
         }}
         #bottomStatusBar {{
-            border-top: 1px solid #e1e7ec;
+            border-top: 1px solid {BORDER};
             border-bottom: 0;
         }}
         #appIcon {{
@@ -82,21 +85,21 @@ def apply_light_theme(app) -> None:
         }}
         QListWidget {{
             background: {NAV_BACKGROUND};
-            border: 1px solid #e6ecf0;
+            border: 1px solid {BORDER};
             border-radius: 8px;
             padding: 12px 8px;
             outline: 0;
         }}
         QListWidget::item {{
             padding: 12px 8px;
-            border-radius: 6px;
+            border-radius: 0;
             margin: 4px 0;
         }}
         QListWidget::item:selected {{
-            background: {TEAL_SOFT};
-            color: #064e4b;
+            background: {ROSE_SOFT};
+            color: {ROSE_DARK};
             font-weight: 600;
-            border-left: 3px solid {TEAL};
+            border-left: 2px solid {ROSE};
         }}
         QListWidget#navRail {{
             padding: 8px 6px;
@@ -113,25 +116,44 @@ def apply_light_theme(app) -> None:
         }}
         QPushButton {{
             border: 1px solid {BORDER};
-            border-radius: 6px;
+            border-radius: 0;
             padding: 8px 14px;
             background: {SURFACE};
             min-height: 20px;
         }}
         QPushButton:hover {{
-            border-color: #b8c1c8;
-            background: #f9fbfb;
+            border-color: {TEAL};
+            background: {TEAL_SOFT};
         }}
         QPushButton[addressIcon="true"] {{
             padding: 0;
         }}
+        QTabBar::tab {{
+            border: 1px solid {BORDER};
+            border-radius: 0;
+            padding: 8px 14px;
+            background: {SURFACE};
+        }}
+        QTabBar::tab:selected {{
+            background: {TEAL_SOFT};
+            color: {TEAL_DARK};
+        }}
         QPushButton#primaryButton {{
-            background: {TEAL};
-            color: white;
-            border-color: {TEAL};
+            background: {ROSE};
+            color: #FFFDF7;
+            border-color: {ROSE};
             font-weight: 600;
         }}
         QPushButton#primaryButton:hover {{
+            background: {ROSE_DARK};
+            border-color: {ROSE_DARK};
+        }}
+        QPushButton#primaryButton[addressAction="true"] {{
+            background: {TEAL};
+            border-color: {TEAL};
+            padding: 0 4px;
+        }}
+        QPushButton#primaryButton[addressAction="true"]:hover {{
             background: {TEAL_DARK};
             border-color: {TEAL_DARK};
         }}
@@ -140,7 +162,7 @@ def apply_light_theme(app) -> None:
         }}
         QLineEdit, QTextEdit, QComboBox, QSpinBox {{
             border: 1px solid {BORDER};
-            border-radius: 6px;
+            border-radius: 0;
             padding: 8px;
             background: {SURFACE};
             selection-background-color: {TEAL};
@@ -151,6 +173,10 @@ def apply_light_theme(app) -> None:
         QTextEdit#urlInput {{
             min-height: 30px;
         }}
+        QSpinBox {{
+            min-height: 20px;
+            padding: 5px 8px;
+        }}
         #sectionTitle {{
             font-size: 13px;
             font-weight: 700;
@@ -159,26 +185,32 @@ def apply_light_theme(app) -> None:
         }}
         #videoCard, #optionsCard {{
             background: {SURFACE};
-            border: 1px solid #dfe7ec;
+            border: 1px solid {BORDER};
             border-radius: 8px;
+        }}
+        #videoCard QLabel, QGroupBox QLabel {{
+            background: transparent;
+        }}
+        #videoCard #thumbnailPlaceholder {{
+            background: {TEAL_SOFT};
         }}
         #formatSection {{
             background: {SURFACE};
-            border: 1px solid #dfe7ec;
+            border: 1px solid {BORDER};
             border-radius: 8px;
         }}
         #segmentButton {{
             min-height: 46px;
-            border-radius: 7px;
+            border-radius: 0;
             font-weight: 600;
         }}
         #segmentButton:checked {{
             background: {TEAL_SOFT};
             border-color: {TEAL};
-            color: #064e4b;
+            color: {TEAL_DARK};
         }}
         #thumbnailPlaceholder {{
-            background: #e8eff5;
+            background: {TEAL_SOFT};
             border-radius: 6px;
             color: {MUTED_TEXT};
             font-weight: 600;
@@ -196,7 +228,7 @@ def apply_light_theme(app) -> None:
             color: {TEXT};
             background: {SURFACE};
             border: 1px solid {BORDER};
-            border-radius: 6px;
+            border-radius: 0;
             padding: 8px;
         }}
         #optionLabel {{
@@ -237,12 +269,12 @@ def apply_light_theme(app) -> None:
             background: transparent;
         }}
         #queueCard {{
-            background: {SURFACE};
-            border: 1px solid #e2e8ee;
-            border-radius: 8px;
+            background: transparent;
+            border: 0;
+            border-bottom: 1px solid {BORDER};
         }}
         #queueThumb {{
-            background: #dfeaf2;
+            background: {TEAL_SOFT};
             border-radius: 6px;
             color: {MUTED_TEXT};
             font-weight: 600;
@@ -258,9 +290,9 @@ def apply_light_theme(app) -> None:
             background: transparent;
         }}
         #queueNotice {{
-            color: #065f5b;
+            color: {TEAL_DARK};
             background: {TEAL_SOFT};
-            border: 1px solid #b7dfdc;
+            border: 1px solid {BORDER};
             border-radius: 6px;
             padding: 6px 10px;
             font-size: 12px;
@@ -269,7 +301,7 @@ def apply_light_theme(app) -> None:
             background: transparent;
         }}
         #queueHistoryThumb {{
-            background: #dfeaf2;
+            background: {TEAL_SOFT};
             border-radius: 4px;
             color: #ffffff;
             font-weight: 700;
@@ -281,7 +313,7 @@ def apply_light_theme(app) -> None:
         QPushButton[queueHistoryAction="true"] {{
             min-width: 0;
             padding: 0;
-            border-radius: 5px;
+            border-radius: 0;
         }}
         #toolbarButton {{
             min-width: 88px;
@@ -300,10 +332,10 @@ def apply_light_theme(app) -> None:
             max-height: 34px;
             padding: 0;
         }}
-        QProgressBar {{
+        QProgressBar, #queueScroll QProgressBar {{
             border: 0;
             border-radius: 3px;
-            background: #ecf0f3;
+            background: {TEAL_SOFT};
             height: 7px;
             text-align: center;
         }}
@@ -312,7 +344,7 @@ def apply_light_theme(app) -> None:
             border-radius: 3px;
         }}
         QGroupBox {{
-            border: 1px solid #dde3e7;
+            border: 1px solid {BORDER};
             border-radius: 8px;
             margin-top: 12px;
             padding: 12px;
@@ -326,14 +358,14 @@ def apply_light_theme(app) -> None:
         }}
         QTableWidget {{
             background: {SURFACE};
-            border: 1px solid #dde3e7;
-            border-radius: 6px;
-            gridline-color: #edf1f3;
+            border: 1px solid {BORDER};
+            border-radius: 0;
+            gridline-color: {BORDER};
         }}
         QHeaderView::section {{
-            background: #f3f6f7;
+            background: {TEAL_SOFT};
             border: 0;
-            border-bottom: 1px solid #dde3e7;
+            border-bottom: 1px solid {BORDER};
             padding: 7px;
             font-weight: 600;
         }}
@@ -353,9 +385,9 @@ def apply_light_theme(app) -> None:
         QCheckBox#optionSwitch::indicator {{
             width: 32px;
             height: 18px;
-            border-radius: 9px;
-            border: 1px solid #aab5bf;
-            background: #aab5bf;
+            border-radius: 0;
+            border: 1px solid {BORDER};
+            background: {TEAL_SOFT};
         }}
         QCheckBox#optionSwitch::indicator:checked {{
             border-color: {TEAL};

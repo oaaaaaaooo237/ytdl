@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
+    QTabWidget,
     QStyle,
     QVBoxLayout,
     QWidget,
@@ -78,11 +79,8 @@ class _UiCallDispatcher(QObject):
 
 NAV_ITEMS = [
     ("下载", QStyle.StandardPixmap.SP_ArrowDown),
-    ("格式", QStyle.StandardPixmap.SP_FileDialogDetailedView),
-    ("队列", QStyle.StandardPixmap.SP_FileDialogListView),
-    ("历史", QStyle.StandardPixmap.SP_BrowserReload),
+    ("任务", QStyle.StandardPixmap.SP_FileDialogListView),
     ("设置", QStyle.StandardPixmap.SP_ComputerIcon),
-    ("关于", QStyle.StandardPixmap.SP_MessageBoxInformation),
 ]
 
 
@@ -127,6 +125,7 @@ class MainWindow(QWidget):
         self.analyzed_url = ""
         self.analyzed_metadata: dict = {}
         self.analyzed_results: dict[str, dict] = {}
+        self._analysis_revision = 0
         self.selected_format_id = ""
         self.selected_format_summary = ""
         self.save_folder_path = ""
@@ -165,24 +164,32 @@ class MainWindow(QWidget):
         self.about_page = AboutPage()
         self.emule_page = EmuleSearchPage()
 
-        pages = [
-            self.download_page,
-            self.formats_page,
-            self.queue_page,
-            self.history_page,
-            self.settings_page,
-            self.about_page,
-        ]
-        for page in pages:
-            self.stack.addWidget(self._scroll_page(page))
-        self.stack.addWidget(self.emule_page)
+        self.download_stack = QStackedWidget()
+        self.download_view = self._scroll_page(self.download_page)
+        self.formats_view = self._scroll_page(self.formats_page)
+        self.download_stack.addWidget(self.download_view)
+        self.download_stack.addWidget(self.formats_view)
+        self.download_stack.addWidget(self.emule_page)
+        self.tasks_tabs = QTabWidget()
+        self.tasks_tabs.setDocumentMode(True)
+        self.tasks_tabs.addTab(self._scroll_page(self.queue_page), "当前任务")
+        self.tasks_tabs.addTab(self._scroll_page(self.history_page), "全部历史")
+        settings_tabs = QTabWidget()
+        settings_tabs.setDocumentMode(True)
+        settings_tabs.addTab(self._scroll_page(self.settings_page), "常规")
+        settings_tabs.addTab(self._scroll_page(self.about_page), "关于与组件")
+        self.stack.addWidget(self.download_stack)
+        self.stack.addWidget(self.tasks_tabs)
+        self.stack.addWidget(settings_tabs)
         if emule_engine is None:
             profile = config_store.path.parent if config_store else app_data_dir()
             emule_engine = EmuleEngine(resource_root() / "tools" / "amule" / "bin", profile / "emule")
         self.emule = EmuleController(self, emule_engine)
         self.download_page.emule_button.clicked.connect(self.emule.open_from_address_box)
 
-        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.nav.currentRowChanged.connect(self._open_main_page)
+        self.nav.itemClicked.connect(lambda item: self._open_main_page(self.nav.row(item)))
+        self.nav.itemSelectionChanged.connect(self._sync_navigation_selection)
         self.nav.setCurrentRow(0)
 
         self.title_bar = self._build_title_bar()
@@ -358,6 +365,26 @@ class MainWindow(QWidget):
         scroll.setMinimumSize(0, 0)
         scroll.setWidget(page)
         return scroll
+
+    def _open_main_page(self, index: int) -> None:
+        if index == 0:
+            self.download_stack.setCurrentWidget(self.download_view)
+        self.stack.setCurrentIndex(index)
+
+    def _sync_navigation_selection(self) -> None:
+        selected = self.nav.selectedItems()
+        if selected:
+            row = self.nav.row(selected[0])
+            if self.nav.currentRow() != row:
+                self.nav.setCurrentRow(row)
+
+    def show_download_page(self) -> None:
+        self.nav.setCurrentRow(0)
+        self.download_stack.setCurrentWidget(self.download_view)
+
+    def show_tasks(self) -> None:
+        self.nav.setCurrentRow(1)
+        self.tasks_tabs.setCurrentIndex(0)
 
     def _build_navigation(self) -> QListWidget:
         nav = QListWidget()
@@ -615,14 +642,17 @@ class MainWindow(QWidget):
         self._save_settings_config()
 
     def connect_download_actions(self) -> None:
+        self.download_page.url_input.textChanged.connect(self._clear_download_analysis)
         self.download_page.analyze_button.clicked.connect(self.start_analysis)
         self.download_page.save_folder_button.clicked.connect(self.choose_save_folder)
         self.download_page.start_button.clicked.connect(self.start_download)
         self.download_page.audio_quality_button.clicked.connect(self.open_format_selection)
         self.download_page.video_quality_button.clicked.connect(self.open_format_selection)
+        self.download_page.format_settings_button.clicked.connect(self.open_format_selection)
 
     def open_format_selection(self) -> None:
-        self.nav.setCurrentRow(1)
+        self.nav.setCurrentRow(0)
+        self.download_stack.setCurrentWidget(self.formats_view)
 
     def connect_history_actions(self) -> None:
         self.history_page.clear_button.clicked.connect(self.clear_history)
@@ -640,6 +670,7 @@ class MainWindow(QWidget):
         self.footer_update_button.clicked.connect(lambda: self.check_ytdlp_updates(silent=False))
 
     def connect_format_actions(self) -> None:
+        self.formats_page.back_button.clicked.connect(self.show_download_page)
         self.formats_page.subtitle_combo.currentTextChanged.connect(self.validate_subtitle_option)
         for index, button in enumerate(self.formats_page.mode_buttons):
             button.clicked.connect(lambda _checked=False, current=index: self.set_download_mode(current))
@@ -664,7 +695,7 @@ class MainWindow(QWidget):
                 choice = choose_format(formats, self._format_preference())
             except ValueError as exc:
                 self.download_page.set_status(f"没有可直接下载的格式：{exc}")
-                self.nav.setCurrentRow(0)
+                self.show_download_page()
                 return
             self.selected_format_id = choice.format_id
             self.selected_format_summary = choice.actual_summary
@@ -697,7 +728,7 @@ class MainWindow(QWidget):
         status += "可以开始下载。"
         tooltip += "可以开始下载。"
         self.download_page.set_status(status, tooltip=tooltip)
-        self.nav.setCurrentRow(0)
+        self.show_download_page()
 
     def reset_format_selection(self) -> None:
         self.set_download_mode(0)
@@ -834,13 +865,35 @@ class MainWindow(QWidget):
                 return candidate
         return Path(path) if path else None
 
+    def _clear_download_analysis(self) -> None:
+        self._analysis_revision += 1
+        had_result = bool(self.analyzed_metadata or self.analyzed_results)
+        self.analyzed_url = ""
+        self.analyzed_metadata = {}
+        self.analyzed_results.clear()
+        self.selected_format_id = ""
+        self.selected_format_summary = ""
+        if had_result:
+            self.formats_page.load_available_formats([], "")
+            self.formats_page.set_merge_hint_visible(False)
+        self.download_page.clear_analysis_result()
+        self.download_page.reset_analysis_action()
+        self.download_page.set_status("电驴链接可直接下载。" if self._first_url().lower().startswith("ed2k:") else "输入链接后点击分析。")
+
+    def _apply_current_analysis(self, revision, callback) -> None:
+        def apply():
+            if revision == self._analysis_revision:
+                callback()
+
+        self._run_on_ui_thread(apply)
+
     def start_analysis(self) -> None:
         urls = self._all_urls()
         if not urls:
             self.download_page.set_status("请输入视频地址。")
             return
 
-        self.analyzed_results.clear()
+        self._clear_download_analysis()
         if len(urls) == 1:
             self.download_page.set_status("正在后台分析视频地址...")
         else:
@@ -849,6 +902,7 @@ class MainWindow(QWidget):
             self._start_analysis_for_url(url)
 
     def _start_analysis_for_url(self, url: str) -> None:
+        revision = self._analysis_revision
         request = AnalysisRequest(
             url=url,
             ytdlp_path=self._active_ytdlp_path(),
@@ -858,11 +912,12 @@ class MainWindow(QWidget):
             worker = AnalysisWorker(request)
         else:
             worker = AnalysisWorker(request, runner=self._analysis_runner)
-        worker.finished.connect(lambda payload, analyzed_url=url: self._run_on_ui_thread(
+        worker.finished.connect(lambda payload, analyzed_url=url: self._apply_current_analysis(revision,
             lambda: self.apply_analysis_result(analyzed_url, payload)))
-        worker.failed.connect(lambda message, failed_url=url: self._run_on_ui_thread(
+        worker.failed.connect(lambda message, failed_url=url: self._apply_current_analysis(revision,
             lambda: self.show_analysis_error(message, failed_url)))
-        worker.canceled.connect(lambda: self._run_on_ui_thread(lambda: self.download_page.set_status("分析已取消。")))
+        worker.canceled.connect(lambda: self._apply_current_analysis(
+            revision, lambda: self.download_page.set_status("分析已取消。")))
         self._worker_runner(worker)
 
     def apply_analysis_result(self, url: str, metadata: dict) -> None:
@@ -885,12 +940,11 @@ class MainWindow(QWidget):
         self.formats_page.load_available_formats(formats, choice.format_id, choice.actual_summary)
         self.formats_page.set_merge_hint_visible(choice.requires_ffmpeg_merge)
         self._apply_available_resolution_controls(formats, choice.actual_summary)
+        self.download_page.set_save_folder(str(self._output_dir()))
         self.download_page.show_analysis_result(title, _duration_text(metadata.get("duration")), choice.actual_summary)
         self._load_thumbnail(_thumbnail_url(metadata), _thumbnail_headers(metadata, url))
         self.download_page.reset_analysis_action()
         self.download_page.set_status(_analysis_success_status(choice.relaxed, choice.requires_ffmpeg_merge))
-        if len(self._all_urls()) <= 1:
-            self.open_format_selection()
 
     def show_analysis_error(self, message: str, url: str | None = None) -> None:
         if message == "playlist_confirmation_needed" and url:
@@ -911,6 +965,7 @@ class MainWindow(QWidget):
         self.download_page.set_status(messages.get(message, "分析失败，请重试。"))
 
     def start_playlist_probe(self, url: str) -> None:
+        revision = self._analysis_revision
         self.download_page.set_status("检测到播放列表，正在后台读取条目...")
         request = PlaylistProbeRequest(
             url=url,
@@ -921,8 +976,10 @@ class MainWindow(QWidget):
             worker = PlaylistProbeWorker(request)
         else:
             worker = PlaylistProbeWorker(request, runner=self._playlist_probe_runner)
-        worker.finished.connect(lambda payload, playlist_url=url: self.apply_playlist_probe_result(playlist_url, payload))
-        worker.failed.connect(lambda _message: self.download_page.set_status("播放列表读取失败，请检查地址或稍后重试。"))
+        worker.finished.connect(lambda payload: self._apply_current_analysis(
+            revision, lambda: self.apply_playlist_probe_result(url, payload)))
+        worker.failed.connect(lambda _message: self._apply_current_analysis(
+            revision, lambda: self.download_page.set_status("播放列表读取失败，请检查地址或稍后重试。")))
         self._worker_runner(worker)
 
     def apply_playlist_probe_result(self, _url: str, payload: dict) -> None:
@@ -944,7 +1001,6 @@ class MainWindow(QWidget):
             return
 
         self.download_page.url_input.setPlainText("\n".join(expansion.urls))
-        self.analyzed_results.clear()
         self.download_page.set_status(f"已展开 {len(expansion.urls)} 项，正在后台分析...")
         for entry_url in expansion.urls:
             self._start_analysis_for_url(entry_url)
@@ -1080,7 +1136,7 @@ class MainWindow(QWidget):
             self._external_url_opener(QUrl.fromLocalFile(str(output_path.parent)).toString())
             return
         if action == "redownload":
-            self.nav.setCurrentRow(0)
+            self.show_download_page()
             self.download_page.url_input.setPlainText(record.url)
             if record.url.lower().startswith("ed2k:"):
                 self.emule.add_link(record.url)
@@ -1121,7 +1177,7 @@ class MainWindow(QWidget):
             message = f"已添加 {started} 个下载任务，正在队列页显示进度。"
             self.queue_page.show_notice(message)
             self.download_page.set_status(message)
-            self.nav.setCurrentRow(2)
+            self.show_tasks()
 
     def _start_download_for_analysis(self, url: str, metadata: dict, allow_preview: bool) -> bool:
         formats = metadata.get("formats") if isinstance(metadata.get("formats"), list) else []
@@ -1633,9 +1689,11 @@ class MainWindow(QWidget):
     def _load_thumbnail(self, url: str, headers: dict[str, str] | None = None) -> None:
         if not url:
             return
+        revision = self._analysis_revision
         worker = ThumbnailWorker(url, headers, self._thumbnail_fetcher)
-        worker.finished.connect(self._apply_thumbnail_data)
-        worker.failed.connect(lambda: self.download_page.thumbnail_label.setText("预览图"))
+        worker.finished.connect(lambda data: self._apply_current_analysis(revision, lambda: self._apply_thumbnail_data(data)))
+        worker.failed.connect(lambda: self._apply_current_analysis(
+            revision, lambda: self.download_page.thumbnail_label.setText("预览图")))
         self._worker_runner(worker)
 
     def _apply_thumbnail_data(self, data: bytes) -> None:

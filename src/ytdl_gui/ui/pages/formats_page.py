@@ -69,7 +69,11 @@ class FormatsPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 14, 24, 8)
         layout.setSpacing(8)
-        layout.addWidget(PageHeader("格式", "设置下载格式偏好；不做强制转码承诺。"))
+        heading = QHBoxLayout()
+        heading.addWidget(PageHeader("格式与字幕", "选择内容、清晰度、容器和字幕。"), 1)
+        self.back_button = QPushButton("返回下载")
+        heading.addWidget(self.back_button)
+        layout.addLayout(heading)
 
         mode_row = QHBoxLayout()
         for index, text in enumerate(["视频+音频", "仅音频", "仅视频"]):

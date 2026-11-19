@@ -45,7 +45,7 @@ class EmuleController(QObject):
         self.timer.timeout.connect(self.poll)
         self.page.search_requested.connect(self.search)
         self.page.download_requested.connect(self.download_result)
-        self.page.back_requested.connect(lambda: window.nav.setCurrentRow(0))
+        self.page.back_requested.connect(window.show_download_page)
         self.page.tabs.currentChanged.connect(self._check_selected_search)
 
     def _submit(self, operation, apply, failed, *, during_close=False) -> None:
@@ -78,8 +78,8 @@ class EmuleController(QObject):
 
     def open_from_address_box(self):
         address = self.window.download_page.url_input.toPlainText().strip()
-        self.window.nav.setCurrentRow(-1)
-        self.window.stack.setCurrentWidget(self.page)
+        self.window.nav.setCurrentRow(0)
+        self.window.download_stack.setCurrentWidget(self.page)
         if address and "://" not in address:
             self.search(address, self.page.network.currentData())
         else:
@@ -207,7 +207,7 @@ class EmuleController(QObject):
         def queued(_):
             self.timer.start()
             self.window.queue_page.show_notice("已加入电驴队列")
-            self.window.nav.setCurrentRow(2)
+            self.window.show_tasks()
             self.poll()
 
         self._submit(operation, queued, failed or self._notice)

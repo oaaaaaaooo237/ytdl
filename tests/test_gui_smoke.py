@@ -43,16 +43,18 @@ def test_main_window_has_chinese_navigation(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert nav_labels(window) == ["下载", "格式", "队列", "历史", "设置", "关于"]
+    assert nav_labels(window) == ["下载", "任务", "设置"]
     assert window.windowTitle() == "CaptainFlash"
     assert window.app_title_label.text() == "CaptainFlash"
     assert window.title_bar.objectName() == "titleBar"
     assert not window.title_bar.findChildren(QPushButton)
-    assert "v1.2.3" in {label.text() for label in window.title_bar.findChildren(QLabel)}
+    assert "v1.3.0" in {label.text() for label in window.title_bar.findChildren(QLabel)}
     assert window.bottom_status_bar.objectName() == "bottomStatusBar"
     assert window.ytdlp_footer_label.text().startswith("yt-dlp")
     assert window.footer_update_button.text() == "检查更新"
-    assert window.stack.count() == 7
+    assert window.stack.count() == 3
+    assert window.tasks_tabs.widget(1).widget() is window.history_page
+    assert window.stack.widget(2).widget(1).widget() is window.about_page
 
 
 def test_theme_uses_point_sized_system_font_for_crisper_windows_text(qtbot):
@@ -144,7 +146,7 @@ def test_navigation_custom_widgets_avoid_native_text_duplication(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    for expected, index in zip(["下载", "格式", "队列", "历史", "设置", "关于"], range(window.nav.count())):
+    for expected, index in zip(["下载", "任务", "设置"], range(window.nav.count()), strict=True):
         item = window.nav.item(index)
         assert item.data(Qt.ItemDataRole.UserRole) == expected
         assert item.text() == ""
@@ -226,7 +228,7 @@ def test_download_page_has_primary_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.download_page.url_input.placeholderText() == "粘贴视频地址，或输入电驴搜索关键词"
+    assert window.download_page.url_input.placeholderText() == "输入或粘贴链接"
     assert window.download_page.emule_button.accessibleName() == "电驴搜索"
     assert not window.download_page.emule_button.text()
     assert not window.download_page.emule_button.icon().isNull()
@@ -261,63 +263,68 @@ def test_download_thumbnail_uses_reference_visual_size(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.download_page.thumbnail_label.size() == QSize(198, 170)
+    assert window.download_page.thumbnail_label.size() == QSize(160, 112)
 
 
-def test_download_url_row_starts_near_reference_y(qtbot):
+def test_download_address_actions_align_with_url_field(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
     qtbot.addWidget(window)
-    window.resize(590, 883)
+    window.resize(488, 883)
     window.show()
     qtbot.wait(50)
 
-    url_top = window.download_page.url_input.mapTo(window, QPoint(0, 0)).y()
+    page = window.download_page
+    controls = (page.url_input, page.emule_button, page.paste_button, page.analyze_button)
+    assert len({(control.y(), control.height()) for control in controls}) == 1
+    assert page.analyze_button.geometry().right() <= page.width()
 
-    assert 106 <= url_top <= 114
 
-
-def test_download_video_card_height_matches_reference(qtbot):
+def test_download_video_card_fits_preview(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(590, 883)
     window.show()
+    window.download_page.show_analysis_result("示例", "02:00", "720p")
     qtbot.wait(50)
 
     video_card = window.download_page.thumbnail_label.parentWidget()
 
-    assert 190 <= video_card.height() <= 202
+    assert video_card.height() >= window.download_page.thumbnail_label.height() + 28
 
 
-def test_download_video_card_top_matches_reference(qtbot):
+def test_download_video_card_follows_the_analysis_status(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(590, 883)
     window.show()
+    window.download_page.show_analysis_result("示例", "02:00", "720p")
     qtbot.wait(50)
 
     video_card = window.download_page.thumbnail_label.parentWidget()
     video_top = video_card.mapTo(window, QPoint(0, 0)).y()
 
-    assert 222 <= video_top <= 230
+    status_bottom = window.download_page.status_label.mapTo(window, QPoint(0, 0)).y() + window.download_page.status_label.height()
+    assert video_top > status_bottom
 
 
-def test_download_options_and_start_button_match_reference_rows(qtbot):
+def test_download_places_options_save_location_and_start_in_sequence(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(590, 883)
     window.show()
+    window.download_page.show_analysis_result("示例", "02:00", "720p")
     qtbot.wait(50)
 
     options_top = window.download_page.options_card.mapTo(window, QPoint(0, 0)).y()
+    save_top = window.download_page.save_folder_label.mapTo(window, QPoint(0, 0)).y()
     start_top = window.download_page.start_button.mapTo(window, QPoint(0, 0)).y()
 
-    assert 582 <= options_top <= 594
+    assert options_top < save_top < start_top
     assert 134 <= window.download_page.options_card.height() <= 145
-    assert 748 <= start_top <= 760
     assert 42 <= window.download_page.start_button.height() <= 48
 
 
@@ -344,7 +351,7 @@ def test_download_section_titles_keep_compact_height(qtbot):
     titles = [
         label
         for label in window.download_page.findChildren(QLabel)
-        if label.text().startswith(("1.", "2.", "3."))
+        if label.objectName() == "sectionTitle"
     ]
 
     assert titles
@@ -414,6 +421,7 @@ def test_download_preview_toggle_is_visible_at_reference_size(qtbot):
     qtbot.addWidget(window)
     window.resize(590, 883)
     window.show()
+    window.download_page.show_analysis_result("示例", "02:00", "720p")
     qtbot.wait(50)
 
     options_card = window.download_page.preview_checkbox.parentWidget()
@@ -431,6 +439,7 @@ def test_download_preview_controls_are_hidden_until_enabled(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.show()
+    window.download_page.show_analysis_result("示例", "02:00", "720p")
     qtbot.wait(50)
 
     assert window.download_page.preview_player.isHidden()
@@ -441,17 +450,40 @@ def test_download_preview_controls_are_hidden_until_enabled(qtbot):
     assert window.download_page.preview_player.isVisible()
 
 
-def test_download_start_button_stays_near_options_card(qtbot):
+def test_download_start_button_stays_near_save_location(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(590, 883)
     window.show()
+    window.download_page.show_analysis_result("示例", "02:00", "720p")
     qtbot.wait(50)
 
-    gap = window.download_page.start_button.geometry().top() - window.download_page.options_card.geometry().bottom()
+    page = window.download_page
+    gap = page.start_button.mapTo(window, QPoint(0, 0)).y() - page.free_space_label.mapTo(
+        window, QPoint(0, page.free_space_label.height())
+    ).y()
 
-    assert 18 <= gap <= 34
+    assert 8 <= gap <= 20
+
+
+def test_download_result_is_invalidated_by_editing_the_address(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    page = window.download_page
+    page.url_input.setPlainText("https://example.test/old.mp4")
+    revision = window._analysis_revision
+    window.analyzed_results["https://example.test/old.mp4"] = {"title": "旧结果"}
+    assert page.result_panel.isHidden() and page.start_button.isHidden()
+    page.show_analysis_result("旧结果", "00:30", "MP4")
+    assert not page.result_panel.isHidden()
+    page.url_input.setPlainText("https://example.test/new.mp4")
+    assert page.result_panel.isHidden() and page.start_button.isHidden()
+    assert not window.analyzed_results
+    window._apply_current_analysis(revision, lambda: page.show_analysis_result("旧结果", "00:30", "MP4"))
+    assert page.result_panel.isHidden()
+    page.url_input.setPlainText("ed2k://|file|example.txt|3|0123456789abcdef0123456789abcdef|/")
+    assert page.result_panel.isHidden() and not page.start_button.isHidden()
 
 
 def test_download_thumbnail_renders_play_overlay_and_duration_badge(qtbot):
@@ -523,7 +555,7 @@ def test_formats_apply_button_visible_without_scrolling_at_reference_size(qtbot)
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(488, 883)
-    window.nav.setCurrentRow(1)
+    window.open_format_selection()
     window.show()
     qtbot.wait(50)
 
@@ -615,7 +647,7 @@ def test_queue_history_title_column_keeps_reference_reading_width(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(535, 883)
-    window.nav.setCurrentRow(2)
+    window.nav.setCurrentRow(1)
     window.queue_page.load_history_records(
         [
             HistoryRecord("Rick Astley - Never Gonna Give You Up", "url", "D:/x.mp4", "音频+视频", "1080p60 MP4", "不下载", "finished", "2026-06-01T21:44:42")
@@ -686,7 +718,7 @@ def test_queue_toolbar_aligns_with_header_at_reference_size(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(535, 883)
-    window.nav.setCurrentRow(2)
+    window.nav.setCurrentRow(1)
     window.show()
     qtbot.wait(50)
 
@@ -722,12 +754,12 @@ def test_queue_header_uses_compact_reference_layout(qtbot):
     assert subtitles == []
 
 
-def test_queue_cards_match_reference_top_and_height(qtbot):
+def test_queue_rows_follow_the_toolbar(qtbot):
     apply_light_theme(QApplication.instance())
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(535, 883)
-    window.nav.setCurrentRow(2)
+    window.nav.setCurrentRow(1)
     for index in range(3):
         task_id = f"task-{index}"
         window.queue_page.add_task(task_id, "Rick Astley - Never Gonna Give You Up (Official Music Video)")
@@ -744,7 +776,10 @@ def test_queue_cards_match_reference_top_and_height(qtbot):
     first_card = window.queue_page._task_cards["task-0"]["card"]
     first_card_top = first_card.mapTo(window, QPoint(0, 0)).y()
 
-    assert 112 <= first_card_top <= 125
+    toolbar_bottom = window.queue_page.queue_heading.mapTo(
+        window, QPoint(0, window.queue_page.queue_heading.height())
+    ).y()
+    assert 4 <= first_card_top - toolbar_bottom <= 40
     assert 86 <= first_card.height() <= 94
 
 
@@ -753,7 +788,7 @@ def test_queue_cards_match_reference_left_and_width(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(535, 883)
-    window.nav.setCurrentRow(2)
+    window.nav.setCurrentRow(1)
     window.queue_page.add_task("task-0", "Rick Astley - Never Gonna Give You Up (Official Music Video)")
     window.show()
     qtbot.wait(50)
@@ -773,7 +808,7 @@ def test_queue_card_thumbnail_matches_reference_size(qtbot):
 
     thumb = window.queue_page._task_cards["task-0"]["thumb"]
 
-    assert thumb.size() == QSize(80, 64)
+    assert thumb.size() == QSize(38, 38)
 
 
 def test_queue_card_action_buttons_render_as_reference_squares(qtbot):
@@ -781,7 +816,7 @@ def test_queue_card_action_buttons_render_as_reference_squares(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(535, 883)
-    window.nav.setCurrentRow(2)
+    window.nav.setCurrentRow(1)
     window.queue_page.add_task("task-0", "Rick Astley - Never Gonna Give You Up")
     window.show()
     qtbot.wait(50)
@@ -791,13 +826,15 @@ def test_queue_card_action_buttons_render_as_reference_squares(qtbot):
 
     assert pause.size() == QSize(36, 36)
     assert cancel.size() == QSize(36, 36)
+    window.queue_page.update_task("task-0", status="已完成", progress=100)
+    assert pause.isHidden() and cancel.isHidden()
 
 
 def test_queue_card_actions_fit_compact_width(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(535, 883)
-    window.nav.setCurrentRow(2)
+    window.nav.setCurrentRow(1)
     window.queue_page.add_task("task-1", "The Harsh Truth As A Subaru Owner / 2026 BRZ tS Review")
     window.show()
     qtbot.wait(50)
@@ -829,7 +866,7 @@ def test_queue_history_stays_close_below_task_cards(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(535, 883)
-    window.nav.setCurrentRow(2)
+    window.nav.setCurrentRow(1)
     for index in range(3):
         window.queue_page.add_task(f"task-{index}", "紐約陣容剋制？馬刺天賦碾壓！馬刺VS尼克，冠軍賽超強前瞻！")
     window.show()
@@ -862,7 +899,7 @@ def test_settings_action_buttons_fit_chinese_labels_at_default_width(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     window.resize(590, 883)
-    window.nav.setCurrentRow(4)
+    window.nav.setCurrentRow(2)
     window.show()
     qtbot.wait(50)
 
@@ -883,7 +920,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.3"
+    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.3.0"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"

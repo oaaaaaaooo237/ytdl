@@ -40,7 +40,8 @@ def test_donkey_button_submits_address_box_text(qtbot):
     window.download_page.url_input.setPlainText("Debian ISO")
     window.download_page.emule_button.click()
     assert requests == [("Debian ISO", "all")]
-    assert window.stack.currentWidget() is window.emule_page
+    assert window.nav.currentRow() == 0
+    assert window.download_stack.currentWidget() is window.emule_page
     assert window.emule_page.tabs.currentWidget().search_id == 15
 
 
