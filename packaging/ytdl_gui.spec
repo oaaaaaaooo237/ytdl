@@ -16,7 +16,9 @@ a = Analysis(
     ],
     datas=[
         (str(root / "assets" / "app-icon.ico"), "assets"),
+        (str(root / "assets" / "emule.ico"), "assets"),
         (str(root / "licenses" / "THIRD_PARTY_NOTICES.txt"), "licenses"),
+        (str(root / "licenses" / "eMule-GPL-2.0.txt"), "licenses"),
         (str(root / "docs" / "gui-reference.png"), "docs"),
         (str(root / "tools" / "amule"), "tools/amule"),
     ],

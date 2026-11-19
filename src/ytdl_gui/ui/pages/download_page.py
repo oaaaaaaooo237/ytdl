@@ -1,5 +1,5 @@
 from PySide6.QtCore import QPoint, QRect, QSize, QSignalBlocker, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygon
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ytdl_gui.paths import resource_root
 from ytdl_gui.ui.player import PreviewPlayer
 
 
@@ -35,10 +36,11 @@ class DownloadPage(QWidget):
         self.paste_button = QPushButton("粘贴")
         self.paste_button.setFixedWidth(72)
         self.paste_button.clicked.connect(self.paste_from_clipboard)
-        self.emule_button = QPushButton("电驴")
-        self.emule_button.setIcon(_donkey_icon(self))
-        self.emule_button.setIconSize(QSize(20, 20))
-        self.emule_button.setFixedWidth(70)
+        self.emule_button = QPushButton()
+        self.emule_button.setObjectName("emuleSearchButton")
+        self.emule_button.setIcon(QIcon(str(resource_root() / "assets" / "emule.ico")))
+        self.emule_button.setIconSize(QSize(32, 32))
+        self.emule_button.setFixedSize(48, 48)
         self.emule_button.setToolTip("电驴搜索")
         self.emule_button.setAccessibleName("电驴搜索")
         self.save_folder_button = QPushButton("浏览")
@@ -285,36 +287,6 @@ class DownloadPage(QWidget):
 
         painter.end()
         return composed
-
-
-def _donkey_icon(widget: QWidget) -> QIcon:
-    image = QPixmap(24, 24)
-    image.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(image)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(widget.palette().buttonText().color())
-    pen.setWidthF(1.5)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    outline = QPainterPath()
-    outline.moveTo(5, 22)
-    outline.lineTo(7, 17)
-    outline.cubicTo(5, 15, 5, 12, 7.5, 10)
-    outline.cubicTo(5.5, 7, 4.5, 3.5, 5.5, 2.2)
-    outline.cubicTo(7.7, 2.6, 9.2, 5.1, 10.3, 8.5)
-    outline.lineTo(12.3, 8.3)
-    outline.cubicTo(12.2, 5.3, 13.8, 2.1, 15.8, 1.9)
-    outline.cubicTo(16.8, 4.1, 16, 7.2, 14.8, 9.4)
-    outline.cubicTo(17.4, 10.6, 17.6, 13.3, 20.7, 15.1)
-    outline.cubicTo(23, 16.5, 21.6, 20, 18.6, 20)
-    outline.cubicTo(16.2, 20, 14.3, 18.6, 13, 17.9)
-    outline.lineTo(12.3, 22)
-    painter.drawPath(outline)
-    painter.drawPoint(13, 12)
-    painter.drawPoint(19, 17)
-    painter.end()
-    return QIcon(image)
 
 
 class _SectionTitle(QLabel):

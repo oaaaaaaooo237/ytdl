@@ -27,3 +27,9 @@ License: GNU General Public License. The upstream license files and third-party
 notices are included under tools/amule/.
 Source: https://github.com/amule-org/amule/releases/tag/3.2.0
 The corresponding upstream source archive is included under tools/amule/.
+
+eMule icon (assets/emule.ico)
+Copyright: eMule Project contributors.
+License: GNU General Public License version 2 or later. See eMule-GPL-2.0.txt.
+Source: srchybrid/res/Mule_Vista.ico in the eMule0.72a-Sources.zip archive at
+https://github.com/irwir/eMule/releases/tag/eMule_v0.72a-community

@@ -226,6 +226,8 @@ def test_download_page_has_primary_controls(qtbot):
 
     assert window.download_page.url_input.placeholderText() == "粘贴视频地址，或输入电驴搜索关键词"
     assert window.download_page.emule_button.accessibleName() == "电驴搜索"
+    assert not window.download_page.emule_button.text()
+    assert not window.download_page.emule_button.icon().isNull()
     assert window.download_page.analyze_button.text() == "分析"
     assert window.download_page.paste_button.text() == "粘贴"
     assert window.download_page.save_folder_button.text() == "浏览"
@@ -875,7 +877,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.0 RC2"
+    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.0"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"
