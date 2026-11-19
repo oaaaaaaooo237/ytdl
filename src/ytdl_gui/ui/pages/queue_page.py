@@ -1,3 +1,5 @@
+from datetime import datetime
+from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
@@ -13,7 +15,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -86,24 +87,28 @@ class QueuePage(QWidget):
         self.empty_label.setWordWrap(True)
         for control in (self.task_search.textChanged, self.task_status.currentTextChanged, self.task_type.currentTextChanged):
             control.connect(self._filter_tasks)
-        self.history_heading = QLabel("历史")
+        self.history_heading = QLabel("近期历史")
         self.history_heading.setObjectName("sectionTitle")
         self.recent_history_empty = QLabel()
         self.recent_history_empty.setWordWrap(True)
         self.recent_history_empty.setObjectName("mutedLabel")
-        self.recent_history_table = QTableWidget(0, 7)
+        self.recent_history_table = QTableWidget(0, 4)
         self.recent_history_table.setObjectName("queueHistoryTable")
-        self.recent_history_table.setHorizontalHeaderLabels(["标题", "格式", "大小", "状态", "时间", "", ""])
+        self.recent_history_table.setShowGrid(False)
+        self.recent_history_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.recent_history_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.recent_history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.recent_history_table.setHorizontalHeaderLabels(["文件", "状态", "文件夹", "打开"])
         history_header = self.recent_history_table.horizontalHeader()
+        history_header.hide()
         history_header.setSectionResizeMode(0, QHeaderView.Stretch)
-        for column, width in {1: 56, 2: 50, 3: 56, 4: 62, 5: 26, 6: 26}.items():
+        for column, width in {1: 70, 2: 34, 3: 34}.items():
             history_header.setSectionResizeMode(column, QHeaderView.Fixed)
             self.recent_history_table.setColumnWidth(column, width)
         self.recent_history_table.verticalHeader().hide()
-        self.recent_history_table.verticalHeader().setDefaultSectionSize(48)
+        self.recent_history_table.verticalHeader().setDefaultSectionSize(52)
         self.recent_history_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.recent_history_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.recent_history_table.setMinimumHeight(144)
         self.open_downloads_button = QPushButton("打开下载文件夹")
         self.open_downloads_button.setObjectName("queueOpenDownloadsButton")
         self.open_downloads_button.setFixedWidth(150)
@@ -113,8 +118,8 @@ class QueuePage(QWidget):
         self.history_search.setPlaceholderText("搜索历史...")
         self.history_search.setObjectName("queueHistorySearch")
         self.history_search.setFixedWidth(180)
-        self.history_search.addAction(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView),
+        self._history_search_icon = self.history_search.addAction(
+            self._action_icon("search"),
             QLineEdit.ActionPosition.TrailingPosition,
         )
         self.history_search.textChanged.connect(lambda _text: self._render_recent_history())
@@ -138,7 +143,7 @@ class QueuePage(QWidget):
         layout.addWidget(self.empty_label)
         layout.addWidget(self.scroll_area)
         layout.addWidget(self.history_heading)
-        layout.addWidget(self.recent_history_table, 1)
+        layout.addWidget(self.recent_history_table)
         layout.addWidget(self.recent_history_empty)
         history_footer = QHBoxLayout()
         history_footer.setContentsMargins(0, 0, 0, 0)
@@ -148,6 +153,7 @@ class QueuePage(QWidget):
         history_footer.addWidget(self.history_search)
         layout.addLayout(history_footer)
         layout.addWidget(self.table, 1)
+        layout.addStretch()
         self._filter_tasks()
         self._render_recent_history()
 
@@ -278,6 +284,10 @@ class QueuePage(QWidget):
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange and hasattr(self, "open_downloads_button"):
             self.open_downloads_button.setIcon(self._action_icon("storage"))
+            self._history_search_icon.setIcon(self._action_icon("search"))
+            for name, icon in (("queueHistoryOpenFolder", "storage"), ("queueHistoryOpenFile", "file")):
+                for button in self.recent_history_table.findChildren(QPushButton, name):
+                    button.setIcon(self._action_icon(icon))
             for card in self._task_cards.values():
                 for key in ("pause", "cancel", "retry"):
                     card[key].setIcon(self._action_icon(key))
@@ -379,6 +389,10 @@ class QueuePage(QWidget):
             or query in record.created_at.casefold()
         ]
         self.recent_history_table.setVisible(bool(records))
+        self.recent_history_table.setFixedHeight(
+            len(records) * self.recent_history_table.verticalHeader().defaultSectionSize()
+            + 2 * self.recent_history_table.frameWidth()
+        )
         self.recent_history_empty.setText(
             "没有匹配的历史记录。" if query else "完成的下载会出现在这里。"
         )
@@ -386,37 +400,21 @@ class QueuePage(QWidget):
         for record_index, record in records:
             row = self.recent_history_table.rowCount()
             self.recent_history_table.insertRow(row)
-            self.recent_history_table.setRowHeight(row, 48)
-            values = [
-                record.title,
-                record.format_summary,
-                _format_history_size(record),
-                display_status(record.status),
-                record.created_at,
-            ]
-            for column, value in enumerate(values):
-                self.recent_history_table.setItem(row, column, QTableWidgetItem(str(value)))
-                if column == 0:
-                    self.recent_history_table.setCellWidget(row, column, _history_title_cell(record))
-                    continue
-                if column == 3:
-                    host = QWidget()
-                    host_layout = QHBoxLayout(host)
-                    host_layout.setContentsMargins(0, 0, 0, 0)
-                    badge = QLabel(str(value))
-                    badge.setObjectName("statusBadge")
-                    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    badge.setMaximumHeight(22)
-                    host_layout.addStretch()
-                    host_layout.addWidget(badge)
-                    host_layout.addStretch()
-                    self.recent_history_table.setCellWidget(row, column, host)
-                    continue
+            self.recent_history_table.setCellWidget(row, 0, _history_title_cell(record, _format_history_size(record)))
+            badge = QLabel(display_status(record.status))
+            badge.setObjectName("statusBadge")
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setMaximumHeight(22)
+            host = QWidget()
+            host_layout = QHBoxLayout(host)
+            host_layout.setContentsMargins(4, 0, 4, 0)
+            host_layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignCenter)
+            self.recent_history_table.setCellWidget(row, 1, host)
             self.recent_history_table.setCellWidget(
                 row,
-                5,
+                2,
                 _history_action_cell(
-                    self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon),
+                    self._action_icon("storage"),
                     "queueHistoryOpenFolder",
                     "打开所在文件夹",
                     lambda _checked=False, index=record_index: self.history_action_requested.emit("open_folder", index),
@@ -424,9 +422,9 @@ class QueuePage(QWidget):
             )
             self.recent_history_table.setCellWidget(
                 row,
-                6,
+                3,
                 _history_action_cell(
-                    self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon),
+                    self._action_icon("file"),
                     "queueHistoryOpenFile",
                     "打开文件",
                     lambda _checked=False, index=record_index: self.history_action_requested.emit("open_file", index),
@@ -470,12 +468,12 @@ def _path_file_size(path: str) -> int:
         return 0
 
 
-def _history_title_cell(record) -> QWidget:
+def _history_title_cell(record, size: str) -> QWidget:
     host = QWidget()
     host.setObjectName("queueHistoryTitleCell")
     layout = QHBoxLayout(host)
-    layout.setContentsMargins(4, 4, 2, 4)
-    layout.setSpacing(6)
+    layout.setContentsMargins(10, 4, 4, 4)
+    layout.setSpacing(9)
 
     thumb = QLabel()
     thumb.setObjectName("queueHistoryThumb")
@@ -487,13 +485,24 @@ def _history_title_cell(record) -> QWidget:
     else:
         thumb.setText("▶")
 
-    title = QLabel(str(record.title))
+    title = ElidedLabel(str(record.title))
     title.setObjectName("queueHistoryTitle")
-    title.setWordWrap(True)
-    title.setMaximumHeight(40)
+    title.setToolTip(f"<p>{escape(title.text())}</p>")
+    timestamp = str(record.created_at)
+    try:
+        timestamp = datetime.fromisoformat(timestamp).strftime("%m/%d %H:%M")
+    except ValueError:
+        pass
+    meta = ElidedLabel(" · ".join(value for value in (record.format_summary, size, timestamp) if value and value != "-"))
+    meta.setObjectName("queueHistoryMeta")
+    meta.setToolTip(f"<p>{escape(meta.text())}</p>")
+    details = QVBoxLayout()
+    details.setSpacing(1)
+    details.addWidget(title)
+    details.addWidget(meta)
 
     layout.addWidget(thumb)
-    layout.addWidget(title, 1)
+    layout.addLayout(details, 1)
     return host
 
 
@@ -523,6 +532,7 @@ def _history_action_cell(icon, object_name: str, tooltip: str, callback) -> QWid
     button.setIcon(icon)
     button.setIconSize(QSize(14, 14))
     button.setToolTip(tooltip)
+    button.setAccessibleName(tooltip)
     button.clicked.connect(callback)
     layout.addWidget(button, 0, Qt.AlignmentFlag.AlignCenter)
     return host

@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import subprocess
 
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QPushButton, QToolButton
+from PySide6.QtWidgets import QLabel, QPushButton, QToolButton
 
 from ytdl_gui.config_store import AppConfig, ConfigStore
 from ytdl_gui.history_store import HistoryRecord, HistoryStore
@@ -62,8 +62,9 @@ def test_history_page_renders_history_without_sensitive_fields(qtbot, app_data_d
     assert window.history_store is history
     assert window.history_page.table.rowCount() == 1
     assert window.queue_page.recent_history_table.rowCount() == 1
-    assert window.queue_page.recent_history_table.item(0, 0).text() == "Title"
-    assert window.queue_page.recent_history_table.item(0, 3).text() == "已完成"
+    recent = window.queue_page.recent_history_table
+    assert recent.cellWidget(0, 0).findChild(QLabel, "queueHistoryTitle").text() == "Title"
+    assert recent.cellWidget(0, 1).findChild(QLabel, "statusBadge").text() == "已完成"
     values = [window.history_page.table.item(0, column).text() for column in range(5)]
     assert values == ["Title", "audio_video", "720p mp4", "已完成", "2026-05-30T22:00:00"]
     assert history_action_button(window, 0, "打开").text() == "打开"

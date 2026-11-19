@@ -352,13 +352,28 @@ def _apply_theme(app, TEAL, TEAL_DARK, TEAL_SOFT, ROSE, ROSE_DARK, ROSE_SOFT,
             font-weight: 700;
         }}
         #queueHistoryTitle {{
-            font-size: 11px;
+            font-size: 12px;
+            font-weight: 600;
             background: transparent;
+        }}
+        #queueHistoryMeta {{
+            font-size: 11px;
+            color: {MUTED_TEXT};
+            background: transparent;
+        }}
+        QTableWidget#queueHistoryTable {{
+            outline: 0;
         }}
         QPushButton[queueHistoryAction="true"] {{
             min-width: 0;
             padding: 0;
             border-radius: 0;
+            background: transparent;
+            border-color: transparent;
+        }}
+        QPushButton[queueHistoryAction="true"]:hover, QPushButton[queueHistoryAction="true"]:focus {{
+            background: {TEAL_SOFT};
+            border-color: {TEAL};
         }}
         QPushButton[historyTextAction="true"], QToolButton#historyMore {{
             min-width: 30px;

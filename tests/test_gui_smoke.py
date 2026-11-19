@@ -48,7 +48,7 @@ def test_main_window_has_chinese_navigation(qtbot):
     assert window.app_title_label.text() == "CaptainFlash"
     assert window.title_bar.objectName() == "titleBar"
     assert not window.title_bar.findChildren(QPushButton)
-    assert "v1.4.0" in {label.text() for label in window.title_bar.findChildren(QLabel)}
+    assert "v1.4.1" in {label.text() for label in window.title_bar.findChildren(QLabel)}
     assert window.bottom_status_bar.objectName() == "bottomStatusBar"
     assert window.ytdlp_footer_label.text().startswith("yt-dlp")
     assert window.footer_update_button.text() == "检查更新"
@@ -573,8 +573,8 @@ def test_queue_page_headers_and_actions(qtbot):
     assert table_headers(window.queue_page.table) == ["标题", "状态", "进度", "速度", "剩余时间", "操作"]
     assert window.queue_page.pause_all_button.text() == "全部暂停"
     assert window.queue_page.clear_completed_button.text() == "清除已完成"
-    assert window.queue_page.history_heading.text() == "历史"
-    assert table_headers(window.queue_page.recent_history_table) == ["标题", "格式", "大小", "状态", "时间", "", ""]
+    assert window.queue_page.history_heading.text() == "近期历史"
+    assert table_headers(window.queue_page.recent_history_table) == ["文件", "状态", "文件夹", "打开"]
 
 
 def test_queue_history_table_shows_file_size_from_output_path(qtbot, tmp_path):
@@ -598,7 +598,8 @@ def test_queue_history_table_shows_file_size_from_output_path(qtbot, tmp_path):
         ]
     )
 
-    assert window.queue_page.recent_history_table.item(0, 2).text() == "812.0 MB"
+    cell = window.queue_page.recent_history_table.cellWidget(0, 0)
+    assert "812.0 MB" in cell.findChild(QLabel, "queueHistoryMeta").text()
 
 
 def test_queue_history_rows_use_reference_thumbnail_and_action_cells(qtbot):
@@ -607,7 +608,7 @@ def test_queue_history_rows_use_reference_thumbnail_and_action_cells(qtbot):
     window.queue_page.load_history_records(
         [
             HistoryRecord(
-                "带操作的视频",
+                "中文长标题和 English words " * 12,
                 "https://example.com",
                 "D:/x.mp4",
                 "音频+视频",
@@ -622,15 +623,19 @@ def test_queue_history_rows_use_reference_thumbnail_and_action_cells(qtbot):
     title_cell = window.queue_page.recent_history_table.cellWidget(0, 0)
     thumb = title_cell.findChild(QLabel, "queueHistoryThumb") if title_cell else None
     title = title_cell.findChild(QLabel, "queueHistoryTitle") if title_cell else None
-    folder_cell = window.queue_page.recent_history_table.cellWidget(0, 5)
-    more_cell = window.queue_page.recent_history_table.cellWidget(0, 6)
+    folder_cell = window.queue_page.recent_history_table.cellWidget(0, 2)
+    more_cell = window.queue_page.recent_history_table.cellWidget(0, 3)
     folder_button = folder_cell.findChild(QPushButton, "queueHistoryOpenFolder") if folder_cell else None
     more_button = more_cell.findChild(QPushButton, "queueHistoryOpenFile") if more_cell else None
 
     assert isinstance(thumb, QLabel)
     assert thumb.size() == QSize(34, 34)
     assert isinstance(title, QLabel)
-    assert title.text() == "带操作的视频"
+    assert title.text() == "中文长标题和 English words " * 12
+    assert title.toolTip()
+    assert not title.wordWrap()
+    assert window.queue_page.recent_history_table.item(0, 0) is None
+    assert window.queue_page.recent_history_table.item(0, 1) is None
     assert isinstance(folder_button, QPushButton)
     assert isinstance(more_button, QPushButton)
     assert not folder_button.icon().isNull()
@@ -679,7 +684,7 @@ def test_queue_history_status_uses_completed_badge(qtbot):
         ]
     )
 
-    badge_host = window.queue_page.recent_history_table.cellWidget(0, 3)
+    badge_host = window.queue_page.recent_history_table.cellWidget(0, 1)
     badge = badge_host.findChild(QLabel, "statusBadge") if badge_host else None
 
     assert isinstance(badge, QLabel)
@@ -712,7 +717,8 @@ def test_queue_history_search_filters_recent_records(qtbot):
     window.queue_page.history_search.setText("Beta")
 
     assert window.queue_page.recent_history_table.rowCount() == 1
-    assert window.queue_page.recent_history_table.item(0, 0).text() == "Beta Clip"
+    cell = window.queue_page.recent_history_table.cellWidget(0, 0)
+    assert cell.findChild(QLabel, "queueHistoryTitle").text() == "Beta Clip"
 
 
 def test_queue_toolbar_aligns_with_header_at_reference_size(qtbot):
@@ -922,7 +928,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.4.0"
+    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.4.1"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"

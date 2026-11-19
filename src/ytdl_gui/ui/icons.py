@@ -30,6 +30,12 @@ def line_icon(key, color):
             painter.drawLine(12, 5, 12, 14)
         elif key == "storage":
             path((4, 19), (4, 6), (10, 6), (12, 9), (20, 9), (20, 19), (4, 19))
+        elif key == "file":
+            path((6, 4), (14, 4), (18, 8), (18, 20), (6, 20), (6, 4))
+            path((14, 4), (14, 8), (18, 8))
+        elif key == "search":
+            painter.drawEllipse(4, 4, 11, 11)
+            painter.drawLine(13, 13, 20, 20)
         elif key == "notice":
             painter.drawArc(7, 5, 10, 14, 0, 180 * 16)
             path((7, 12), (5, 17), (19, 17), (17, 12))
