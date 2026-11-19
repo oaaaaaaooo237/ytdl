@@ -131,7 +131,7 @@ def apply_light_theme(app) -> None:
             border-color: #b8c1c8;
             background: #f9fbfb;
         }}
-        QPushButton#emuleSearchButton {{
+        QPushButton[addressIcon="true"] {{
             padding: 0;
         }}
         QPushButton#primaryButton {{

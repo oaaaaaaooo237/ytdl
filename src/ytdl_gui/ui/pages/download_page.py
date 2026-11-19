@@ -1,5 +1,5 @@
 from PySide6.QtCore import QPoint, QRect, QSize, QSignalBlocker, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -33,16 +33,19 @@ class DownloadPage(QWidget):
         self.analyze_button.setObjectName("primaryButton")
         self.analyze_button.setFixedWidth(110)
         self.analyze_button.setMinimumHeight(46)
-        self.paste_button = QPushButton("粘贴")
-        self.paste_button.setFixedWidth(72)
+        self.paste_button = QPushButton()
+        self.paste_button.setIcon(_clipboard_icon(self))
+        self.paste_button.setToolTip("粘贴")
+        self.paste_button.setAccessibleName("粘贴")
         self.paste_button.clicked.connect(self.paste_from_clipboard)
         self.emule_button = QPushButton()
-        self.emule_button.setObjectName("emuleSearchButton")
         self.emule_button.setIcon(QIcon(str(resource_root() / "assets" / "emule.ico")))
-        self.emule_button.setIconSize(QSize(32, 32))
-        self.emule_button.setFixedSize(48, 48)
         self.emule_button.setToolTip("电驴搜索")
         self.emule_button.setAccessibleName("电驴搜索")
+        for button in (self.emule_button, self.paste_button):
+            button.setProperty("addressIcon", True)
+            button.setIconSize(QSize(32, 32))
+            button.setFixedSize(48, 48)
         self.save_folder_button = QPushButton("浏览")
         self.start_button = QPushButton("开始下载")
         self.start_button.setObjectName("primaryButton")
@@ -287,6 +290,26 @@ class DownloadPage(QWidget):
 
         painter.end()
         return composed
+
+
+def _clipboard_icon(widget: QWidget) -> QIcon:
+    image = QPixmap(64, 64)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.scale(64 / 24, 64 / 24)
+    pen = QPen(widget.palette().buttonText().color())
+    pen.setWidthF(1.5)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.drawRoundedRect(5, 4, 14, 17, 2, 2)
+    painter.fillRect(8, 2, 8, 5, widget.palette().button())
+    painter.drawRoundedRect(8, 2, 8, 5, 1, 1)
+    painter.drawLine(8, 11, 16, 11)
+    painter.drawLine(8, 15, 16, 15)
+    painter.end()
+    return QIcon(image)
 
 
 class _SectionTitle(QLabel):

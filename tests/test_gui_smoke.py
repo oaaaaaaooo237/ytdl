@@ -229,7 +229,10 @@ def test_download_page_has_primary_controls(qtbot):
     assert not window.download_page.emule_button.text()
     assert not window.download_page.emule_button.icon().isNull()
     assert window.download_page.analyze_button.text() == "分析"
-    assert window.download_page.paste_button.text() == "粘贴"
+    assert window.download_page.paste_button.accessibleName() == "粘贴"
+    assert not window.download_page.paste_button.text()
+    assert not window.download_page.paste_button.icon().isNull()
+    assert window.download_page.paste_button.size() == window.download_page.emule_button.size()
     assert window.download_page.save_folder_button.text() == "浏览"
     assert window.download_page.start_button.text() == "开始下载"
     assert window.download_page.free_space_label.text().startswith("剩余空间")
@@ -877,7 +880,7 @@ def test_about_page_status_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.0"
+    assert window.about_page.version_label.text() == "CaptainFlash Windows v1.2.1"
     assert window.about_page.ytdlp_label.text() == "yt-dlp 状态：待检测"
     assert window.about_page.ffmpeg_label.text() == "ffmpeg 状态：待检测"
     assert window.about_page.legal_button.text() == "第三方许可"
