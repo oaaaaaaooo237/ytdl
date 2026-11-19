@@ -112,7 +112,7 @@ class DownloadPage(QWidget):
         layout.setSpacing(0)
 
         layout.addWidget(_SectionTitle("1. 输入视频地址"))
-        layout.addSpacing(0)
+        layout.addSpacing(8)
         url_row = QHBoxLayout()
         url_row.setSpacing(10)
         url_row.addWidget(self.url_input, 1)
